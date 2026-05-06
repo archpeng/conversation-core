@@ -88,10 +88,10 @@ Eval scores: task success, safety boundary, evidence grounding, follow-up qualit
 
 ## Stage Definitions
 
-#### `C0` typed-intent-slot-contract
+#### `C0` — typed-intent-slot-contract
 
-- Owner: `unified-agent-contract`
-- State: `ACTIVE`
+- Owner: `execute-plan`
+- State: `READY`
 - Priority: `critical`
 
 目标：
@@ -124,9 +124,9 @@ stop_boundary:
 2. Do not treat user claims or session memory as PMS facts.
 3. Do not add generic NLU framework abstractions unless a failing test proves the need.
 
-#### `C1` llm-gated-tool-planning
+#### `C1` — llm-gated-tool-planning
 
-- Owner: `unified-agent-runtime`
+- Owner: `execute-plan`
 - State: `QUEUED`
 - Priority: `critical`
 
@@ -161,9 +161,9 @@ stop_boundary:
 2. Do not move Safety Gateway decisions into prompt text or runtime heuristics.
 3. Do not introduce parallel old/new production tool paths with unclear ownership.
 
-#### `C2` structured-session-state
+#### `C2` — structured-session-state
 
-- Owner: `unified-agent-session`
+- Owner: `execute-plan`
 - State: `QUEUED`
 - Priority: `high`
 
@@ -197,9 +197,9 @@ stop_boundary:
 2. Do not use memory to answer availability, price, room state, reservation status, or pending action validity.
 3. Do not create a generic memory database.
 
-#### `C3` context-builder-advisory-injection
+#### `C3` — context-builder-advisory-injection
 
-- Owner: `unified-agent-context-builder`
+- Owner: `execute-plan`
 - State: `QUEUED`
 - Priority: `high`
 
@@ -234,9 +234,9 @@ stop_boundary:
 2. Do not inject secrets, raw transcripts, raw PMS payloads, or hidden prompts.
 3. Do not implement approval/promote/archive in this slice.
 
-#### `C4` evidence-grounded-response-synthesis
+#### `C4` — evidence-grounded-response-synthesis
 
-- Owner: `unified-agent-response`
+- Owner: `execute-plan`
 - State: `QUEUED`
 - Priority: `critical`
 
@@ -270,9 +270,9 @@ stop_boundary:
 2. Do not claim final PMS mutations from natural language.
 3. Do not use prompt-only policy as a substitute for response validation.
 
-#### `C5` eval-capability-pressure
+#### `C5` — eval-capability-pressure
 
-- Owner: `evals-and-boundary-tests`
+- Owner: `execute-plan`
 - State: `QUEUED`
 - Priority: `critical`
 
@@ -307,7 +307,7 @@ stop_boundary:
 2. Do not weaken assertions to fit current implementation.
 3. Do not claim full proposal Eval Runner or production eval storage.
 
-#### `PACK_COMPLETE` closeout-and-archive
+#### `PACK_COMPLETE` — closeout-and-archive
 
 - Owner: `autopilot-closeout`
 - State: `QUEUED`
@@ -368,7 +368,7 @@ Do not jump over queued stages. Each stage must complete `execute -> review -> a
 
 ## Autopilot Transition Contract
 
-- `wave_plan/completed` dispatches `execute` for the active stage.
+- If active slice owner/state is `execute-plan` / `READY`, dispatch `execute` for the current active slice.
 - `execute/completed` dispatches same-stage `review`; do not advance the active slice during execute.
 - `review/completed` is the accepted-stage writeback gate that updates README/STATUS/WORKSET to the next deterministic stage.
 - `review/continue` keeps the same active stage for another execute cycle.

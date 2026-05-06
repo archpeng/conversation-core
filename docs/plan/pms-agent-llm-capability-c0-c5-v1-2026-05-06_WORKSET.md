@@ -16,8 +16,8 @@ Plan ID: `pms-agent-llm-capability-c0-c5-v1-2026-05-06`
 
 ### `C0`
 
-- Owner: `unified-agent-contract`
-- State: `ACTIVE`
+- Owner: `execute-plan`
+- State: `READY`
 - Priority: `critical`
 
 目标：
@@ -199,7 +199,7 @@ git diff --check
 
 ## Autopilot Transition Contract
 
-- `wave_plan/completed` dispatches `execute` for the active stage.
+- If active slice owner/state is `execute-plan` / `READY`, dispatch `execute` for the current active slice.
 - `execute/completed` dispatches same-stage `review`; do not advance the active slice during execute.
 - `review/completed` is the accepted-stage writeback gate that updates README/STATUS/WORKSET to the next deterministic stage.
 - `review/continue` keeps the same active stage for another execute cycle.
@@ -347,6 +347,8 @@ git diff --check
 - active_step: `C0`
 - latest_completed_step: `none`
 - intended_handoff: `execute-plan`
+- owner: `execute-plan`
+- state: `READY`
 - latest_plan_summary: C0-C5 LLM capability release pack created.
 - latest_verification:
   - `plan_sync before creation returned no active plans in docs/plan.`

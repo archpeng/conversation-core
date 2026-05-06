@@ -2,7 +2,9 @@
 
 ## Active Pack
 
-- `pms-agent-llm-capability-c0-c5-v1-2026-05-06`
+- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_PLAN.md`
+- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_STATUS.md`
+- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_WORKSET.md`
 
 ## Current Active Slice
 
@@ -12,11 +14,21 @@
 
 - `execute-plan`
 
+## Autopilot Transition Contract
+
+- If active slice owner/state is `execute-plan` / `READY`, dispatch `execute` for the current active slice.
+- `execute/completed` means implementation evidence is ready for same-slice `review`; it does not advance the active slice by itself.
+- `review/completed` is the accepted-slice writeback point: mark the reviewed slice done, set the next stage as `Current Active Slice`, and set `Intended Handoff` from that next stage owner.
+- `review/continue` keeps the same active slice and dispatches another bounded `execute` cycle.
+- `needs_replan` dispatches `replan`; `blocked`/`failed` stop; `done` is reserved for full objective or `PACK_COMPLETE` closeout.
+- `PACK_COMPLETE` with `Intended Handoff` `autopilot-closeout` is the only terminal parser state.
+- `currentWave/maxWaves`, human wave numbering, and closeout prose are not completion proof; closeout is forbidden while `Current Active Slice` is any non-`PACK_COMPLETE` stage.
+
 ## Status
 
 - Active parser pack: `pms-agent-llm-capability-c0-c5-v1-2026-05-06`
 - Current active slice: `C0`
-- Current active state: `ACTIVE`
+- Current active state: `READY`
 - Next runnable phase: `execute`
 - Latest closed pack: `pms-agent-workbench-w0-w2-v1-2026-05-06`
 - Latest closed state: `PACK_COMPLETE`
