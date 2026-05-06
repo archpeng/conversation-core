@@ -122,12 +122,25 @@ async function getOrCreateUnifiedSession(input: CreateAgentServiceInput, session
 
 function pruneSessionCache(sessions: Map<string, CachedUnifiedAgentSession>, now: number): void {
   for (const [key, entry] of sessions) {
-    if (now - entry.updatedAt > sessionCacheTtlMs) sessions.delete(key);
+    if (now - entry.updatedAt > sessionCacheTtlMs) {
+      disposeCachedSession(entry);
+      sessions.delete(key);
+    }
   }
   while (sessions.size > sessionCacheMaxEntries) {
     const oldest = sessions.keys().next().value;
     if (!oldest) return;
+    const entry = sessions.get(oldest);
+    if (entry) disposeCachedSession(entry);
     sessions.delete(oldest);
+  }
+}
+
+function disposeCachedSession(entry: CachedUnifiedAgentSession): void {
+  try {
+    entry.session.piSession.dispose?.();
+  } catch {
+    // Cache eviction must not fail the next user turn.
   }
 }
 

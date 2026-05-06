@@ -576,13 +576,13 @@ Before accepting any future implementation slice, verify:
 
 These are not defects in the architecture baseline; they are next hardening targets.
 
-| Target | Why it matters | Expected fix direction |
-| --- | --- | --- |
-| Runtime/resource loader prompt injection | Real pi sessions must receive the same baseline prompt/context that tests assume. | Ensure `resourceLoader` reaches `createAgentSession`; add runtime-level test. |
-| `profile.visibleToolNames` drift | AI/human readers may trust stale metadata. | Make it derive from registered tools or update it with `gated_pms_workflow`. |
-| Deterministic loop scope | Regex loops are readable but limit Agent power if they grow. | Keep loops small; move toward typed LLM tool planning. |
-| Session continuity depth | Current refs preserve safety but not rich conversation slots. | Add redacted typed slot state; never store PMS current facts. |
-| Workspace/context builder missing | Advisory tenant rules are not yet available to Agent. | Execute W0-W2 first, then context-builder with authority labels. |
+| Target | Status | Why it matters | Expected direction |
+| --- | --- | --- | --- |
+| Runtime/resource loader prompt injection | Hardened; keep test coverage. | Real pi sessions must receive the same baseline prompt/context that tests assume. | Runtime factory must keep passing `resourceLoader` into `createAgentSession`; runtime-level test must stay green. |
+| `profile.visibleToolNames` drift | Hardened; keep metadata aligned. | AI/human readers may trust stale metadata. | Profile metadata must match registered gated tools, including `gated_pms_workflow`. |
+| Deterministic loop scope | Open. | Regex loops are readable but limit Agent power if they grow. | Keep loops small; move toward typed LLM tool planning. |
+| Session continuity depth | Open. | Current refs preserve safety but not rich conversation slots. | Add redacted typed slot state; never store PMS current facts. |
+| Workspace/context builder missing | Open. | Advisory tenant rules are not yet available to Agent. | Execute W0-W2 first, then context-builder with authority labels. |
 
 ## 10. Enforcement Surfaces
 

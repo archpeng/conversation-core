@@ -56,6 +56,25 @@ describe("unified Agent runtime", () => {
     }
   });
 
+  it("keeps profile visible tool metadata aligned with registered gated tools", () => {
+    const customerProfile = loadAgentProfile("customer");
+    const adminProfile = loadAgentProfile("admin");
+
+    expect(customerProfile.visibleToolNames).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
+    expect(registerGatedTools({
+      profile: customerProfile,
+      gateway: safetyGateway([]),
+      actor: { profile: "customer", id: "customer_1" },
+      tenantId: "tenant_1"
+    }).map((tool) => tool.name)).toEqual(customerProfile.visibleToolNames);
+    expect(registerGatedTools({
+      profile: adminProfile,
+      gateway: safetyGateway([]),
+      actor: { profile: "admin", id: "admin_1" },
+      tenantId: "tenant_1"
+    }).map((tool) => tool.name)).toEqual(adminProfile.visibleToolNames);
+  });
+
   it("exposes admin proposal tools only through the Safety Gateway", async () => {
     const order: string[] = [];
     const profile = loadAgentProfile("admin");

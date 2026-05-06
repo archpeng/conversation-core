@@ -9,7 +9,7 @@ export type UnifiedAgentProfile = {
 
 const customerPmsProfile: UnifiedAgentProfile = {
   id: "customer_pms",
-  visibleToolNames: ["gated_pms_read", "gated_pms_confirm"]
+  visibleToolNames: ["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]
 };
 
 const adminCustomizationProfile: UnifiedAgentProfile = {

@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AuthStorage, createAgentSession, DefaultResourceLoader, getAgentDir, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, DefaultResourceLoader, getAgentDir, ModelRegistry, SessionManager, type ResourceLoader } from "@mariozechner/pi-coding-agent";
 import { createAgentService, type AgentService } from "./index.js";
 import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import { createPmsEvidence, createPmsPlatformClient, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
@@ -123,7 +123,7 @@ function createRuntimeSafetyGateway(): SafetyGatewayPort {
   };
 }
 
-function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig): PiCreateAgentSession {
+export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig, createSession: typeof createAgentSession = createAgentSession): PiCreateAgentSession {
   if (config.piMode === "stub") {
     return async () => ({ session: { async prompt() {} } });
   }
@@ -132,12 +132,13 @@ function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig): PiCre
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
     const model = config.piModelProvider && config.piModelId ? modelRegistry.find(config.piModelProvider, config.piModelId) : undefined;
-    return createAgentSession({
+    return createSession({
       cwd: options.cwd ?? config.cwd,
       tools: options.tools as string[],
       customTools: options.customTools as never[],
       authStorage,
       modelRegistry,
+      ...(options.resourceLoader ? { resourceLoader: options.resourceLoader as ResourceLoader } : {}),
       ...(model ? { model } : {}),
       sessionManager: config.piSessionMode === "persistent" ? SessionManager.create(config.cwd) : SessionManager.inMemory(config.cwd)
     }) as unknown as ReturnType<PiCreateAgentSession>;

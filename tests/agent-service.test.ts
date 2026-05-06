@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAgentService, type AgentServiceResponse } from "../apps/agent-service/src/index.js";
+import { createAgentService, handleAgentServiceRequest, type AgentServiceResponse } from "../apps/agent-service/src/index.js";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
 import type { AgentResult, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
@@ -58,6 +58,33 @@ describe("agent service API", () => {
     expect(response.body).toMatchObject({ type: "text" });
     expect(JSON.stringify(response.body)).toContain("PMS 智能助手");
     expect(JSON.stringify(response.body)).not.toContain("Agent turn completed");
+  });
+
+  it("disposes expired cached sessions during eviction before creating the next turn session", async () => {
+    const disposed: string[] = [];
+    const sessions = new Map<string, unknown>([["expired", {
+      updatedAt: 0,
+      session: {
+        piSession: { dispose: () => disposed.push("expired") },
+        profile: { id: "customer_pms" },
+        tools: [],
+        systemPrompt: "",
+        systemPromptInjected: false,
+        state: {}
+      }
+    }]]);
+    const calls: PiCreateAgentSessionOptions[] = [];
+
+    const response = await handleAgentServiceRequest(
+      { gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(calls) },
+      { method: "POST", path: "/v1/feishu-turn", body: validTurn },
+      sessions as never
+    );
+
+    expect(response.status).toBe(200);
+    expect(disposed).toEqual(["expired"]);
+    expect(sessions.has("expired")).toBe(false);
+    expect(calls).toHaveLength(1);
   });
 
   it("reuses cached sessions for continuity across /v1/feishu-turn calls", async () => {
