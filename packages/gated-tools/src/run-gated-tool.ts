@@ -1,0 +1,67 @@
+export type GatedToolOutcome = "allow" | "deny" | "require_approval";
+
+export type GatedToolRequest = {
+  capabilityId: string;
+  actor: {
+    profile: "customer" | "staff" | "admin" | "internal";
+    id?: string;
+  };
+  tenantId?: string;
+  workspace?: {
+    kind: "none" | "proposal" | "sandbox";
+    path?: string;
+  };
+  pendingActionId?: string;
+  target?: string;
+  content?: string;
+};
+
+export type GatedDecision = {
+  outcome: GatedToolOutcome;
+  reasons: readonly { code: string }[];
+  audit: {
+    capabilityId: string;
+  };
+};
+
+export type GatedAuditEvent = {
+  id: string;
+};
+
+export type SafetyGatewayPort = {
+  decide(request: GatedToolRequest): GatedDecision;
+  audit(decision: GatedDecision): GatedAuditEvent;
+};
+
+export type GatedToolExecutor<T> = (input: {
+  request: GatedToolRequest;
+  decision: GatedDecision;
+  auditId: string;
+}) => T | Promise<T>;
+
+export type GatedToolResult<T> =
+  | { outcome: "allow"; auditId: string; value: T; decision: GatedDecision }
+  | { outcome: "deny"; auditId: string; decision: GatedDecision }
+  | { outcome: "require_approval"; auditId: string; decision: GatedDecision };
+
+export type RunGatedToolInput<T> = {
+  gateway: SafetyGatewayPort;
+  request: GatedToolRequest;
+  executor: GatedToolExecutor<T>;
+};
+
+export async function runGatedTool<T>(input: RunGatedToolInput<T>): Promise<GatedToolResult<T>> {
+  const decision = input.gateway.decide(input.request);
+  const auditEvent = input.gateway.audit(decision);
+
+  if (decision.outcome === "deny") {
+    return { outcome: "deny", auditId: auditEvent.id, decision };
+  }
+
+  if (decision.outcome === "require_approval") {
+    return { outcome: "require_approval", auditId: auditEvent.id, decision };
+  }
+
+  const value = await input.executor({ request: input.request, decision, auditId: auditEvent.id });
+  return { outcome: "allow", auditId: auditEvent.id, value, decision };
+}

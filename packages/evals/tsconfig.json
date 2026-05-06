@@ -5,5 +5,13 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../adapter-contracts" },
+    { "path": "../../apps/agent-service" },
+    { "path": "../gated-tools" },
+    { "path": "../pms-platform-client" },
+    { "path": "../safety-gateway" },
+    { "path": "../unified-agent" }
+  ]
 }

@@ -5,5 +5,10 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../../packages/adapter-contracts" },
+    { "path": "../../packages/gated-tools" },
+    { "path": "../../packages/unified-agent" }
+  ]
 }

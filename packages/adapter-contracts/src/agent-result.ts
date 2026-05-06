@@ -1,8 +1,14 @@
 import { validatePmsApprovalCard, type PmsApprovalCard } from "./approval-card.js";
 import { asRecord, requireNonEmptyString, requireOneOf } from "./field-checks.js";
 
+export type AgentTextResult = {
+  type: "text";
+  text: string;
+  evidenceRefs?: string[];
+};
+
 export type AgentResult =
-  | { type: "text"; text: string }
+  | AgentTextResult
   | { type: "refusal"; reason: "policy" | "unsupported" | "invalid_request"; message: string }
   | { type: "proposal"; proposalId: string; title: string; summary: string; approvalRequired: true }
   | { type: "approval_card"; card: PmsApprovalCard };
@@ -21,6 +27,7 @@ export function validateAgentResult(input: unknown): AgentResultValidation {
   switch (value.type) {
     case "text":
       requireNonEmptyString(value.text, "text", issues);
+      validateOptionalEvidenceRefs(value.evidenceRefs, issues);
       break;
     case "refusal":
       requireOneOf(value.reason, ["policy", "unsupported", "invalid_request"], "reason", issues);
@@ -47,5 +54,16 @@ export function validateAgentResult(input: unknown): AgentResultValidation {
 
 export function isAgentResult(input: unknown): input is AgentResult {
   return validateAgentResult(input).ok;
+}
+
+function validateOptionalEvidenceRefs(value: unknown, issues: string[]) {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    issues.push("evidenceRefs must be an array when present");
+    return;
+  }
+  for (const [index, item] of value.entries()) {
+    requireNonEmptyString(item, `evidenceRefs[${index}]`, issues);
+  }
 }
 

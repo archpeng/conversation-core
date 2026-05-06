@@ -18,11 +18,40 @@ importers:
         specifier: ^4.0.8
         version: 4.1.5(@types/node@24.12.2)(vite@8.0.10(@types/node@24.12.2))
 
-  apps/agent-service: {}
+  apps/agent-service:
+    dependencies:
+      '@pms-agent-v2/adapter-contracts':
+        specifier: workspace:*
+        version: link:../../packages/adapter-contracts
+      '@pms-agent-v2/gated-tools':
+        specifier: workspace:*
+        version: link:../../packages/gated-tools
+      '@pms-agent-v2/unified-agent':
+        specifier: workspace:*
+        version: link:../../packages/unified-agent
 
   packages/adapter-contracts: {}
 
-  packages/evals: {}
+  packages/evals:
+    dependencies:
+      '@pms-agent-v2/adapter-contracts':
+        specifier: workspace:*
+        version: link:../adapter-contracts
+      '@pms-agent-v2/agent-service':
+        specifier: workspace:*
+        version: link:../../apps/agent-service
+      '@pms-agent-v2/gated-tools':
+        specifier: workspace:*
+        version: link:../gated-tools
+      '@pms-agent-v2/pms-platform-client':
+        specifier: workspace:*
+        version: link:../pms-platform-client
+      '@pms-agent-v2/safety-gateway':
+        specifier: workspace:*
+        version: link:../safety-gateway
+      '@pms-agent-v2/unified-agent':
+        specifier: workspace:*
+        version: link:../unified-agent
 
   packages/gated-tools: {}
 
@@ -30,7 +59,17 @@ importers:
 
   packages/safety-gateway: {}
 
-  packages/unified-agent: {}
+  packages/unified-agent:
+    dependencies:
+      '@pms-agent-v2/adapter-contracts':
+        specifier: workspace:*
+        version: link:../adapter-contracts
+      '@pms-agent-v2/gated-tools':
+        specifier: workspace:*
+        version: link:../gated-tools
+      '@pms-agent-v2/pms-platform-client':
+        specifier: workspace:*
+        version: link:../pms-platform-client
 
 packages:
 

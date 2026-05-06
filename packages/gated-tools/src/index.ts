@@ -1,5 +1,19 @@
-export const workspaceName = "@pms-agent-v2/gated-tools";
+export {
+  runGatedTool,
+  type GatedAuditEvent,
+  type GatedDecision,
+  type GatedToolExecutor,
+  type GatedToolOutcome,
+  type GatedToolRequest,
+  type GatedToolResult,
+  type RunGatedToolInput,
+  type SafetyGatewayPort
+} from "./run-gated-tool.js";
 
-export function bootstrapStatus() {
-  return { workspaceName, stage: "P0_BOOTSTRAP" as const };
-}
+export { gatedPmsConfirm, gatedPmsRead, gatedPmsWorkflow, type GatedPmsConfirmInput, type GatedPmsInput } from "./pms-tools.js";
+
+export { gatedEdit, gatedRead, gatedWrite, type GatedFileInput } from "./file-tools.js";
+
+export { gatedBash, type GatedBashInput } from "./bash-tool.js";
+
+export { gatedHttp, type GatedHttpInput } from "./http-tool.js";

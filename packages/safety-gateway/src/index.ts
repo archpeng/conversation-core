@@ -1,5 +1,46 @@
-export const workspaceName = "@pms-agent-v2/safety-gateway";
+export {
+  capabilityIds,
+  capabilityRegistry,
+  getCapabilityDefinition,
+  type CapabilityDefinition,
+  type CapabilityId,
+  type CapabilityKind
+} from "./capability-registry.js";
 
-export function bootstrapStatus() {
-  return { workspaceName, stage: "P0_BOOTSTRAP" as const };
-}
+export {
+  safetyConstraints,
+  type ActorProfile,
+  type SafetyConstraint,
+  type SafetyConstraintId,
+  type WorkspaceKind
+} from "./constraints.js";
+
+export {
+  capabilityRisks,
+  riskLevels,
+  type CapabilityRisk,
+  type RiskCategory,
+  type RiskLevel
+} from "./risk.js";
+
+export {
+  buildDecision,
+  summarizeDecisionRequest,
+  type RedactedDecisionSummary,
+  type SafetyDecision,
+  type SafetyDecisionOutcome,
+  type SafetyDecisionReason,
+  type ToolRequest
+} from "./decision.js";
+
+export { decideToolRequest } from "./policy-engine.js";
+
+export {
+  createSafetyAuditEvent,
+  createSafetyAuditJsonlWriter,
+  redactValue,
+  serializeSafetyAuditEvent,
+  type AuditEventOptions,
+  type SafetyAuditEvent,
+  type SafetyAuditJsonlWriter
+} from "./audit-log.js";

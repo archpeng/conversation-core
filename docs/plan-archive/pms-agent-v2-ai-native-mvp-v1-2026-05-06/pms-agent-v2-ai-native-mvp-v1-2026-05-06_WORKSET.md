@@ -7,57 +7,79 @@ Plan ID: `pms-agent-v2-ai-native-mvp-v1-2026-05-06`
 - [x] `P0` bootstrap-clean-monorepo
 - [x] `P1` adapter-contracts-only
 - [x] `P1A` upstream-downstream-alignment
-- [ ] `P2` safety-gateway-kernel
-- [ ] `P3` gated-tool-runner
-- [ ] `P4` pms-client-evidence
-- [ ] `P5` unified-agent-runtime
-- [ ] `P6` agent-service-api
-- [ ] `P7` customer-pms-loop
-- [ ] `P8` admin-proposal-loop
-- [ ] `P9` sandbox-exec-and-file-hardening
-- [ ] `P10` audit-and-eval-hardening
-- [ ] `P11` end-to-end-integration-smoke
-- [ ] `P12` final-reality-audit-and-pack-closeout-prep
-- [ ] `PACK_COMPLETE` closeout
+- [x] `P2` safety-gateway-kernel
+- [x] `P3` gated-tool-runner
+- [x] `P4` pms-client-evidence
+- [x] `P5` unified-agent-runtime
+- [x] `P6` agent-service-api
+- [x] `P7` customer-pms-loop
+- [x] `P8` admin-proposal-loop
+- [x] `P9` sandbox-exec-and-file-hardening
+- [x] `P10` audit-and-eval-hardening
+- [x] `P11` end-to-end-integration-smoke
+- [x] `P12` final-reality-audit-and-pack-closeout-prep
+- [x] `PACK_COMPLETE` closeout
 
 ## Active Stage
 
-### `P2`
+### `PACK_COMPLETE`
 
-- Owner: `execute-plan`
-- State: `READY`
-- Priority: `critical`
+- Owner: `autopilot-closeout`
+- State: `DONE`
+- Priority: `terminal`
 
 目标：
 
-- Build Safety Gateway before connecting the strong Agent.
+- Archive or close the pack only after `P12` accepted review marks the objective complete.
 
 必须交付：
 
-1. `capability-registry.ts` with MVP capabilities.
-2. `risk.ts` with risk taxonomy.
-3. `constraints.ts` with workspace/PMS/bash/http constraints.
-4. `decision.ts` with `SafetyDecision` and `ToolRequest`.
-5. `policy-engine.ts` with profile-aware decisions.
-6. `audit-log.ts` JSONL interface with redacted summaries.
+1. Closeout summary.
+2. Final evidence and residual handoff.
+3. Hot/cold plan hygiene update.
 
 done_when:
 
-1. Safety decisions are capability/risk/constraint based, not tool-name-only prohibition lists.
-2. Every decision can produce an audit event.
-3. No executor package is needed to test the policy kernel.
+1. Pack is terminal and no active implementation/review work remains.
 
 stop_boundary:
 
-1. Stop if implementing Safety requires real tool execution.
-2. Stop if policy cannot express proposal/approval-first PMS mutation.
-3. Stop if the design needs pi internals before P5.
+1. If any non-terminal slice remains active, hand back to that slice; do not close out.
 
 必须避免：
 
-1. Do not add executor implementations.
-2. Do not call `pi-coding-agent` runtime.
-3. Do not implement PMS client behavior here.
+1. Do not use closeout to skip review or cleanup.
+## Current Wave
+
+### `W5` reality-audit-closeout
+
+- Active stage: `PACK_COMPLETE`
+- Active stage state: `DONE`
+- Next handoff: `none`
+- Dominant owner boundary: repo-local closeout after final reality audit.
+- Execute ladder: `PACK_COMPLETE`
+- Validation ladder: closeout summary, final evidence/residual handoff, parser validation, and plan hygiene.
+- Current stage doneWhenMet must prove:
+  1. Pack is terminal and no active implementation/review work remains.
+- Current stage stopBoundaryHit must cite one of:
+  1. If any non-terminal slice remains active, hand back to that slice; do not close out.
+- PACK_COMPLETE delivered surfaces:
+  1. closeout summary
+  2. final evidence and residual handoff
+  3. hot/cold plan hygiene update
+- PACK_COMPLETE exit criteria met:
+  1. README and archived WORKSET record `PACK_COMPLETE` as completed.
+  2. No non-deferred stages remain.
+  3. Closeout evidence cites final tests/evals/static scans.
+- Accepted-closeout writeback: pack closed and archived under `docs/plan-archive/pms-agent-v2-ai-native-mvp-v1-2026-05-06/`.
+
+## Master Wave Ladder
+
+1. `W1` safety-evidence-foundation: `P2` -> `P3` -> `P4`.
+2. `W2` runtime-service-boundary: `P5` -> `P6`.
+3. `W3` product-loop-proof: `P7` -> `P8`.
+4. `W4` hardening-eval-integration: `P9` -> `P10` -> `P11`.
+5. `W5` reality-audit-closeout: `P12` -> `PACK_COMPLETE`.
 
 ## Detailed Execution Queue
 
@@ -109,21 +131,23 @@ stop_boundary:
 
 执行步骤：
 
-1. Implement capability registry with only MVP capabilities.
-2. Implement risk taxonomy and constraints.
-3. Implement `ToolRequest` / `SafetyDecision`.
-4. Implement profile-aware policy engine.
-5. Implement JSONL audit interface with redacted summaries.
-6. Write policy tests before any executors.
-7. Review-clean if-else forbidden-list shortcuts and unused extension points.
+1. Add failing policy tests in `tests/safety-gateway.test.ts` for the required allow/deny/approval cases before broad implementation.
+2. Implement `capability-registry.ts` with only MVP capabilities: PMS read/workflow/confirm, proposal file write/edit/read, sandbox bash/read, and default-denied HTTP.
+3. Implement `risk.ts` and `constraints.ts` so decisions can cite risk and workspace/PMS/bash/http constraints instead of raw tool-name bans.
+4. Implement `decision.ts` with `ToolRequest`, `SafetyDecision`, decision reasons, `require_approval`, and audit-safe summaries.
+5. Implement `policy-engine.ts` with deterministic profile-aware decisions for customer, admin, staff/internal if required by existing adapter roles.
+6. Implement `audit-log.ts` as a JSONL event interface and redaction helper only; do not write real files unless tests use in-memory/string serialization.
+7. Export the public P2 kernel from `packages/safety-gateway/src/index.ts` and remove the old bootstrap-only placeholder if unused.
+8. Run `pnpm build`, `pnpm test`, `pnpm guard:boundaries`, and `git diff --check`.
+9. Review-clean any if-else-only forbidden-list shortcuts, unused extension points, explanatory comments, or executor-shaped code.
 
 预期：
 
-- Safety exists before Agent runtime.
+- Safety exists before Agent runtime and before any executor package can run side effects.
 
 测试预期：
 
-- Customer allowed/denied cases, admin proposal case, approval case, default HTTP deny.
+- Customer `pms_read` allowed; customer `bash/write/edit/read/http` denied; admin proposal write allowed only under proposal workspace; `pms_confirm` without pending action denied; `pms_confirm` with pending action returns `require_approval`; HTTP denied by default; every decision has an audit event.
 
 ### `P3` workset — gated-tool-runner
 
@@ -323,42 +347,19 @@ Before any stage is marked done, review must answer:
 
 ## Handoff After This Planning Turn
 
-- Next skill: `execute-plan`
-- Active stage: `P2`
-- Expected next phase: `execute`
-- Review owner after P2 execute evidence: `execution-reality-audit`
+- Next surface: none
+- Active stage: `none`
+- Expected next phase: none
+- Closeout owner: `none`
 
 ## Machine Queue
 
-- active_step: `P2`
-- latest_completed_step: `P1A`
-- intended_handoff: `execute-plan`
-- latest_closeout_summary: P1A review accepted; legacy-wrapper proof was added and the plan advanced to P2.
+- active_step: `none`
+- latest_completed_step: `PACK_COMPLETE`
+- intended_handoff: `none`
+- latest_closeout_summary: Closed the MVP pack, archived the completed parser triplet, and left `docs/plan/` with no active pack.
 - latest_verification:
-  - `Read package-owned execution-reality-audit skill before review work`
-  - `Anchored docs/plan truth: P1 was active and REVIEW_READY`
-  - `Reviewed adapter-contracts source and contract tests against P1 deliverables, done_when, avoid list, and stop_boundary`
-  - `Added focused tests proving absent tenantId, sessionId, messageId, and message are rejected`
-  - `pms-agent-v2: pnpm build passed`
-  - `pms-agent-v2: pnpm test passed with 3 files / 20 tests plus boundary guard`
-  - `pms-agent-v2 and conversation-core: git diff --check passed`
-  - `Review cleanup scan found no TODO/FIXME/placeholders, internal Agent/Safety/pi fields, legacy runtime imports, body.replies exposure, compatibility adapter, or channel abstraction in P1 surfaces`
-  - `adapter-feishu: npm run check:boundaries passed`
-  - `adapter-feishu: npm run build passed`
-  - `adapter-feishu: npm test passed with 34 files / 156 tests`
-  - `pms-agent-v2: pnpm build passed`
-  - `pms-agent-v2: pnpm test passed with 3 files / 20 tests plus boundary guard`
-  - `adapter-feishu, pms-agent-v2, and conversation-core: git diff --check passed`
-  - `P1A implementation added PMS Agent turn forwarding, AgentResult delivery mapping, approval-card callback routing, bounded PMS_AGENT_* config, and PMS endpoint map docs`
-  - `P1A review added proof that old replies[] and wrapped result response shapes are not treated as PMS Agent output`
-  - `P1A review confirmed pms-platform typed routes exist for the documented endpoint map`
-  - `P1A review reran adapter-feishu boundary/build/test, pms-agent-v2 build/test/boundary guard, cleanup scans, and git diff --check`
-  - `/home/peng/dt-git/github/pms-agent-v2/packages/adapter-contracts/src/feishu-turn.ts`
-  - `/home/peng/dt-git/github/pms-agent-v2/packages/adapter-contracts/src/agent-result.ts`
-  - `/home/peng/dt-git/github/pms-agent-v2/packages/adapter-contracts/src/approval-card.ts`
-  - `/home/peng/dt-git/github/pms-agent-v2/packages/adapter-contracts/src/field-checks.ts`
-  - `/home/peng/dt-git/github/pms-agent-v2/tests/adapter-contracts.test.ts`
-  - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/README.md`
-  - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_PLAN.md`
-  - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_STATUS.md`
-  - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_WORKSET.md`
+  - `P12 validation passed: pnpm build; pnpm test with 12 files / 83 tests plus boundary guard and pnpm eval; pnpm exec vitest run tests/integration-smoke.test.ts; pnpm guard:boundaries; git diff --check.`
+  - `PACK_COMPLETE closeout wrote docs/plan-archive/pms-agent-v2-ai-native-mvp-v1-2026-05-06/pms-agent-v2-ai-native-mvp-v1-2026-05-06_CLOSEOUT.md.`
+  - `Hot/cold plan hygiene archived the completed PLAN/STATUS/WORKSET triplet under docs/plan-archive/pms-agent-v2-ai-native-mvp-v1-2026-05-06/ and left docs/plan/README.md as the only hot parser file.`
+  - `Residual handoff is post-MVP only: production deployment/secret runbook, live Feishu/PMS smoke with approved credentials, and durable production audit storage/retention.`

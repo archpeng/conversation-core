@@ -20,15 +20,21 @@ adapter-feishu -> pms-agent-v2/apps/agent-service -> pms-platform
 
 ## Plan control plane
 
-Active execution truth lives in this repo:
+Current hot parser truth lives in this repo:
 
 ```text
-docs/plan/
+docs/plan/README.md
 docs/roadmap/ai-native-pms-agent-monorepo-roadmap.md
 ```
 
-The plan was migrated from `conversation-core` so future execution, review, and closeout should start from `/home/peng/dt-git/github/pms-agent-v2`. This repo's `origin` remote currently points to the former current directory Git remote: `https://github.com/archpeng/conversation-core.git`.
+The MVP plan pack is closed at `PACK_COMPLETE` and archived under:
 
-## P0 scope
+```text
+docs/plan-archive/pms-agent-v2-ai-native-mvp-v1-2026-05-06/
+```
 
-This bootstrap contains only the monorepo skeleton, minimal TypeScript/Vitest tooling, root architecture docs, and boundary guardrails. Contracts, Safety Gateway logic, Agent runtime, PMS client behavior, and adapter changes are later slices.
+Future execution, review, and closeout should start from `/home/peng/dt-git/github/pms-agent-v2` with a new active plan pack. This repo's `origin` remote currently points to the former current directory Git remote: `https://github.com/archpeng/conversation-core.git`.
+
+## MVP closeout scope
+
+This closed MVP includes the monorepo scaffold, adapter contracts, Safety Gateway, gated tools, PMS evidence client, unified Agent runtime, service API, customer/admin loops, sandbox hardening, audit/eval proof, and local integration smoke.

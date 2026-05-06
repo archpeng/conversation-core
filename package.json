@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run && pnpm guard:boundaries",
+    "test": "vitest run && pnpm guard:boundaries && pnpm eval",
+    "eval": "tsc -b packages/evals && node packages/evals/dist/index.js",
     "guard:boundaries": "node scripts/boundary-guard.mjs"
   },
   "devDependencies": {

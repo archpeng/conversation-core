@@ -21,8 +21,8 @@ describe("P0 bootstrap scaffold", () => {
     }
   });
 
-  it("keeps root scripts focused on build, test, and boundary guard", async () => {
+  it("keeps root scripts focused on build, test, eval, and boundary guard", async () => {
     const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-    expect(Object.keys(manifest.scripts).sort()).toEqual(["build", "guard:boundaries", "test"]);
+    expect(Object.keys(manifest.scripts).sort()).toEqual(["build", "eval", "guard:boundaries", "test"]);
   });
 });

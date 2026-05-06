@@ -19,5 +19,6 @@ export {
   isAgentResult,
   validateAgentResult,
   type AgentResult,
-  type AgentResultValidation
+  type AgentResultValidation,
+  type AgentTextResult
 } from "./agent-result.js";

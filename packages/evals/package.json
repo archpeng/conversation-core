@@ -5,5 +5,13 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"]
+  "files": ["dist"],
+  "dependencies": {
+    "@pms-agent-v2/adapter-contracts": "workspace:*",
+    "@pms-agent-v2/agent-service": "workspace:*",
+    "@pms-agent-v2/gated-tools": "workspace:*",
+    "@pms-agent-v2/pms-platform-client": "workspace:*",
+    "@pms-agent-v2/safety-gateway": "workspace:*",
+    "@pms-agent-v2/unified-agent": "workspace:*"
+  }
 }
