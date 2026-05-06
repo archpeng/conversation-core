@@ -26,4 +26,38 @@ describe("agent service runtime wiring", () => {
       resourceLoader
     });
   });
+
+  it("passes configured GPT-5.5 model through the real-mode runtime factory", async () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_PI_MODE: "real",
+      PMS_AGENT_PI_MODEL_PROVIDER: "openai",
+      PMS_AGENT_PI_MODEL_ID: "gpt-5.5",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const calls: unknown[] = [];
+    const factory = createRuntimePiSessionFactory(config, (async (options: unknown) => {
+      calls.push(options);
+      return { session: { async prompt() {} } };
+    }) as never);
+
+    await factory({ cwd: config.cwd, tools: [], customTools: [] } as PiCreateAgentSessionOptions);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ model: { provider: "openai", id: "gpt-5.5" } });
+  });
+
+  it("fails visibly when a configured runtime model cannot be resolved", async () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_PI_MODE: "real",
+      PMS_AGENT_PI_MODEL_PROVIDER: "openai",
+      PMS_AGENT_PI_MODEL_ID: "missing-model-for-test",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const factory = createRuntimePiSessionFactory(config, (async () => ({ session: { async prompt() {} } })) as never);
+
+    await expect(factory({ cwd: config.cwd, tools: [], customTools: [] } as PiCreateAgentSessionOptions))
+      .rejects.toThrow("model_not_resolved: Pi ModelRegistry could not resolve openai/missing-model-for-test");
+  });
 });

@@ -195,6 +195,60 @@ describe("unified Agent runtime", () => {
     expect(prompts[0]).toContain("authority=model_prior");
   });
 
+  it("injects profile-visible gated tool manifest and JSON-only tool-plan contract into turn prompts", async () => {
+    const prompts: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSession([], prompts)
+    });
+
+    await runAgentTurn(session, baseTurn);
+
+    expect(prompts[0]).toContain("Visible gated tool manifest:");
+    expect(prompts[0]).toContain("ToolPlanAction JSON-only output contract:");
+    expect(prompts[0]).toContain("Return exactly one JSON object and no markdown or extra prose");
+    expect(prompts[0]).toContain('"type": "call_tool"');
+    expect(prompts[0]).toContain('"name": "gated_pms_read"');
+    expect(prompts[0]).toContain('"name": "gated_pms_workflow"');
+    expect(prompts[0]).toContain('"name": "gated_pms_confirm"');
+    expect(prompts[0]).not.toContain('"name": "gated_proposal_write"');
+    expect(prompts[0]).not.toContain('"name": "bash"');
+    expect(prompts[0]).not.toContain('"name": "read"');
+    expect(prompts[0]).not.toContain('"name": "write"');
+    expect(prompts[0]).not.toContain('"name": "edit"');
+    expect(prompts[0]).not.toContain('"name": "http"');
+    expect(prompts[0]).not.toContain('"name": "http_request"');
+  });
+
+  it("injects only admin-visible gated proposal tools for admin turn prompts", async () => {
+    const prompts: string[] = [];
+    const adminTurn: FeishuTurnInput = {
+      ...baseTurn,
+      actor: { role: "admin", id: "admin_raw_secret" },
+      message: { text: "帮我起草一个价格调整方案" }
+    };
+    const session = await createUnifiedAgentSession({
+      turn: adminTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSession([], prompts)
+    });
+
+    await runAgentTurn(session, adminTurn);
+
+    expect(prompts[0]).toContain("Visible gated tool manifest:");
+    expect(prompts[0]).toContain('"name": "gated_proposal_read"');
+    expect(prompts[0]).toContain('"name": "gated_proposal_write"');
+    expect(prompts[0]).toContain('"name": "gated_proposal_edit"');
+    expect(prompts[0]).not.toContain('"name": "gated_pms_read"');
+    expect(prompts[0]).not.toContain('"name": "bash"');
+    expect(prompts[0]).not.toContain('"name": "read"');
+    expect(prompts[0]).not.toContain('"name": "write"');
+    expect(prompts[0]).not.toContain('"name": "edit"');
+    expect(prompts[0]).not.toContain('"name": "http"');
+    expect(prompts[0]).not.toContain('"name": "http_request"');
+  });
+
   it("validates assistant PMS fact text instead of relying on prompt-only policy", async () => {
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
@@ -224,6 +278,173 @@ describe("unified Agent runtime", () => {
     const result = await runAgentTurn(session, { ...baseTurn, message: { text: "普通聊天，不触发房态工具" } }, { pmsEvidence: [evidence], evidenceRefs: [evidence.evidenceRef] });
 
     expect(result).toEqual({ type: "text", text: `PMS 证据显示有 1 个可订候选。evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
+  });
+
+  it("executes accepted LLM PMS read plans as the primary live path", async () => {
+    const order: string[] = [];
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "availability from LLM plan",
+      data: { rooms: [{ roomId: "room_secret_plan", roomType: "suite", available: true }] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } })),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return evidence;
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, baseTurn);
+
+    expect(result).toEqual({ type: "text", text: `PMS evidence is available: availability from LLM plan. evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
+    expect(session.state.evidenceRefs).toEqual([evidence.evidenceRef]);
+  });
+
+  it("maps non-call LLM plans into safe AgentResult without side effects", async () => {
+    const order: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "ask_clarification", message: "请提供入住日期。" })),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return createPmsEvidence({
+            method: "searchAvailability",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:00:00.000Z",
+            summary: "unexpected",
+            data: { rooms: [] }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, baseTurn);
+
+    expect(result).toEqual({ type: "refusal", reason: "invalid_request", message: "请提供入住日期。" });
+    expect(order).toEqual([]);
+  });
+
+  it("does not execute PMS confirm plans that require typed approval", async () => {
+    const order: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_confirm", params: { pendingActionId: "pending_1" } })),
+      executors: {
+        pmsConfirm: () => {
+          order.push("executor:pmsConfirm");
+          return { mutated: true };
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, baseTurn);
+
+    expect(result).toEqual({ type: "refusal", reason: "policy", message: "Requested action requires typed approval." });
+    expect(order).toEqual(["decide:pms_confirm", "audit:require_approval"]);
+  });
+
+  it("rejects raw or non-visible LLM plans before executors and deterministic loop fallback", async () => {
+    const order: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "bash", params: { command: "pnpm test" } })),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return createPmsEvidence({
+            method: "searchAvailability",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:00:00.000Z",
+            summary: "unexpected deterministic fallback",
+            data: { rooms: [] }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, baseTurn);
+
+    expect(result).toEqual({ type: "refusal", reason: "policy", message: "Invalid tool plan: raw_tool_not_visible." });
+    expect(order).toEqual([]);
+    expect(session.state.evidenceRefs).toEqual([]);
+  });
+
+  it("uses legacy safety scaffold only after LLM observation when no structured plan is returned", async () => {
+    const order: string[] = [];
+    const prompts: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSession([], prompts),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return createPmsEvidence({
+            method: "searchAvailability",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:00:00.000Z",
+            summary: "legacy scaffold availability",
+            data: { rooms: [{ roomId: "room_secret_scaffold", roomType: "大床房", available: true }] }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "2026-05-06 大床房有房吗" } });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("ToolPlanAction JSON-only output contract:");
+    expect(result).toMatchObject({ type: "text", evidenceRefs: ["pms_ev_tenant_1_searchAvailability_1778068800000"] });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
+  });
+
+  it("does not let deterministic PMS keywords bypass a valid LLM tool plan", async () => {
+    const order: string[] = [];
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "planner chose availability",
+      data: { rooms: [{ roomId: "room_secret_valid_plan", roomType: "suite", available: true }] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } })),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return evidence;
+        },
+        pmsWorkflow: () => {
+          order.push("executor:pmsWorkflow");
+          return createPmsEvidence({
+            method: "prepareReservationConfirm",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:00:00.000Z",
+            summary: "deterministic loop should not prepare booking",
+            data: { pendingActionId: "pending_secret_bypass", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "我要预订 2026-05-06 大床房" } });
+
+    expect(result).toEqual({ type: "text", text: `PMS evidence is available: planner chose availability. evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
   });
 
   it("does not convert prior session text into PMS evidence", async () => {

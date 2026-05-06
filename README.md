@@ -53,6 +53,8 @@ PMS_PLATFORM_BASE_URL=http://127.0.0.1:8791 \
 PMS_PLATFORM_AUTH_TOKEN=local-pms-token \
 PMS_AGENT_PROPOSAL_WORKSPACE=.local/pms-agent-proposals \
 PMS_AGENT_PI_MODE=real \
+PMS_AGENT_PI_MODEL_PROVIDER=openai \
+PMS_AGENT_PI_MODEL_ID=gpt-5.5 \
 pnpm start
 ```
 
@@ -66,5 +68,5 @@ Runtime env:
 | `PMS_AGENT_PROPOSAL_WORKSPACE` | Workspace root for admin proposal artifacts. |
 | `PMS_AGENT_PI_MODE` | `real` uses `pi-coding-agent` SDK; `stub` is for deterministic local smoke only. |
 | `PMS_AGENT_PI_SESSION_MODE` | `memory` or `persistent` SDK session manager. |
-| `PMS_AGENT_PI_MODEL_PROVIDER` / `PMS_AGENT_PI_MODEL_ID` | Optional model override resolved through Pi's `ModelRegistry`. |
+| `PMS_AGENT_PI_MODEL_PROVIDER` / `PMS_AGENT_PI_MODEL_ID` | Intended live override: `openai` / `gpt-5.5`. Real mode resolves this pair through Pi's `ModelRegistry` at startup and fails fast if the configured pair is not found. |
 | `PMS_AGENT_DEFAULT_CHECK_IN_DATE` / `PMS_AGENT_DEFAULT_CHECK_OUT_DATE` / `PMS_AGENT_DEFAULT_ROOM_TYPE` | Local MVP defaults used by the deterministic PMS availability executor. |

@@ -132,6 +132,9 @@ export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig,
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
     const model = config.piModelProvider && config.piModelId ? modelRegistry.find(config.piModelProvider, config.piModelId) : undefined;
+    if (config.piModelProvider && config.piModelId && !model) {
+      throw new Error(`model_not_resolved: Pi ModelRegistry could not resolve ${config.piModelProvider}/${config.piModelId}`);
+    }
     return createSession({
       cwd: options.cwd ?? config.cwd,
       tools: options.tools as string[],
