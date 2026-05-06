@@ -1,5 +1,19 @@
 # PMS Agent V2 MVP Plan Control Plane
 
+## Active Pack
+
+- `docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_PLAN.md`
+- `docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_STATUS.md`
+- `docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_WORKSET.md`
+
+## Current Active Slice
+
+- `P2`
+
+## Intended Handoff
+
+- `execute-plan`
+
 ## Status
 
 - Active parser pack: `pms-agent-v2-ai-native-mvp-v1-2026-05-06`
@@ -8,12 +22,6 @@
 - Next runnable phase: `execute-plan`
 - Latest completed slice: `P1A`
 - Cold archive root: `docs/plan-archive/`
-
-## Active Pack Files
-
-- `docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_PLAN.md`
-- `docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_STATUS.md`
-- `docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_WORKSET.md`
 
 ## Control-Plane Mode
 

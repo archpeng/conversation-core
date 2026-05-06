@@ -64,6 +64,7 @@ stop_boundary:
 1. Do not add executor implementations.
 2. Do not call `pi-coding-agent` runtime.
 3. Do not implement PMS client behavior here.
+
 ## Machine State
 
 - active_step: `P2`
@@ -98,6 +99,7 @@ stop_boundary:
   - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_PLAN.md`
   - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_STATUS.md`
   - `/home/peng/dt-git/github/pms-agent-v2/docs/plan/pms-agent-v2-ai-native-mvp-v1-2026-05-06_WORKSET.md`
+
 ## Current Evidence
 
 1. Roadmap SSOT exists at `docs/roadmap/ai-native-pms-agent-monorepo-roadmap.md`.

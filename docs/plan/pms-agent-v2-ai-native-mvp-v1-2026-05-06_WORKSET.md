@@ -58,6 +58,7 @@ stop_boundary:
 1. Do not add executor implementations.
 2. Do not call `pi-coding-agent` runtime.
 3. Do not implement PMS client behavior here.
+
 ## Detailed Execution Queue
 
 ### `P1` workset — adapter-contracts-only
