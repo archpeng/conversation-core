@@ -2,91 +2,50 @@
 
 ## Active Pack
 
-- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_PLAN.md`
-- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_STATUS.md`
-- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_WORKSET.md`
-
-## Current Active Slice
-
-- `C0`
-
-## Intended Handoff
-
-- `execute-plan`
-
-## Autopilot Transition Contract
-
-- If active slice owner/state is `execute-plan` / `READY`, dispatch `execute` for the current active slice.
-- `execute/completed` means implementation evidence is ready for same-slice `review`; it does not advance the active slice by itself.
-- `review/completed` is the accepted-slice writeback point: mark the reviewed slice done, set the next stage as `Current Active Slice`, and set `Intended Handoff` from that next stage owner.
-- `review/continue` keeps the same active slice and dispatches another bounded `execute` cycle.
-- `needs_replan` dispatches `replan`; `blocked`/`failed` stop; `done` is reserved for full objective or `PACK_COMPLETE` closeout.
-- `PACK_COMPLETE` with `Intended Handoff` `autopilot-closeout` is the only terminal parser state.
-- `currentWave/maxWaves`, human wave numbering, and closeout prose are not completion proof; closeout is forbidden while `Current Active Slice` is any non-`PACK_COMPLETE` stage.
+- None
 
 ## Status
 
-- Active parser pack: `pms-agent-llm-capability-c0-c5-v1-2026-05-06`
-- Current active slice: `C0`
-- Current active state: `READY`
-- Next runnable phase: `execute`
-- Latest closed pack: `pms-agent-workbench-w0-w2-v1-2026-05-06`
+- Active parser pack: `none`
+- Current active slice: `none`
+- Current active state: `PACK_COMPLETE`
+- Next runnable phase: `none`
+- Latest closed pack: `pms-agent-llm-capability-c0-c5-v1-2026-05-06`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
-
-## Active Pack Files
-
-- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_PLAN.md`
-- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_STATUS.md`
-- `docs/plan/pms-agent-llm-capability-c0-c5-v1-2026-05-06_WORKSET.md`
-
-## Active Pack Summary
-
-Goal:
-
-- Release LLM capability through typed intent, gated planning, structured session state, authority-labeled context, evidence-grounded response synthesis, and eval pressure without granting naked tools or weakening Safety Gateway.
-
-Active slice:
-
-- `C0` typed-intent-slot-contract
-
-Bitter Lesson-compatible design laws:
-
-1. Contract is interface, not intelligence.
-2. LLM chooses among gated actions.
-3. Context is retrieved and authority-labeled.
-4. PMS evidence is environment observation.
-5. Eval creates selection pressure.
-
-Continuous ladder:
-
-```text
-C0 -> C1 -> C2 -> C3 -> C4 -> C5 -> PACK_COMPLETE
-```
 
 ## Latest Closed Pack
 
 Closed pack archive:
 
-- `docs/plan-archive/pms-agent-workbench-w0-w2-v1-2026-05-06/pms-agent-workbench-w0-w2-v1-2026-05-06_PLAN.md`
-- `docs/plan-archive/pms-agent-workbench-w0-w2-v1-2026-05-06/pms-agent-workbench-w0-w2-v1-2026-05-06_STATUS.md`
-- `docs/plan-archive/pms-agent-workbench-w0-w2-v1-2026-05-06/pms-agent-workbench-w0-w2-v1-2026-05-06_WORKSET.md`
-- `docs/plan-archive/pms-agent-workbench-w0-w2-v1-2026-05-06/pms-agent-workbench-w0-w2-v1-2026-05-06_CLOSEOUT.md`
+- `docs/plan-archive/pms-agent-llm-capability-c0-c5-v1-2026-05-06/pms-agent-llm-capability-c0-c5-v1-2026-05-06_PLAN.md`
+- `docs/plan-archive/pms-agent-llm-capability-c0-c5-v1-2026-05-06/pms-agent-llm-capability-c0-c5-v1-2026-05-06_STATUS.md`
+- `docs/plan-archive/pms-agent-llm-capability-c0-c5-v1-2026-05-06/pms-agent-llm-capability-c0-c5-v1-2026-05-06_WORKSET.md`
+- `docs/plan-archive/pms-agent-llm-capability-c0-c5-v1-2026-05-06/pms-agent-llm-capability-c0-c5-v1-2026-05-06_CLOSEOUT.md`
 
 Closed pack result:
 
-- W0 workspace/memory boundary docs accepted.
-- W1 `packages/workspace-core` accepted.
-- W2 `packages/workspace-tools` plus Safety Gateway workspace capability support accepted.
-- W0-W2 first-phase hard boundaries proven by docs, tests, build, guard, eval, and review evidence.
+- C0 typed intent/slot frame contract accepted.
+- C1 visible gated tool-planning contract accepted.
+- C2 redacted structured session state accepted.
+- C3 authority-labeled context builder accepted.
+- C4 evidence-grounded response synthesis accepted.
+- C5 eval capability pressure accepted.
+- Final validation passed: `pnpm build`, `pnpm test`, `pnpm guard:boundaries`, `node packages/evals/dist/index.js`, and `git diff --check`.
 
-Residuals for successor packs not claimed by the active C-pack:
+Residuals for successor packs not claimed by the closed C-pack:
 
-- Full Skill Proposal Flow hardening and admin runtime migration to `workspace_*` tools
+- Full admin proposal runtime migration to `workspace_*` tools
 - Full proposal Eval Runner with persisted `evals/{runId}/` outputs
 - Approval/Promote/Archive
 - Daily Sweep
 - production DB/object storage
+- production credential/live PMS mutation validation
+- deeper live LLM planner integration replacing remaining deterministic customer-loop heuristics if future ownership is clear
+
+## Prior Closed Pack
+
+- `docs/plan-archive/pms-agent-workbench-w0-w2-v1-2026-05-06/`
 
 ## Parser Scope Contract
 

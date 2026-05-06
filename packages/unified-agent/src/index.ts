@@ -1,4 +1,8 @@
-export { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState, type RedactedTurnRef } from "./continuity.js";
+export { looksLikeCurrentPmsFactReply, synthesizeAgentResult, synthesizeTextReply, type ResponseSynthesisDraft, type ResponseSynthesisFailureReason, type ResponseSynthesisInput, type ResponseSynthesisResult } from "./response-synthesis.js";
+export { buildContextBundle, contextBundlePrompt, workspaceAdvisoryFromToolValue, type BuildContextBundleInput, type ContextAuthority, type ContextBundle, type ContextBundleItem, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
+export { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan, type ExecuteToolPlanResult, type ToolPlanAction, type ToolPlanValidationResult, type VisibleGatedToolManifestItem } from "./tool-plan.js";
+export { clarificationFromMissingSlot, parseIntentFrame, type IntentFrame, type IntentFrameIntent, type IntentFrameParseResult, type IntentSlotName, type IntentSlotState } from "./intent-frame.js";
+export { continuityPrompt, createRedactedSessionState, mergeIntentFrameIntoSessionState, rememberRefs, rememberTurn, sessionRequiresPmsEvidence, sessionSlotValue, type RedactedSessionState, type RedactedTurnRef, type SessionSafetyFlag, type SessionSlotMemory } from "./continuity.js";
 export { type PiAgentSession, type PiCreateAgentSession, type PiCreateAgentSessionOptions, type PiResourceLoaderFactory, type PiToolDefinition, type PiToolResult } from "./pi-session.js";
 export { buildSystemPrompt } from "./prompt.js";
 export { loadAgentProfile, type UnifiedAgentProfile, type UnifiedAgentProfileId } from "./profile.js";

@@ -3,6 +3,7 @@ import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
 import type { PiToolDefinition } from "./pi-session.js";
 import type { RedactedSessionState } from "./continuity.js";
+import { sessionSlotValue } from "./continuity.js";
 
 export type CustomerLoopResult = {
   result: AgentResult;
@@ -35,10 +36,10 @@ function detectIntent(message: string, state: RedactedSessionState): Intent {
 }
 
 async function availabilityReply(turn: FeishuTurnInput, tools: readonly PiToolDefinition[], state: RedactedSessionState): Promise<CustomerLoopResult> {
-  if (!hasDateCue(turn.message.text)) {
+  if (!hasDateCue(turn.message.text) && !sessionSlotValue(state, "stay_date")) {
     return { result: { type: "refusal", reason: "invalid_request", message: "请先提供入住和离店日期。" } };
   }
-  if (!hasRoomTypeCue(turn.message.text) && !hasFollowUpEvidenceCue(turn.message.text, state)) {
+  if (!hasRoomTypeCue(turn.message.text) && !sessionSlotValue(state, "room_type") && !hasFollowUpEvidenceCue(turn.message.text, state)) {
     return { result: { type: "refusal", reason: "invalid_request", message: "请先提供要查询的房型。" } };
   }
 

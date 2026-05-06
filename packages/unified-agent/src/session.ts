@@ -1,11 +1,14 @@
 import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import type { SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
+import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import { buildContextBundle, contextBundlePrompt, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
 import { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState } from "./continuity.js";
 import type { PiAgentSession, PiAssistantEvent, PiCreateAgentSession, PiResourceLoaderFactory, PiToolDefinition } from "./pi-session.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { loadAgentProfile, type UnifiedAgentProfile } from "./profile.js";
 import { runCustomerPmsLoop } from "./customer-loop.js";
 import { runAdminProposalLoop } from "./proposal-loop.js";
+import { synthesizeTextReply } from "./response-synthesis.js";
 import { registerGatedTools, type UnifiedAgentToolExecutors } from "./tool-registration.js";
 
 export type UnifiedAgentSession = {
@@ -33,6 +36,9 @@ export type CreateUnifiedAgentSessionInput = {
 export type RunAgentTurnOptions = {
   evidenceRefs?: readonly string[];
   pendingActionRefs?: readonly string[];
+  workspaceAdvisory?: readonly WorkspaceAdvisoryContextInput[];
+  pmsEvidence?: readonly PmsEvidence<unknown>[];
+  modelPriorSummary?: string;
 };
 
 export async function createUnifiedAgentSession(input: CreateUnifiedAgentSessionInput): Promise<UnifiedAgentSession> {
@@ -70,7 +76,7 @@ export async function createUnifiedAgentSession(input: CreateUnifiedAgentSession
 
 export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions = {}): Promise<AgentResult> {
   rememberTurn(session.state, turn, options);
-  const assistantText = await promptAssistantText(session.piSession, turnPrompt(session, turn));
+  const assistantText = await promptAssistantText(session.piSession, turnPrompt(session, turn, options));
 
   if (session.profile.id === "customer_pms") {
     const customerResult = await runCustomerPmsLoop({ turn, tools: session.tools, state: session.state });
@@ -86,7 +92,18 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   }
 
   const text = assistantText.trim() || fallbackNaturalReply(turn);
-  return { type: "text", text };
+  return synthesizeTextReply({
+    text,
+    evidenceRefs: options.evidenceRefs,
+    pmsEvidence: options.pmsEvidence,
+    context: buildContextBundle({
+      state: session.state,
+      userMessage: turn.message.text,
+      workspaceAdvisory: options.workspaceAdvisory,
+      pmsEvidence: options.pmsEvidence,
+      modelPriorSummary: options.modelPriorSummary
+    })
+  }).result;
 }
 
 async function promptAssistantText(piSession: PiAgentSession, prompt: string): Promise<string> {
@@ -153,11 +170,18 @@ function fallbackNaturalReply(turn: FeishuTurnInput): string {
   return "我在。可以帮你查询 PMS 房态、整理预订信息，或生成需要审批的操作卡片。涉及实时房态、价格或订单状态时，我会以 PMS 平台证据为准。";
 }
 
-function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput): string {
+function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions): string {
   return [
     ...(session.systemPromptInjected ? [] : [session.systemPrompt]),
     "Continuity refs:",
     continuityPrompt(session.state),
+    contextBundlePrompt(buildContextBundle({
+      state: session.state,
+      userMessage: turn.message.text,
+      workspaceAdvisory: options.workspaceAdvisory,
+      pmsEvidence: options.pmsEvidence,
+      modelPriorSummary: options.modelPriorSummary
+    })),
     "User message:",
     turn.message.text
   ].join("\n");

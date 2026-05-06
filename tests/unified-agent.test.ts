@@ -166,6 +166,66 @@ describe("unified Agent runtime", () => {
     expect(session.state.turnRefs).toHaveLength(2);
   });
 
+  it("injects supplied authority-labeled context into turn prompts", async () => {
+    const prompts: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSession([], prompts)
+    });
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "availability from PMS evidence",
+      data: { available: true }
+    });
+
+    await runAgentTurn(session, baseTurn, {
+      workspaceAdvisory: [{ source: "workspace.active.skills/rate.md", summary: "advisory note only" }],
+      pmsEvidence: [evidence],
+      modelPriorSummary: "ask for missing dates"
+    });
+
+    expect(prompts[0]).toContain("Authority-labeled context:");
+    expect(prompts[0]).toContain("authority=workspace_advisory");
+    expect(prompts[0]).toContain("source=workspace.active.skills/rate.md");
+    expect(prompts[0]).toContain("authority=pms_evidence");
+    expect(prompts[0]).toContain(`evidenceRefs=${evidence.evidenceRef}`);
+    expect(prompts[0]).toContain("authority=model_prior");
+  });
+
+  it("validates assistant PMS fact text instead of relying on prompt-only policy", async () => {
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText("PMS 证据显示有 3 个可订候选。")
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "普通聊天，不触发房态工具" } });
+
+    expect(result).toMatchObject({ type: "refusal", reason: "invalid_request", message: "Current PMS facts require pms-platform evidence refs." });
+  });
+
+  it("passes assistant PMS fact text when current PMS evidence is supplied to synthesis", async () => {
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "availability",
+      data: { available: true }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(`PMS 证据显示有 1 个可订候选。evidenceRefs=${evidence.evidenceRef}`)
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "普通聊天，不触发房态工具" } }, { pmsEvidence: [evidence], evidenceRefs: [evidence.evidenceRef] });
+
+    expect(result).toEqual({ type: "text", text: `PMS 证据显示有 1 个可订候选。evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
+  });
+
   it("does not convert prior session text into PMS evidence", async () => {
     const prompts: string[] = [];
     const session = await createUnifiedAgentSession({

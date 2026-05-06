@@ -15,27 +15,27 @@ Last updated: 2026-05-06
 
 ## Current Step
 
-- active_step: `C0`
-- mode: `ready_for_execute`
-- owner: `execute-plan`
-- state: `READY`
+- active_step: `PACK_COMPLETE`
+- mode: `closed`
+- owner: `autopilot-closeout`
+- state: `PACK_COMPLETE`
 
 ## Planned Stages
 
-- [ ] `C0` typed-intent-slot-contract
-- [ ] `C1` llm-gated-tool-planning
-- [ ] `C2` structured-session-state
-- [ ] `C3` context-builder-advisory-injection
-- [ ] `C4` evidence-grounded-response-synthesis
-- [ ] `C5` eval-capability-pressure
-- [ ] `PACK_COMPLETE` closeout-and-archive
+- [x] `C0` typed-intent-slot-contract
+- [x] `C1` llm-gated-tool-planning
+- [x] `C2` structured-session-state
+- [x] `C3` context-builder-advisory-injection
+- [x] `C4` evidence-grounded-response-synthesis
+- [x] `C5` eval-capability-pressure
+- [x] `PACK_COMPLETE` closeout-and-archive
 
 ## Current Master Plan
 
 - Current wave: `llm-capability-release`
-- Current wave stage: `C0`
-- Current wave stage state: `READY`
-- Best next wave step to execute now: `C0 typed-intent-slot-contract`
+- Current wave stage: `PACK_COMPLETE`
+- Current wave stage state: `PACK_COMPLETE`
+- Best next wave step to execute now: `none`
 - Objective boundary: release LLM ability through typed contracts, gated planning, structured state, authority-labeled context, evidence-grounded response, and eval pressure. Do not implement approval/promote/archive, production storage, daily sweep, raw tool exposure, or full admin proposal migration in this pack.
 
 ## Bitter Lesson Design Principles
@@ -48,56 +48,51 @@ Last updated: 2026-05-06
 
 ## Immediate Focus
 
-### `C0`
+### `PACK_COMPLETE`
 
-- Owner: `execute-plan`
-- State: `READY`
-- Priority: `critical`
+- Owner: `autopilot-closeout`
+- State: `PACK_COMPLETE`
+- Priority: `terminal`
 
 目标：
 
-- Define the minimal typed intent / slot extraction contract that lets LLM understanding become runtime-verifiable without encoding a full business workflow tree.
+- Close the C0-C5 pack only after accepted reviews prove all slices complete and no non-deferred C-pack work remains.
 
 必须交付：
 
-1. Typed intent frame / slot state / missing-slot / ambiguity/confidence contract under the dominant owner surface, expected to be `packages/unified-agent` unless current code proves a narrower contract location.
-2. Runtime parser/validator entrypoint for model-produced intent frames.
-3. Tests proving valid frames pass, invalid frames fail, and contract shape does not become keyword-rule intelligence.
-4. Documentation or inline contract note that C0 is an interface, not the business brain.
+1. Closeout artifact summarizing C0-C5 deliverables, Bitter Lesson compliance, validation evidence, and residuals.
+2. Hot/cold plan hygiene: completed pack archived under `docs/plan-archive/`; `docs/plan/README.md` reset to no active pack.
+3. Residual handoff for admin proposal runtime migration, full proposal Eval Runner, Approval/Promote/Archive, Daily Sweep, and production storage.
 
 done_when:
 
-1. Intent/slot contract exists and is imported by runtime-facing tests.
-2. Tests prove missing slots are represented structurally and one focused clarification can be derived without hardcoding full workflows.
-3. Static review finds no broad keyword router or deterministic business decision tree introduced as C0 intelligence.
-4. `pnpm build`, targeted tests, `pnpm guard:boundaries`, and `git diff --check` pass.
+1. C0-C5 are accepted by review and marked done.
+2. Final validation passes: `pnpm build`, `pnpm test`, `pnpm guard:boundaries`, `pnpm eval`, `plan_sync`, and `git diff --check`.
+3. Closeout artifact records evidence and residual handoff.
+4. Hot parser surface contains only allowed active/no-active parser files after archive.
 
 stop_boundary:
 
-1. If implementation needs broad regex/keyword routing to pass, stop and replan C0.
-2. If the contract starts deciding Safety Gateway policy or PMS fact truth, stop and replan.
-3. If C0 requires raw tool exposure or direct PMS calls, stop immediately.
+1. If any C0-C5 slice remains active, queued, failed, or needs review, hand back to that slice.
+2. If final implementation violates Bitter Lesson-compatible principles by replacing LLM planning with broad hand-written workflows, replan before closeout.
+3. If Safety Gateway is no longer the unique execution boundary, closeout is forbidden.
 
 必须避免：
 
-1. Do not encode all booking workflows into schema enums/if-else logic.
-2. Do not treat user claims or session memory as PMS facts.
-3. Do not add generic NLU framework abstractions unless a failing test proves the need.
-
+1. Do not claim production readiness or full lifecycle completion.
+2. Do not archive before parser truth and closeout evidence are aligned.
+3. Do not hide residuals created by C-pack scope cuts.
 ## Machine State
 
-- active_step: `C0`
-- latest_completed_step: `none`
-- intended_handoff: `execute-plan`
-- owner: `execute-plan`
-- state: `READY`
-- latest_plan_summary: Created C0-C5 LLM capability release pack with Bitter Lesson-compatible principles and single-root parser-compatible active truth.
+- active_step: `PACK_COMPLETE`
+- latest_completed_step: `PACK_COMPLETE`
+- intended_handoff: `none`
+- latest_closeout_summary: C0-C5 LLM capability pack closed and archived; hot parser surface reset to no active pack.
 - latest_verification:
-  - `plan_sync before creation returned no active plans in docs/plan.`
-  - `workspace_scan before creation showed main branch clean with dirty_files=0.`
-  - `Read docs/plan/README.md, AGENTS.md, docs/ARCHITECTURE_CONSTRAINTS.md, docs/WORKSPACE.md, and docs/MEMORY_BOUNDARY.md before creating the pack.`
-  - `Hot parser surface previously contained only docs/plan/README.md.`
-
+  - `C0-C5 are accepted by review and marked done in STATUS/WORKSET before archive.`
+  - `Final validation passed: pnpm build; pnpm test passed 20 files / 126 tests and ran guard plus eval; pnpm guard:boundaries; node packages/evals/dist/index.js ok=true passed=13 total=13; git diff --check; pre-archive plan_sync showed STATUS/WORKSET done=6 pending=1.`
+  - `Closeout artifact records C0-C5 evidence, Bitter Lesson compliance, validation evidence, residual handoff, and plan hygiene.`
+  - `Hot parser surface will contain only docs/plan/README.md after archive; completed pack files move under docs/plan-archive/pms-agent-llm-capability-c0-c5-v1-2026-05-06/.`
 ## Autopilot Transition Contract
 
 - If active slice owner/state is `execute-plan` / `READY`, dispatch `execute` for the current active slice.
@@ -116,7 +111,7 @@ stop_boundary:
 
 ## Next Step
 
-- Execute `C0` with `execute-plan`.
+- PACK_COMPLETE closeout completed; no active pack remains in `docs/plan/`.
 
 ## Blockers
 
@@ -124,23 +119,25 @@ stop_boundary:
 
 ## Gate State
 
-- C0: `READY`.
-- C1: `QUEUED`.
-- C2: `QUEUED`.
-- C3: `QUEUED`.
-- C4: `QUEUED`.
-- C5: `QUEUED`.
-- PACK_COMPLETE: `QUEUED`.
+- C0: `DONE`.
+- C1: `DONE`.
+- C2: `DONE`.
+- C3: `DONE`.
+- C4: `DONE`.
+- C5: `DONE`.
+- PACK_COMPLETE: `PACK_COMPLETE`.
 
 ## Validation Shape
 
-For active C0:
+For active PACK_COMPLETE:
 
 ```bash
 pnpm build
-pnpm vitest run <targeted C0 tests>
+pnpm test
 pnpm guard:boundaries
+pnpm eval
 git diff --check
+plan_sync docs/plan
 ```
 
 Full-pack later gates add:
