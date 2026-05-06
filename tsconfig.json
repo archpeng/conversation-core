@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "apps/agent-service" },
+    { "path": "packages/adapter-contracts" },
+    { "path": "packages/unified-agent" },
+    { "path": "packages/safety-gateway" },
+    { "path": "packages/gated-tools" },
+    { "path": "packages/pms-platform-client" },
+    { "path": "packages/evals" }
+  ]
+}
