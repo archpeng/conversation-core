@@ -35,6 +35,7 @@ describe("PMS Platform client evidence", () => {
 
     expect(availability.data.rooms).toEqual([]);
     expect(availability.summary).toBe("Availability search returned 0 rooms.");
+    expect(calls[1].body).toMatchObject({ checkInDate: "2026-05-06", checkOutDate: "2026-05-07", startDate: "2026-05-06", endDate: "2026-05-07" });
     expect(prepareConfirm.data).toMatchObject({ pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" });
     expect(pendingStatus.data).toEqual({ pendingActionId: "pending_1", status: "pending" });
     expect(calls.map((call) => call.url)).toEqual([
@@ -48,6 +49,30 @@ describe("PMS Platform client evidence", () => {
       "https://pms.local/v1/pms/reservation-drafts/prepare-confirm",
       "https://pms.local/v1/pms/pending-actions/status"
     ]);
+  });
+
+  it("accepts current pms-platform local availability envelopes", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          operation: "pms_availability_search",
+          readModel: {
+            candidates: [
+              { roomId: "room-A1", roomNumber: "A1", propertyId: "property-small-hotel", roomType: "花园别墅" }
+            ]
+          }
+        })
+      }),
+      now: () => new Date("2026-05-06T12:00:00.000Z")
+    });
+
+    const evidence = await client.searchAvailability({ tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-06", checkOutDate: "2026-05-07" });
+
+    expect(evidence.data.rooms).toEqual([{ roomId: "room-A1", roomType: "花园别墅", available: true }]);
   });
 
   it("keeps the client method set typed and MVP-only", () => {

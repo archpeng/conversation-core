@@ -156,13 +156,40 @@ export function parseHealthResult(value: unknown): HealthResult {
 
 export function parseCapabilityManifest(value: unknown): PmsCapabilityManifest {
   const object = assertRecord(value, "capabilities response");
-  const capabilities = assertArray(object.capabilities, "capabilities").map((item, index) => assertText(item, `capabilities[${index}]`));
+  const source = isPlainRecord(object.manifest) ? object.manifest : object;
+  const rawCapabilities = assertArray(source.capabilities, "capabilities");
+  const capabilities = rawCapabilities.map((item, index) => {
+    if (typeof item === "string") return assertText(item, `capabilities[${index}]`);
+    const record = assertRecord(item, `capabilities[${index}]`);
+    return assertText(record.operation, `capabilities[${index}].operation`);
+  });
   return { capabilities };
 }
 
 export function parseAvailabilitySearchResult(value: unknown): AvailabilitySearchResult {
   const object = assertRecord(value, "availability response");
-  const rooms = assertArray(object.rooms, "rooms").map((room, index) => {
+  if (Array.isArray(object.rooms)) return { rooms: parseRooms(object.rooms) };
+
+  const readModel = isPlainRecord(object.readModel) ? object.readModel : undefined;
+  const candidates = Array.isArray(readModel?.candidates) ? readModel.candidates : undefined;
+  if (candidates) {
+    return {
+      rooms: candidates.map((candidate: unknown, index: number) => {
+        const item = assertRecord(candidate, `candidates[${index}]`);
+        return {
+          roomId: assertText(item.roomId, `candidates[${index}].roomId`),
+          roomType: typeof item.roomType === "string" && item.roomType.trim() ? item.roomType : "unknown",
+          available: true
+        };
+      })
+    };
+  }
+
+  throw new Error("availability response must contain rooms or readModel.candidates");
+}
+
+function parseRooms(rooms: unknown[]): RoomAvailability[] {
+  return rooms.map((room, index) => {
     const item = assertRecord(room, `rooms[${index}]`);
     const parsed: RoomAvailability = {
       roomId: assertText(item.roomId, `rooms[${index}].roomId`),
@@ -172,7 +199,6 @@ export function parseAvailabilitySearchResult(value: unknown): AvailabilitySearc
     if (typeof item.priceCents === "number") parsed.priceCents = item.priceCents;
     return parsed;
   });
-  return { rooms };
 }
 
 export function parseRoomFact(value: unknown): RoomFact {
@@ -234,6 +260,10 @@ export function parsePendingActionStatusFact(value: unknown): PendingActionStatu
     pendingActionId: assertText(object.pendingActionId, "pendingActionId"),
     status
   };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function assertLiteral<T extends string>(value: unknown, expected: T, field: string): T {

@@ -38,3 +38,32 @@ Future execution, review, and closeout should start from `/home/peng/dt-git/gith
 ## MVP closeout scope
 
 This closed MVP includes the monorepo scaffold, adapter contracts, Safety Gateway, gated tools, PMS evidence client, unified Agent runtime, service API, customer/admin loops, sandbox hardening, audit/eval proof, and local integration smoke.
+
+## Runtime start
+
+Build first, then start the agent service:
+
+```bash
+pnpm build
+PMS_AGENT_SERVICE_HOST=127.0.0.1 \
+PMS_AGENT_SERVICE_PORT=8792 \
+PMS_AGENT_AUTH_TOKEN=agent-token \
+PMS_PLATFORM_BASE_URL=http://127.0.0.1:8791 \
+PMS_PLATFORM_AUTH_TOKEN=local-pms-token \
+PMS_AGENT_PROPOSAL_WORKSPACE=.local/pms-agent-proposals \
+PMS_AGENT_PI_MODE=real \
+pnpm start
+```
+
+Runtime env:
+
+| Env | Purpose |
+| --- | --- |
+| `PMS_AGENT_SERVICE_HOST` / `PMS_AGENT_SERVICE_PORT` | HTTP bind host/port for `/health`, `/v1/feishu-turn`, and `/v1/eval-turn`. |
+| `PMS_AGENT_AUTH_TOKEN` | Optional inbound token required in `X-PMS-AGENT-TOKEN`; set this when adapter-feishu calls the service. |
+| `PMS_PLATFORM_BASE_URL` / `PMS_PLATFORM_AUTH_TOKEN` | PMS Platform HTTP base URL and bearer token for evidence reads. |
+| `PMS_AGENT_PROPOSAL_WORKSPACE` | Workspace root for admin proposal artifacts. |
+| `PMS_AGENT_PI_MODE` | `real` uses `pi-coding-agent` SDK; `stub` is for deterministic local smoke only. |
+| `PMS_AGENT_PI_SESSION_MODE` | `memory` or `persistent` SDK session manager. |
+| `PMS_AGENT_PI_MODEL_PROVIDER` / `PMS_AGENT_PI_MODEL_ID` | Optional model override resolved through Pi's `ModelRegistry`. |
+| `PMS_AGENT_DEFAULT_CHECK_IN_DATE` / `PMS_AGENT_DEFAULT_CHECK_OUT_DATE` / `PMS_AGENT_DEFAULT_ROOM_TYPE` | Local MVP defaults used by the deterministic PMS availability executor. |

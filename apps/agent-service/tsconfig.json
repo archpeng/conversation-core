@@ -9,6 +9,8 @@
   "references": [
     { "path": "../../packages/adapter-contracts" },
     { "path": "../../packages/gated-tools" },
+    { "path": "../../packages/pms-platform-client" },
+    { "path": "../../packages/safety-gateway" },
     { "path": "../../packages/unified-agent" }
   ]
 }

@@ -110,7 +110,7 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
     },
     searchAvailability: (input) => {
       validateInput("searchAvailability", () => validateSearchAvailabilityInput(input));
-      return requestEvidence(options, now, "searchAvailability", input.tenantId, { method: "POST", route: "/v1/pms/availability/search", body: input }, parseAvailabilitySearchResult, availabilitySummary);
+      return requestEvidence(options, now, "searchAvailability", input.tenantId, { method: "POST", route: "/v1/pms/availability/search", body: availabilityRequestBody(input) }, parseAvailabilitySearchResult, availabilitySummary);
     },
     getRoom: (input) => {
       validateInput("getRoom", () => validateGetRoomInput(input));
@@ -197,6 +197,15 @@ function validateInput(operation: string, validate: () => void): void {
 
 function urlFor(baseUrl: string, route: PmsRoute): string {
   return `${baseUrl.replace(/\/$/, "")}${route}`;
+}
+
+function availabilityRequestBody(input: SearchAvailabilityInput): Record<string, unknown> {
+  return {
+    ...input,
+    startDate: input.checkInDate,
+    endDate: input.checkOutDate,
+    ...(input.roomType ? { roomTypeKeyword: input.roomType } : {})
+  };
 }
 
 function headers(authToken: string | undefined, body: unknown): Record<string, string> {

@@ -18,7 +18,7 @@ adapter-feishu mock
 
 It is not a deployment, rollout, or production-readiness claim.
 
-## Run
+## Run deterministic test smoke
 
 ```bash
 pnpm exec vitest run tests/integration-smoke.test.ts
@@ -29,6 +29,48 @@ The full local validation also runs this smoke through:
 ```bash
 pnpm test
 ```
+
+## Run local real HTTP smoke
+
+Use three local processes with deterministic Pi stub mode and real HTTP between repos:
+
+```bash
+# terminal 1
+cd /home/peng/dt-git/github/pms-platform
+PMS_PLATFORM_LOCAL_HOST=127.0.0.1 \
+PMS_PLATFORM_LOCAL_PORT=8791 \
+PMS_PLATFORM_LOCAL_AUTH_TOKEN=local-pms-token \
+PMS_PLATFORM_SANDBOX_RESET_ON_START=true \
+npm run start:local-api
+
+# terminal 2
+cd /home/peng/dt-git/github/pms-agent-v2
+PMS_AGENT_SERVICE_HOST=127.0.0.1 \
+PMS_AGENT_SERVICE_PORT=8792 \
+PMS_AGENT_AUTH_TOKEN=agent-token \
+PMS_PLATFORM_BASE_URL=http://127.0.0.1:8791 \
+PMS_PLATFORM_AUTH_TOKEN=local-pms-token \
+PMS_AGENT_PI_MODE=stub \
+PMS_AGENT_DEFAULT_CHECK_IN_DATE=2026-05-06 \
+PMS_AGENT_DEFAULT_CHECK_OUT_DATE=2026-05-07 \
+pnpm start
+
+# terminal 3
+cd /home/peng/dt-git/github/adapter-feishu
+FEISHU_APP_ID=cli_fake_app \
+FEISHU_APP_SECRET=cli_fake_secret \
+ADAPTER_FEISHU_INGRESS_MODE=webhook \
+ADAPTER_FEISHU_HOST=127.0.0.1 \
+ADAPTER_FEISHU_PORT=8787 \
+FEISHU_HOME_CHANNEL=oc-smoke \
+PMS_AGENT_TURN_URL=http://127.0.0.1:8792/v1/feishu-turn \
+PMS_AGENT_AUTH_TOKEN=agent-token \
+PMS_PLATFORM_PENDING_ACTION_BASE_URL=http://127.0.0.1:8791 \
+PMS_PLATFORM_PENDING_ACTION_TOKEN=local-pms-token \
+npm start
+```
+
+Then POST a Feishu message webhook mock to adapter-feishu `/webhook`. In fake-credential smoke, adapter forwarding to `pms-agent-v2` should return `AgentResult.type = text`; final Feishu delivery may fail because fake Feishu credentials are intentionally not live.
 
 ## Covered MVP loops
 
