@@ -2,6 +2,8 @@
 
 `pi-coding-agent` is the Agent core. It owns understanding, planning, tool-call intent, and response drafting. It does not own permissions, PMS truth, or final mutation authority.
 
+Long-term architecture and AI-readability constraints are the active SSOT in `docs/ARCHITECTURE_CONSTRAINTS.md`.
+
 ## Planes
 
 | Plane | Owns | Must not own |
