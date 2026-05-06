@@ -261,9 +261,48 @@ second runtime selector beyond deterministic test stub
 LLM bypass around gated tools
 ```
 
+### R0.1. LLM-first turn ordering is mandatory
+
+Normal Feishu/user turns must be LLM-first. The runtime may use deterministic guardrails, validators, typed parsers, and bounded workflow scaffolding, but they are not allowed to preempt the Pi/LLM session as the primary understanding/planning surface.
+
+Required live ordering:
+
+```text
+FeishuTurnInput
+  -> pi-coding-agent / LLM observes the authority-labeled prompt
+  -> typed intent or tool-plan contract where applicable
+  -> runtime validates shape and profile-visible tools
+  -> Safety Gateway decides side effects
+  -> PMS/platform/workspace executor returns evidence/proposal/audit result
+  -> response synthesis validates final AgentResult
+```
+
+Allowed deterministic code:
+
+```text
+input/output validation
+Safety Gateway decisions
+evidence-ref validation
+approval-card gating
+redaction and audit shaping
+bounded legacy scaffolding after LLM observation while live tool-plan wiring is incomplete
+explicit test stubs
+```
+
+Forbidden runtime direction:
+
+```text
+skipping LLM on live Feishu turns because a regex workflow can answer
+turning LLM into a latency fallback after deterministic business routing
+expanding customer-loop/proposal-loop into the primary business brain
+using prompt policy instead of Safety Gateway or PMS evidence validation
+```
+
+Any change that intentionally bypasses the LLM for live user turns must be treated as a replan-level architecture change and needs explicit plan/workset approval plus regression proof.
+
 ### R1. Deterministic loops are temporary product scaffolding
 
-Current deterministic loops are allowed only as bounded MVP scaffolding:
+Current deterministic loops are allowed only as bounded MVP scaffolding after LLM observation, while live typed planner integration is incomplete:
 
 ```text
 customer-loop.ts
@@ -277,6 +316,7 @@ They must obey:
 3. They may not expand into broad business workflow engines.
 4. Any new regex intent rule must have a targeted test and must not replace a planned typed Agent/tool contract.
 5. If a loop starts carrying slots, policy, and response synthesis together, split it into typed intent/slot state + gated tool planning + response synthesis.
+6. They must not be moved before the Pi/LLM prompt path for live Feishu turns unless a new plan explicitly changes the LLM-first architecture law.
 
 ### R2. LLM capability must be released through typed gated tools
 

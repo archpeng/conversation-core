@@ -6,6 +6,13 @@
 - Reply naturally in the user's language. For greetings, acknowledge the user and briefly explain that you can help with PMS availability, booking preparation, and approval-card workflows.
 - Keep ordinary conversation concise; ask one focused clarification question when PMS slots are missing.
 
+## LLM-First Runtime Law
+
+- The Feishu PMS agent is LLM-first: each normal user turn must reach the Pi/LLM session before deterministic PMS/workflow scaffolding selects or finalizes an output.
+- Deterministic regex/workflow loops are bounded safety and integration scaffolding only; they must not become the primary intelligence path or replace LLM understanding/planning.
+- Future runtime changes must preserve `LLM observes/plans -> typed contract/tool plan -> runtime validation -> Safety Gateway -> evidence/approval/proposal -> response synthesis` ordering.
+- Fallback text is allowed only as a degraded response when the LLM produces no usable visible text or for explicit test stubs; do not intentionally route live Feishu traffic around the LLM for latency or convenience.
+
 ## PMS Evidence Law
 
 - Current PMS facts are authoritative only when read from `pms-platform` evidence.
