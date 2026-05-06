@@ -29,6 +29,28 @@ export function decideToolRequest(request: ToolRequest): SafetyDecision {
     return buildDecision("allow", request, [allowReason("proposal_workspace_allowed", capability.id, capability.risk.level)], capability);
   }
 
+  if (capability.kind === "tenant_workspace") {
+    if (!proposalProfiles.has(request.actor.profile)) {
+      return buildDecision("deny", request, [constraintReason("customer_read_only", capability.id, capability.risk.level)], capability);
+    }
+    if (request.workspace?.kind !== "tenant_workspace" || !isTenantWorkspacePath(request.workspace.path, request.tenantId) || !isTenantWorkspacePath(request.target, request.tenantId)) {
+      return buildDecision("deny", request, [constraintReason("tenant_workspace_required", capability.id, capability.risk.level)], capability);
+    }
+    if (capability.id === "workspace_read" && !isTenantWorkspaceReadablePath(request.target, request.tenantId)) {
+      return buildDecision("deny", request, [constraintReason("tenant_workspace_required", capability.id, capability.risk.level)], capability);
+    }
+    if (capability.id === "workspace_list_active_skills" && !isTenantWorkspaceActiveSkillsPath(request.target, request.tenantId)) {
+      return buildDecision("deny", request, [constraintReason("tenant_workspace_required", capability.id, capability.risk.level)], capability);
+    }
+    if (capability.constraints.includes("workspace_proposal_required") && !isTenantWorkspaceProposalPath(request.target, request.tenantId)) {
+      return buildDecision("deny", request, [constraintReason("workspace_proposal_required", capability.id, capability.risk.level)], capability);
+    }
+    if (capability.constraints.includes("workspace_reason_required") && !hasText(request.reason)) {
+      return buildDecision("deny", request, [constraintReason("workspace_reason_required", capability.id, capability.risk.level)], capability);
+    }
+    return buildDecision("allow", request, [allowReason("tenant_workspace_allowed", capability.id, capability.risk.level)], capability);
+  }
+
   if (capability.kind === "sandbox") {
     if (!sandboxProfiles.has(request.actor.profile)) {
       return buildDecision("deny", request, [constraintReason("customer_read_only", capability.id, capability.risk.level)], capability);
@@ -90,9 +112,37 @@ function hasText(value: unknown): value is string {
 
 function isProposalWorkspacePath(path: unknown): path is string {
   return typeof path === "string"
-    && /^\/workspaces\/[^/]+\/proposal\/[A-Za-z0-9._/-]+$/.test(path)
+    && (/^\/workspaces\/[^/]+\/proposal\/[A-Za-z0-9._/-]+$/.test(path) || /^\/workspaces\/[A-Za-z0-9_-]{1,64}\/proposals\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9._/-]+$/.test(path))
     && !path.includes("..")
     && !hasBlockedPathSegment(path);
+}
+
+function isTenantWorkspacePath(path: unknown, tenantId: unknown): path is string {
+  return typeof path === "string"
+    && typeof tenantId === "string"
+    && path.startsWith(`/workspaces/${tenantId}/`)
+    && /^\/workspaces\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9._/-]+$/.test(path)
+    && !path.includes("..")
+    && !hasBlockedPathSegment(path);
+}
+
+function isTenantWorkspaceProposalPath(path: unknown, tenantId: unknown): path is string {
+  return isTenantWorkspacePath(path, tenantId)
+    && typeof path === "string"
+    && /^\/workspaces\/[A-Za-z0-9_-]{1,64}\/proposals\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9._/-]+$/.test(path);
+}
+
+function isTenantWorkspaceActiveSkillsPath(path: unknown, tenantId: unknown): path is string {
+  return isTenantWorkspacePath(path, tenantId)
+    && typeof path === "string"
+    && /^\/workspaces\/[A-Za-z0-9_-]{1,64}\/active\/skills\/[A-Za-z0-9._/-]+$/.test(path);
+}
+
+function isTenantWorkspaceReadablePath(path: unknown, tenantId: unknown): path is string {
+  return isTenantWorkspaceProposalPath(path, tenantId)
+    || isTenantWorkspaceActiveSkillsPath(path, tenantId)
+    || (isTenantWorkspacePath(path, tenantId) && typeof path === "string" && /^\/workspaces\/[A-Za-z0-9_-]{1,64}\/active\/policies\/[A-Za-z0-9._/-]+$/.test(path))
+    || (isTenantWorkspacePath(path, tenantId) && typeof path === "string" && /^\/workspaces\/[A-Za-z0-9_-]{1,64}\/(README|PROFILE)\.md$/.test(path));
 }
 
 function isSandboxWorkspacePath(path: unknown): path is string {
@@ -105,8 +155,10 @@ function isSandboxWorkspacePath(path: unknown): path is string {
 function hasBlockedPathSegment(path: string): boolean {
   return /(^|\/)production(\/|$)/i.test(path)
     || /(^|\/)root(\/|$)/i.test(path)
-    || /(^|\/)\.env(\/|$)/i.test(path)
-    || /(^|\/)env(\/|$)/i.test(path);
+    || /(^|\/)\.env(?:[./]|$)/i.test(path)
+    || /(^|\/)env(\/|$)/i.test(path)
+    || /(^|\/)(?:\.ssh|id_rsa|id_dsa|id_ecdsa|id_ed25519|private-key|secret|token|credential)(\/|$)/i.test(path)
+    || /\.(?:pem|key|p12|pfx|crt)$/i.test(path);
 }
 
 function isAllowedSandboxCommand(command: unknown): boolean {

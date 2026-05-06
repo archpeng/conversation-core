@@ -8,12 +8,16 @@ export type GatedToolRequest = {
   };
   tenantId?: string;
   workspace?: {
-    kind: "none" | "proposal" | "sandbox";
+    kind: "none" | "proposal" | "sandbox" | "tenant_workspace";
     path?: string;
   };
   pendingActionId?: string;
   target?: string;
   content?: string;
+  operation?: string;
+  reason?: string;
+  sourceEpisodeRefs?: readonly string[];
+  riskLevel?: "low" | "medium" | "high" | "critical";
 };
 
 export type GatedDecision = {

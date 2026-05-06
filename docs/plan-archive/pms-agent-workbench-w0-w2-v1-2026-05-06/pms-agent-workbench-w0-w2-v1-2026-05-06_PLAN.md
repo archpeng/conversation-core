@@ -111,8 +111,8 @@ The implementation and tests for W0-W2 must prove:
 
 #### `W0` — workspace-contract-docs
 
-- Owner: `execute-plan`
-- State: `READY`
+- Owner: `execution-reality-audit`
+- State: `DONE`
 - Priority: `critical`
 
 目标：
@@ -166,8 +166,8 @@ stop_boundary:
 
 #### `W1` — workspace-core-store
 
-- Owner: `execute-plan`
-- State: `queued`
+- Owner: `execution-reality-audit`
+- State: `DONE`
 - Priority: `critical`
 
 目标：
@@ -226,8 +226,8 @@ stop_boundary:
 
 #### `W2` — workspace-tools-safety-gated
 
-- Owner: `execute-plan`
-- State: `queued`
+- Owner: `execution-reality-audit`
+- State: `DONE`
 - Priority: `critical`
 
 目标：
@@ -291,7 +291,7 @@ stop_boundary:
 #### `PACK_COMPLETE` — workbench-foundation-closeout
 
 - Owner: `autopilot-closeout`
-- State: `queued`
+- State: `DONE`
 - Priority: `terminal`
 
 目标：

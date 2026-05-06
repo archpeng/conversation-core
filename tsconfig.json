@@ -7,6 +7,8 @@
     { "path": "packages/safety-gateway" },
     { "path": "packages/gated-tools" },
     { "path": "packages/pms-platform-client" },
+    { "path": "packages/workspace-core" },
+    { "path": "packages/workspace-tools" },
     { "path": "packages/evals" }
   ]
 }

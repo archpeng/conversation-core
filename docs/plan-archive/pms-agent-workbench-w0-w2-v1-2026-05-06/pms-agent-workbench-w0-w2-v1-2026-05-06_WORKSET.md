@@ -4,65 +4,90 @@ Plan ID: `pms-agent-workbench-w0-w2-v1-2026-05-06`
 
 ## Stage Order
 
-- [ ] `W0` workspace-contract-docs
-- [ ] `W1` workspace-core-store
-- [ ] `W2` workspace-tools-safety-gated
-- [ ] `PACK_COMPLETE` workbench-foundation-closeout
+- [x] `W0` workspace-contract-docs
+- [x] `W1` workspace-core-store
+- [x] `W2` workspace-tools-safety-gated
+- [x] `PACK_COMPLETE` workbench-foundation-closeout
 
 ## Active Stage
 
-### `W0`
+### `PACK_COMPLETE`
 
-- Owner: `execute-plan`
-- State: `READY`
-- Priority: `critical`
+- Owner: `autopilot-closeout`
+- State: `DONE`
+- Priority: `terminal`
 
 目标：
 
-- Define the PMS Agent tenant workspace/workbench contract and memory boundary as repo-local SSOT before implementation.
+- Close this W0-W2 pack only after accepted review proves all workspace foundation boundaries are implemented and no non-deferred W0-W2 work remains.
 
 必须交付：
 
-1. `docs/WORKSPACE.md` with directory layout, file kinds, active/proposal/session/tmp/audit zones, tool permissions, path constraints, lifecycle, and W0-W2 package mapping.
-2. `docs/MEMORY_BOUNDARY.md` with authority labels: `pms-platform` evidence as authority, Safety Gateway as mandatory, workspace memory/skills/session as advisory.
-3. Validation evidence showing the docs preserve the existing Safety Gateway and PMS evidence laws.
-
-执行步骤：
-
-1. Read existing architecture/safety/roadmap anchors before writing docs: `README.md`, `ARCHITECTURE.md`, `SAFETY.md`, and `docs/roadmap/ai-native-pms-agent-monorepo-roadmap.md` only as needed.
-2. Write `docs/WORKSPACE.md` as the W0-W2 workspace/workbench contract, not a full future memory platform spec.
-3. Write `docs/MEMORY_BOUNDARY.md` to lock authority labels and forbid workspace/session/skill memory from becoming PMS truth.
-4. Verify both docs explicitly cover the seven hard boundaries.
-5. Run validation commands: `pnpm build`, `pnpm test`, `pnpm guard:boundaries`, static scan/review, and `git diff --check`.
-6. Review-clean speculative W3+ implementation detail from the docs.
-
-预期：
-
-- Future W1/W2 implementers can implement core and tools without re-deciding workspace layout, path constraints, or memory authority semantics.
-
-测试预期：
-
-- Existing build/test/guard suite remains green.
-- Static review confirms PMS facts remain evidence-only.
+1. Closeout summary citing W0-W2 deliverables and validation evidence.
+2. Residual handoff for W3+ work: Context Builder, Skill Proposal Flow hardening, Eval Runner, Approval/Promote, Session Memory files, Daily Sweep, production DB/object storage.
+3. Hot/cold plan hygiene update.
 
 done_when:
 
-1. `docs/WORKSPACE.md` and `docs/MEMORY_BOUNDARY.md` exist and explicitly define all seven hard boundaries.
-2. Docs state that PMS current facts are never stored as workspace truth and must be re-read/cited from `pms-platform` evidence.
-3. Docs state active/proposal/session/tmp/audit write/read ownership and W0-W2 package boundaries.
-4. Validation commands complete or any skipped verification is justified as not applicable to docs-only changes.
+1. W0, W1, and W2 are accepted by review and marked done.
+2. No non-deferred stage remains in this pack.
+3. Closeout artifact records evidence and residual handoff.
 
 stop_boundary:
 
-1. Stop if documentation requires deciding approval/promote UX, DB/object storage, Context Builder injection, or long-term memory graph semantics.
-2. Stop if any doc implies workspace memory can answer current PMS fact questions.
-3. Stop if scope expands into implementation before W0 docs are review-accepted.
+1. If any W0-W2 slice remains active, queued, failed, or needs review, hand back to that slice; do not close out.
+2. If W2 leaves duplicate workspace/proposal tool paths with unclear ownership, replan instead of closing.
 
 必须避免：
 
-1. Do not implement packages in W0 unless a tiny test/doc guard is already repo-standard and necessary.
-2. Do not add Mem0/Zep/Graphiti or generic memory DB commitments.
-3. Do not weaken existing Safety Gateway or PMS evidence laws.
+1. Do not use closeout to skip W2 review or boundary cleanup.
+2. Do not claim production-ready memory/workbench beyond the local W0-W2 foundation.
+
+执行证据：
+
+1. `docs/plan/pms-agent-workbench-w0-w2-v1-2026-05-06_CLOSEOUT.md` written with W0-W2 evidence and residual handoff.
+2. `README`, `PLAN`, `STATUS`, and `WORKSET` prepared for hot/cold plan hygiene and archive.
+
+## Completed Stage Evidence
+
+### `W2`
+
+1. `packages/workspace-tools/package.json`, `packages/workspace-tools/tsconfig.json`, and `packages/workspace-tools/src/index.ts` added.
+2. `tsconfig.json` now references `packages/workspace-tools`; `pnpm-lock.yaml` records the new workspace package and dependencies.
+3. Safety Gateway now has workspace capabilities/constraints for read, proposal write/edit, active skill list, and skill proposal create without adding raw executor capabilities.
+4. Workspace tool requests carry tenantId, actor, tenant workspace path, operation, reason, source episode refs, and risk level metadata.
+5. Workspace tools call Safety Gateway before core/filesystem work and record successful write/edit/create events through a minimal workspace audit sink.
+6. `tests/workspace-tools.test.ts` added with 6 tests for customer deny/no side effect, admin proposal write, reason requirement, active write denial, traversal/`.env`/sensitive extension/oversize/symlink rejection, edit uniqueness, complete skill proposal creation, active skill listing, and workspace advisory-not-PMS-truth behavior.
+7. W2 review added proof/hardening for Safety Gateway-sensitive extension denial and non-active proposal status prevalidation.
+8. `pnpm vitest run tests/workspace-tools.test.ts tests/safety-gateway.test.ts` passed.
+9. `pnpm build` passed.
+10. `pnpm test` passed: 15 test files, 101 tests, boundary guard, eval 8/8.
+11. `pnpm guard:boundaries` passed.
+12. `pnpm exec tsc -b packages/evals && node packages/evals/dist/index.js` passed: eval 8/8.
+13. `git diff --check` passed.
+
+### `W1`
+
+1. `packages/workspace-core/package.json`, `packages/workspace-core/tsconfig.json`, and `packages/workspace-core/src/index.ts` added.
+2. `tsconfig.json` now references `packages/workspace-core` for root build.
+3. `tests/workspace-core.test.ts` added with tests for initialization, safe read/write, active/audit write denial, cross-tenant/traversal/absolute path denial, blocked `.env`/key paths, oversize rejection, symlink escape, resolver export, and proposal completeness.
+4. W1 review added proof for target symlink write escape and parent symlink mkdir escape, then hardened write path preparation before `writeFile`.
+5. `pnpm vitest run tests/workspace-core.test.ts` passed.
+6. `pnpm build` passed.
+7. `pnpm test` passed: 14 test files, 95 tests, boundary guard, eval 8/8.
+8. `pnpm guard:boundaries` passed.
+9. `git diff --check` passed.
+
+### `W0`
+
+1. `docs/WORKSPACE.md` created with tenant root, zones, path constraints, actor/operation matrix, proposal completeness, W1/W2 package expectations, and seven hard boundaries.
+2. `docs/MEMORY_BOUNDARY.md` created with authority labels, current PMS fact ban, advisory workspace/session/skill memory rules, and memory interpretation of the seven hard boundaries.
+3. `pnpm build` passed.
+4. `pnpm test` passed: 13 test files, 90 tests, boundary guard, eval 8/8.
+5. `pnpm guard:boundaries` passed.
+6. Static scan reviewed forbidden memory database/current-fact terms; only `current room state` and `current price` appear as explicit examples of memory content that must not become truth.
+7. `git diff --check` passed.
+8. W0 review accepted the docs and advanced active stage to W1.
 
 ## Slice Ownership
 
@@ -232,3 +257,27 @@ For W2:
 测试预期：
 
 - All W0-W2 gates are green and no non-deferred stages remain.
+
+## Machine Queue
+
+- active_step: `PACK_COMPLETE`
+- latest_completed_step: `W2`
+- intended_handoff: `autopilot-closeout`
+- latest_closeout_summary: W2 review accepted; active parser truth advanced to PACK_COMPLETE.
+- latest_verification:
+  - `Read routed execution-reality-audit skill and anchored README/PLAN/STATUS/WORKSET plus W2 code/tests/Safety Gateway changes before verdict.`
+  - `Confirmed workspace-tools package exports gated read, proposal write/edit, active skill list, and skill proposal create, all routed through Safety Gateway before workspace-core/filesystem side effects.`
+  - `Review added proof/hardening: Safety Gateway denies sensitive .key paths before core, unsupported extensions still fail before write, and active status.json is rejected before skill proposal writes.`
+  - `Validation passed: pnpm vitest run tests/workspace-tools.test.ts tests/safety-gateway.test.ts; pnpm build; pnpm test (15 files, 101 tests, guard, eval 8/8); pnpm guard:boundaries; pnpm exec tsc -b packages/evals && node packages/evals/dist/index.js; git diff --check.`
+  - `Static scan of workspace-tools/tests/safety-gateway found no new Context Builder/promote/publish/raw executor/PMS-truth path; matches only were pre-existing sandbox_bash capability definitions.`
+  - `plan_sync after review writeback shows STATUS/WORKSET W0-W2 done=3 pending=1 and README/STATUS/WORKSET now set active slice PACK_COMPLETE with intended handoff autopilot-closeout.`
+  - `packages/workspace-tools/src/index.ts`
+  - `tests/workspace-tools.test.ts`
+  - `packages/safety-gateway/src/policy-engine.ts`
+  - `packages/safety-gateway/src/capability-registry.ts`
+  - `packages/safety-gateway/src/constraints.ts`
+  - `packages/gated-tools/src/run-gated-tool.ts`
+  - `docs/plan/README.md`
+  - `docs/plan/pms-agent-workbench-w0-w2-v1-2026-05-06_PLAN.md`
+  - `docs/plan/pms-agent-workbench-w0-w2-v1-2026-05-06_STATUS.md`
+  - `docs/plan/pms-agent-workbench-w0-w2-v1-2026-05-06_WORKSET.md`

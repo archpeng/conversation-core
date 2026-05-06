@@ -1,13 +1,13 @@
 import { runGatedTool, type GatedToolExecutor, type GatedToolRequest, type GatedToolResult, type SafetyGatewayPort } from "./run-gated-tool.js";
 
 type FileAction = "read" | "write" | "edit";
-type WorkspaceKind = NonNullable<GatedToolRequest["workspace"]>["kind"];
+type WorkspaceKind = "proposal" | "sandbox";
 
 export type GatedFileInput<T> = {
   gateway: SafetyGatewayPort;
   actor: GatedToolRequest["actor"];
   tenantId?: string;
-  workspace: NonNullable<GatedToolRequest["workspace"]>;
+  workspace: { kind: WorkspaceKind; path?: string };
   path: string;
   content?: string;
   executor: GatedToolExecutor<T>;

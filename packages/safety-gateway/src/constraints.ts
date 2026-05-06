@@ -1,10 +1,13 @@
 export type ActorProfile = "customer" | "staff" | "admin" | "internal";
 
-export type WorkspaceKind = "none" | "proposal" | "sandbox";
+export type WorkspaceKind = "none" | "proposal" | "sandbox" | "tenant_workspace";
 
 export type SafetyConstraintId =
   | "tenant_scope_required"
   | "proposal_workspace_required"
+  | "tenant_workspace_required"
+  | "workspace_proposal_required"
+  | "workspace_reason_required"
   | "sandbox_workspace_required"
   | "sandbox_path_required"
   | "sandbox_command_allowlist"
@@ -27,6 +30,18 @@ export const safetyConstraints: Record<SafetyConstraintId, SafetyConstraint> = {
   proposal_workspace_required: {
     id: "proposal_workspace_required",
     summary: "Proposal changes must target the proposal workspace, not production PMS state."
+  },
+  tenant_workspace_required: {
+    id: "tenant_workspace_required",
+    summary: "Workspace tools require a tenant workspace logical path and tenant scope."
+  },
+  workspace_proposal_required: {
+    id: "workspace_proposal_required",
+    summary: "Workspace writes and edits must target proposal artifacts only."
+  },
+  workspace_reason_required: {
+    id: "workspace_reason_required",
+    summary: "Workspace write and edit operations require an explicit reason."
   },
   sandbox_workspace_required: {
     id: "sandbox_workspace_required",

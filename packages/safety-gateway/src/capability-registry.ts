@@ -8,6 +8,11 @@ export const capabilityIds = [
   "proposal_read",
   "proposal_write",
   "proposal_edit",
+  "workspace_read",
+  "workspace_write_proposal",
+  "workspace_edit_proposal",
+  "workspace_list_active_skills",
+  "workspace_create_skill_proposal",
   "sandbox_read",
   "sandbox_write",
   "sandbox_edit",
@@ -17,7 +22,7 @@ export const capabilityIds = [
 
 export type CapabilityId = (typeof capabilityIds)[number];
 
-export type CapabilityKind = "pms" | "proposal_workspace" | "sandbox" | "http";
+export type CapabilityKind = "pms" | "proposal_workspace" | "tenant_workspace" | "sandbox" | "http";
 
 export type CapabilityDefinition = {
   id: CapabilityId;
@@ -62,6 +67,36 @@ export const capabilityRegistry: Record<CapabilityId, CapabilityDefinition> = {
     kind: "proposal_workspace",
     risk: capabilityRisks.proposalEdit,
     constraints: ["proposal_workspace_required"]
+  },
+  workspace_read: {
+    id: "workspace_read",
+    kind: "tenant_workspace",
+    risk: capabilityRisks.workspaceRead,
+    constraints: ["tenant_scope_required", "tenant_workspace_required"]
+  },
+  workspace_write_proposal: {
+    id: "workspace_write_proposal",
+    kind: "tenant_workspace",
+    risk: capabilityRisks.workspaceWriteProposal,
+    constraints: ["tenant_scope_required", "tenant_workspace_required", "workspace_proposal_required", "workspace_reason_required"]
+  },
+  workspace_edit_proposal: {
+    id: "workspace_edit_proposal",
+    kind: "tenant_workspace",
+    risk: capabilityRisks.workspaceEditProposal,
+    constraints: ["tenant_scope_required", "tenant_workspace_required", "workspace_proposal_required", "workspace_reason_required"]
+  },
+  workspace_list_active_skills: {
+    id: "workspace_list_active_skills",
+    kind: "tenant_workspace",
+    risk: capabilityRisks.workspaceListActiveSkills,
+    constraints: ["tenant_scope_required", "tenant_workspace_required"]
+  },
+  workspace_create_skill_proposal: {
+    id: "workspace_create_skill_proposal",
+    kind: "tenant_workspace",
+    risk: capabilityRisks.workspaceCreateSkillProposal,
+    constraints: ["tenant_scope_required", "tenant_workspace_required", "workspace_proposal_required", "workspace_reason_required"]
   },
   sandbox_read: {
     id: "sandbox_read",

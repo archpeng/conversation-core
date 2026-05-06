@@ -7,6 +7,7 @@ export type RiskCategory =
   | "pms_workflow_prepare"
   | "pms_mutation_confirm"
   | "proposal_workspace_change"
+  | "tenant_workspace_change"
   | "sandbox_file_access"
   | "sandbox_command_execution"
   | "external_network";
@@ -23,6 +24,11 @@ export const capabilityRisks = {
   proposalRead: { level: "low", categories: ["proposal_workspace_change"] },
   proposalWrite: { level: "medium", categories: ["proposal_workspace_change"] },
   proposalEdit: { level: "medium", categories: ["proposal_workspace_change"] },
+  workspaceRead: { level: "low", categories: ["tenant_workspace_change"] },
+  workspaceWriteProposal: { level: "medium", categories: ["tenant_workspace_change"] },
+  workspaceEditProposal: { level: "medium", categories: ["tenant_workspace_change"] },
+  workspaceListActiveSkills: { level: "low", categories: ["tenant_workspace_change"] },
+  workspaceCreateSkillProposal: { level: "medium", categories: ["tenant_workspace_change"] },
   sandboxRead: { level: "medium", categories: ["sandbox_file_access"] },
   sandboxWrite: { level: "high", categories: ["sandbox_file_access"] },
   sandboxEdit: { level: "high", categories: ["sandbox_file_access"] },

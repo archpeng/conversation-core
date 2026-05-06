@@ -80,6 +80,17 @@ importers:
         specifier: workspace:*
         version: link:../pms-platform-client
 
+  packages/workspace-core: {}
+
+  packages/workspace-tools:
+    dependencies:
+      '@pms-agent-v2/gated-tools':
+        specifier: workspace:*
+        version: link:../gated-tools
+      '@pms-agent-v2/workspace-core':
+        specifier: workspace:*
+        version: link:../workspace-core
+
 packages:
 
   '@anthropic-ai/sdk@0.91.1':

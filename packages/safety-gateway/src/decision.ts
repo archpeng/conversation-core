@@ -2,6 +2,8 @@ import type { ActorProfile, SafetyConstraintId, WorkspaceKind } from "./constrai
 import type { CapabilityDefinition, CapabilityId } from "./capability-registry.js";
 import type { RiskLevel } from "./risk.js";
 
+export type ToolRiskLevel = RiskLevel;
+
 export type ToolRequest = {
   capabilityId: string;
   actor: {
@@ -16,6 +18,10 @@ export type ToolRequest = {
   pendingActionId?: string;
   target?: string;
   content?: string;
+  operation?: string;
+  reason?: string;
+  sourceEpisodeRefs?: readonly string[];
+  riskLevel?: ToolRiskLevel;
 };
 
 export type SafetyDecisionOutcome = "allow" | "deny" | "require_approval";
