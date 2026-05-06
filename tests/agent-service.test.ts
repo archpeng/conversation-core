@@ -3,6 +3,7 @@ import { createAgentService, type AgentServiceResponse } from "../apps/agent-ser
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
 import type { AgentResult, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
+import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
 import type { PiCreateAgentSession, PiCreateAgentSessionOptions } from "../packages/unified-agent/src/index.js";
 
 const validTurn: FeishuTurnInput = {
@@ -40,11 +41,54 @@ describe("agent service API", () => {
 
     expect(response.status).toBe(200);
     expectAgentResultBody(response);
-    expect(response.body).toEqual({ type: "text", text: "Agent turn completed." });
+    expect(response.body).toMatchObject({ type: "text" });
+    expect(JSON.stringify(response.body)).not.toContain("Agent turn completed");
     expect(response.body).not.toHaveProperty("result");
     expect(response.body).not.toHaveProperty("replies");
     expect(calls[0].tools).toEqual([]);
     expect(calls[0].customTools.map((tool) => tool.name)).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
+  });
+
+  it("returns a natural greeting fallback instead of an internal completion placeholder", async () => {
+    const service = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession([]) });
+
+    const response = await service.handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, message: { text: "你好" } } });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ type: "text" });
+    expect(JSON.stringify(response.body)).toContain("PMS 智能助手");
+    expect(JSON.stringify(response.body)).not.toContain("Agent turn completed");
+  });
+
+  it("reuses cached sessions for continuity across /v1/feishu-turn calls", async () => {
+    const calls: PiCreateAgentSessionOptions[] = [];
+    let pmsReadCount = 0;
+    const service = createAgentService({
+      gateway: safetyGateway(),
+      createAgentSession: fakeCreateAgentSession(calls),
+      executors: {
+        pmsRead: () => {
+          pmsReadCount += 1;
+          return createPmsEvidence({
+            method: "searchAvailability",
+            tenantId: validTurn.tenantId,
+            fetchedAt: `2026-05-06T12:0${pmsReadCount}:00.000Z`,
+            summary: "availability search summary",
+            data: { rooms: [{ roomId: `room_${pmsReadCount}`, roomType: "大床房", available: true }] }
+          });
+        }
+      }
+    });
+
+    const first = await service.handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, message: { text: "查一下今天大床房有房吗" } } });
+    const second = await service.handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, messageId: "message_secret_2", message: { text: "那明天呢" } } });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(pmsReadCount).toBe(2);
+    expect(second.body).toMatchObject({ type: "text" });
+    expect(JSON.stringify(second.body)).toContain("evidenceRefs");
   });
 
   it("supports /v1/eval-turn with the same AgentResult-only output shape", async () => {

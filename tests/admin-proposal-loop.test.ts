@@ -88,7 +88,8 @@ describe("admin proposal loop", () => {
     const result = await runAgentTurn(session, customerTurn);
 
     expect(session.tools.map((tool) => tool.name)).not.toEqual(expect.arrayContaining(["gated_proposal_read", "gated_proposal_write", "gated_proposal_edit"]));
-    expect(result).toEqual({ type: "text", text: "Agent turn completed." });
+    expect(result).toMatchObject({ type: "text" });
+    expect(JSON.stringify(result)).not.toContain("Agent turn completed");
     expect(writes).toEqual([]);
   });
 });

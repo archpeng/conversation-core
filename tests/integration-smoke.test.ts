@@ -57,7 +57,7 @@ describe("local MVP integration smoke", () => {
     expect(loop3.kind).toBe("approval_card");
     expect(loop3.pendingActionId).toBe("pending_secret_smoke");
 
-    const serviceRefusal = adapterDeliver(await adapterPostTurn(service, {
+    const cachedServiceConfirm = adapterDeliver(await adapterPostTurn(service, {
       ...baseTurn,
       messageId: "message_loop_4a",
       message: { text: "confirm" }
@@ -76,7 +76,7 @@ describe("local MVP integration smoke", () => {
     });
     await runAgentTurn(session, { ...baseTurn, messageId: "message_loop_4b", message: { text: "book 2026-05-06 suite" } });
     const naturalConfirm = adapterDeliver(await runAgentTurn(session, { ...baseTurn, messageId: "message_loop_4c", message: { text: "confirm" } }));
-    expect(serviceRefusal.kind).toBe("refusal");
+    expect(cachedServiceConfirm.kind).toBe("approval_card");
     expect(naturalConfirm.kind).toBe("approval_card");
 
     const loop5 = adapterDeliver(await adapterPostTurn(service, {

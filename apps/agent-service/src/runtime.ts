@@ -3,12 +3,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, DefaultResourceLoader, getAgentDir, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
 import { createAgentService, type AgentService } from "./index.js";
 import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import { createPmsEvidence, createPmsPlatformClient, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
-import type { PiCreateAgentSession, UnifiedAgentToolExecutors } from "@pms-agent-v2/unified-agent";
+import type { PiCreateAgentSession, PiResourceLoaderFactory, UnifiedAgentToolExecutors } from "@pms-agent-v2/unified-agent";
 
 export type AgentServiceRuntimeConfig = {
   host: string;
@@ -40,7 +40,7 @@ export type StartedAgentHttpServer = {
 type Env = Record<string, string | undefined>;
 
 export function loadAgentServiceRuntimeConfig(env: Env = process.env): AgentServiceRuntimeConfig {
-  const cwd = resolve(env.PMS_AGENT_CWD?.trim() || process.cwd());
+  const cwd = resolve(env.PMS_AGENT_CWD?.trim() || defaultRuntimeCwd(process.cwd()));
   const checkInDate = env.PMS_AGENT_DEFAULT_CHECK_IN_DATE?.trim() || todayIsoDate();
   const checkOutDate = env.PMS_AGENT_DEFAULT_CHECK_OUT_DATE?.trim() || addBusinessDays(checkInDate, 1);
   return {
@@ -69,6 +69,7 @@ export function createRuntimeAgentService(config: AgentServiceRuntimeConfig): Ag
   return createAgentService({
     gateway: createRuntimeSafetyGateway(),
     createAgentSession: createRuntimePiSessionFactory(config),
+    createResourceLoader: createRuntimeResourceLoaderFactory(config),
     cwd: config.cwd,
     executors: createRuntimeExecutors(config)
   });
@@ -95,6 +96,18 @@ export async function startAgentHttpServer(config: AgentServiceRuntimeConfig, se
     close: () => new Promise<void>((resolveClose, rejectClose) => {
       server.close((error) => error ? rejectClose(error) : resolveClose());
     })
+  };
+}
+
+function createRuntimeResourceLoaderFactory(config: AgentServiceRuntimeConfig): PiResourceLoaderFactory {
+  return async (systemPrompt) => {
+    const loader = new DefaultResourceLoader({
+      cwd: config.cwd,
+      agentDir: getAgentDir(),
+      systemPromptOverride: () => systemPrompt
+    });
+    await loader.reload();
+    return loader;
   };
 }
 
@@ -237,6 +250,12 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown):
 
 function tenantId(request: GatedToolRequest): string {
   return request.tenantId ?? "default-tenant";
+}
+
+function defaultRuntimeCwd(processCwd: string): string {
+  const normalized = resolve(processCwd);
+  if (normalized.endsWith("/apps/agent-service")) return resolve(normalized, "../..");
+  return normalized;
 }
 
 function parsePort(raw: string | undefined, fallback: number): number {

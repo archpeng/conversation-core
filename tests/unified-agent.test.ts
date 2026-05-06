@@ -115,6 +115,18 @@ describe("unified Agent runtime", () => {
     expect(result?.content[0].text).toContain("evidenceRef");
   });
 
+  it("returns captured assistant text for non-PMS natural turns", async () => {
+    const session = await createUnifiedAgentSession({
+      turn: { ...baseTurn, message: { text: "你好" } },
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText("你好，我是 PMS 智能助手。")
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "你好" } });
+
+    expect(result).toEqual({ type: "text", text: "你好，我是 PMS 智能助手。" });
+  });
+
   it("keeps two-turn continuity in redacted refs only", async () => {
     const prompts: string[] = [];
     const session = await createUnifiedAgentSession({
@@ -159,6 +171,25 @@ function fakeCreateAgentSession(calls: PiCreateAgentSessionOptions[], prompts: s
       session: {
         async prompt(text) {
           prompts.push(text);
+        }
+      }
+    };
+  };
+}
+
+function fakeCreateAgentSessionWithAssistantText(text: string): PiCreateAgentSession {
+  return async () => {
+    let listener: ((event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string } }) => void) | undefined;
+    return {
+      session: {
+        subscribe(next) {
+          listener = next;
+          return () => {
+            listener = undefined;
+          };
+        },
+        async prompt() {
+          listener?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: text } });
         }
       }
     };
