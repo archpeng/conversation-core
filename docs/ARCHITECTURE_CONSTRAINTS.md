@@ -13,6 +13,37 @@ This document turns two accepted strengths into long-term constraints:
 
 The goal is not to freeze the MVP. The goal is to make future changes preserve the same cognitive shape while the Agent becomes stronger.
 
+## 0.1 MVP Minimalism Contract
+
+The MVP is close to its acceptable complexity ceiling. Future work must optimize for fewer moving parts, not broader platform shape.
+
+Priority order for successor changes:
+
+1. connect existing typed `pms-platform` capabilities through the narrow `pms-platform-client` + gated-tool path;
+2. reduce deterministic post-LLM scaffolding when typed Pi/tool planning can cover the behavior;
+3. strengthen evidence/eval checks for an existing boundary;
+4. add a new package or abstraction only when a current proof cannot pass without it.
+
+Forbidden without a new accepted plan:
+
+```text
+generic plugin framework
+generic workflow engine
+generic HTTP broker
+multi-agent supervisor
+rollout/gray deployment machinery
+broad workspace or memory platform expansion
+second Agent runtime
+```
+
+Minimal-change rule:
+
+```text
+one user-visible capability -> one owner boundary -> one typed contract/tool path -> one focused proof
+```
+
+If the simplest solution is to delete or shrink a scaffold, prefer that over adding another layer.
+
 ## 1. Current Positive Baseline
 
 ### 1.1 Architecture clarity baseline
@@ -285,7 +316,7 @@ Safety Gateway decisions
 evidence-ref validation
 approval-card gating
 redaction and audit shaping
-bounded legacy scaffolding after LLM observation while live tool-plan wiring is incomplete
+bounded post-LLM scaffolding while live tool-plan wiring is incomplete
 explicit test stubs
 ```
 
@@ -300,7 +331,7 @@ using prompt policy instead of Safety Gateway or PMS evidence validation
 
 Any change that intentionally bypasses the LLM for live user turns must be treated as a replan-level architecture change and needs explicit plan/workset approval plus regression proof.
 
-### R1. Deterministic loops are temporary product scaffolding
+### R1. Deterministic loops are bounded post-LLM scaffolding
 
 Current deterministic loops are allowed only as bounded MVP scaffolding after LLM observation, while live typed planner integration is incomplete:
 
@@ -314,9 +345,10 @@ They must obey:
 1. They may call only gated tools.
 2. They may not perform raw side effects.
 3. They may not expand into broad business workflow engines.
-4. Any new regex intent rule must have a targeted test and must not replace a planned typed Agent/tool contract.
+4. New regex intent rules are discouraged; add one only when it replaces a larger unsafe path or has a targeted proof and an explicit deletion/reduction plan.
 5. If a loop starts carrying slots, policy, and response synthesis together, split it into typed intent/slot state + gated tool planning + response synthesis.
 6. They must not be moved before the Pi/LLM prompt path for live Feishu turns unless a new plan explicitly changes the LLM-first architecture law.
+7. When a typed Pi/gated-tool path covers a behavior, remove the equivalent deterministic branch in the same or next bounded slice.
 
 ### R2. LLM capability must be released through typed gated tools
 
@@ -597,6 +629,12 @@ Environment defaults may support local deterministic smoke only. They must not b
 
 If runtime uses defaults for date/roomType, tests and docs must make clear that this is a local MVP executor behavior, not conversation intelligence.
 
+### I5. Real PMS integration before new abstraction
+
+If `pms-platform` already has a typed route or manifest capability, prefer wiring that exact route through `pms-platform-client` and existing gated tools.
+
+Do not create synthetic runtime evidence, generic PMS brokers, workflow engines, or new package layers when a typed `pms-platform` route can satisfy the current proof. Synthetic PMS evidence is allowed only in tests or explicitly named local stubs.
+
 ## 8. Review Checklist
 
 Before accepting any future implementation slice, verify:
@@ -620,9 +658,10 @@ These are not defects in the architecture baseline; they are next hardening targ
 | --- | --- | --- | --- |
 | Runtime/resource loader prompt injection | Hardened; keep test coverage. | Real pi sessions must receive the same baseline prompt/context that tests assume. | Runtime factory must keep passing `resourceLoader` into `createAgentSession`; runtime-level test must stay green. |
 | `profile.visibleToolNames` drift | Hardened; keep metadata aligned. | AI/human readers may trust stale metadata. | Profile metadata must match registered gated tools, including `gated_pms_workflow`. |
-| Deterministic loop scope | Open. | Regex loops are readable but limit Agent power if they grow. | Keep loops small; move toward typed LLM tool planning. |
-| Session continuity depth | Open. | Current refs preserve safety but not rich conversation slots. | Add redacted typed slot state; never store PMS current facts. |
-| Workspace/context builder missing | Open. | Advisory tenant rules are not yet available to Agent. | Execute W0-W2 first, then context-builder with authority labels. |
+| True `pms-platform` workflow integration | Open. | Synthetic runtime PMS workflow evidence weakens the downstream truth boundary. | Wire existing typed platform routes through `pms-platform-client` before adding new abstractions. |
+| Deterministic loop scope | Open. | Regex loops are readable but limit Agent power if they grow. | Keep loops small; remove branches as typed LLM tool planning covers them. |
+| Session continuity depth | Open. | Current refs preserve safety but not rich conversation slots. | Add only redacted typed slot state needed by current tests; never store PMS current facts. |
+| Workspace/context builder scope | Open but bounded. | Advisory tenant rules can help the Agent, but broad workspace/memory expansion would over-engineer the MVP. | Do not expand until narrower PMS integration and deterministic-scaffold reduction are addressed or a current proof requires it. |
 
 ## 10. Enforcement Surfaces
 

@@ -12,7 +12,8 @@ import {
   type PiCreateAgentSession,
   type PiResourceLoaderFactory,
   type UnifiedAgentSession,
-  type UnifiedAgentToolExecutors
+  type UnifiedAgentToolExecutors,
+  type UnifiedAgentTurnEvent
 } from "@pms-agent-v2/unified-agent";
 
 export type AgentServiceRequest = {
@@ -40,6 +41,7 @@ export type CreateAgentServiceInput = {
   authStorage?: unknown;
   modelRegistry?: unknown;
   executors?: UnifiedAgentToolExecutors;
+  eventSink?: (event: UnifiedAgentTurnEvent) => void;
 };
 
 const jsonHeaders = { "content-type": "application/json" } as const;
@@ -84,7 +86,7 @@ async function handleTurn(input: CreateAgentServiceInput, body: unknown, session
 
   try {
     const session = await getOrCreateUnifiedSession(input, sessions, turn.value);
-    const result = await runAgentTurn(session, turn.value);
+    const result = await runAgentTurn(session, turn.value, { eventSink: input.eventSink });
 
     if (!isAgentResult(result)) {
       return json(502, refusal("unsupported", "Agent returned unsupported result."));

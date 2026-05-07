@@ -18,6 +18,8 @@ Reservation confirm, cancel order, price change, room-state change, skill publis
 
 PMS user-visible facts must cite current `pms-platform` evidence. Every allowed, denied, or approval-required tool decision must be auditable. Eval coverage starts early and remains part of the acceptance gate.
 
+If `pms-platform` exposes a typed capability, runtime code must use that route through `pms-platform-client` instead of constructing synthetic PMS evidence. Synthetic evidence is allowed only in tests or explicitly named local stubs.
+
 ## Sandbox validation boundary
 
 Sandbox bash is a validation-only capability. Safety Gateway allows only exact deterministic validation commands in a sandbox workspace: `pnpm test`, `pnpm build`, and `tsc --noEmit`. Network, secret-inspection, destructive, container, cluster, and interactive shell commands are denied before any executor runs.

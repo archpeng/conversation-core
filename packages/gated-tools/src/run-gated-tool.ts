@@ -13,6 +13,11 @@ export type GatedToolRequest = {
   };
   pendingActionId?: string;
   target?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  roomType?: string;
+  quantity?: number;
+  guestName?: string;
   content?: string;
   operation?: string;
   reason?: string;

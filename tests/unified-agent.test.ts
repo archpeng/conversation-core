@@ -308,6 +308,188 @@ describe("unified Agent runtime", () => {
     expect(session.state.evidenceRefs).toEqual([evidence.evidenceRef]);
   });
 
+  it("passes typed PMS read params from LLM plan to the gated executor", async () => {
+    let capturedRequest: GatedToolRequest | undefined;
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed availability",
+      data: { rooms: [] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } }),
+        `已查询 PMS 房态。evidenceRefs=${evidence.evidenceRef}`
+      ]),
+      executors: {
+        pmsRead: ({ request }) => {
+          capturedRequest = request;
+          return evidence;
+        }
+      }
+    });
+
+    await runAgentTurn(session, { ...baseTurn, message: { text: "查一下后天的房态, 并给王晓定两间房间" } });
+
+    expect(capturedRequest).toMatchObject({
+      capabilityId: "pms_read",
+      target: "availability",
+      checkInDate: "2026-05-09",
+      checkOutDate: "2026-05-10",
+      quantity: 2,
+      guestName: "王晓"
+    });
+  });
+
+  it("turns accepted LLM PMS workflow plans into approval cards without confirm mutation", async () => {
+    const order: string[] = [];
+    const evidence = createPmsEvidence({
+      method: "prepareReservationConfirm",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed approval is ready",
+      data: { pendingActionId: "pending_secret_llm_workflow", confirmationMode: "typedCardOnly", mutationStatus: "none", expiresAt: "2026-05-06T12:10:00.000Z" }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm" } })),
+      executors: {
+        pmsWorkflow: () => {
+          order.push("executor:pmsWorkflow");
+          return evidence;
+        },
+        pmsConfirm: () => {
+          order.push("executor:pmsConfirm");
+          return { mutated: true };
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "我要预订 2026-05-06 大床房" } });
+
+    expect(result).toEqual({
+      type: "approval_card",
+      card: {
+        type: "pms_pending_action_card",
+        ref: {
+          type: "pms_pending_action",
+          tenantId: "tenant_1",
+          pendingActionId: "pending_secret_llm_workflow",
+          action: "reservation_confirm",
+          expiresAt: "2026-05-06T12:10:00.000Z"
+        },
+        title: "确认预订",
+        summary: "PMS 已准备待审批操作；只有点击确认卡片才会继续执行。",
+        confirmLabel: "确认",
+        cancelLabel: "取消"
+      }
+    });
+    expect(order).toEqual(["decide:pms_workflow", "audit:allow", "executor:pmsWorkflow"]);
+    expect(session.state.evidenceRefs).toEqual([evidence.evidenceRef]);
+    expect(session.state.pendingActionRefs).toEqual(["pending_secret_llm_workflow"]);
+  });
+
+  it("uses a second LLM pass to synthesize user-facing PMS evidence replies", async () => {
+    const order: string[] = [];
+    const prompts: string[] = [];
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "Availability search returned 13 rooms.",
+      data: { rooms: [{ roomId: "room_secret_synthesis", roomType: "suite", available: true }] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } }),
+        `我已查询 PMS：后天有 13 个可订候选。要给王晓订两间房，还需要确认房型和离店日期；自然语言不会直接完成预订，确认后我会生成审批卡。evidenceRefs=${evidence.evidenceRef}`
+      ], prompts),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return evidence;
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "查一下后天的房态, 并给王晓定两间房间" } });
+
+    expect(result).toEqual({
+      type: "text",
+      text: `我已查询 PMS：后天有 13 个可订候选。要给王晓订两间房，还需要确认房型和离店日期；自然语言不会直接完成预订，确认后我会生成审批卡。evidenceRefs=${evidence.evidenceRef}`,
+      evidenceRefs: [evidence.evidenceRef]
+    });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Final response synthesis after a gated PMS tool call.");
+    expect(prompts[1]).toContain(`evidenceRefs=${evidence.evidenceRef}`);
+    expect(prompts[1]).not.toContain("room_secret_synthesis");
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
+  });
+
+  it("appends evidence refs when post-tool LLM synthesis omits them", async () => {
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "Availability search returned 13 rooms.",
+      data: { rooms: [] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } }),
+        "我已查询 PMS：有 13 个可订候选。"
+      ]),
+      executors: { pmsRead: () => evidence }
+    });
+
+    const result = await runAgentTurn(session, baseTurn);
+
+    expect(result).toEqual({
+      type: "text",
+      text: `我已查询 PMS：有 13 个可订候选。 evidenceRefs=${evidence.evidenceRef}`,
+      evidenceRefs: [evidence.evidenceRef]
+    });
+  });
+
+  it("emits redacted planner, tool, and result events", async () => {
+    const events: unknown[] = [];
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "Availability search returned 13 rooms.",
+      data: { rooms: [] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } }),
+        `已查询 PMS 房态。evidenceRefs=${evidence.evidenceRef}`
+      ]),
+      executors: { pmsRead: () => evidence }
+    });
+
+    await runAgentTurn(session, { ...baseTurn, message: { text: "查一下后天的房态, 并给王晓定两间房间" } }, { eventSink: (event) => events.push(event) });
+
+    expect(events).toEqual([
+      { event: "pms_agent_turn_planned", profile: "customer_pms", plannerPath: "structured_tool_plan", toolPlanType: "call_tool", toolName: "gated_pms_read", paramKeys: ["target"] },
+      { event: "pms_agent_tool_result", profile: "customer_pms", toolName: "gated_pms_read", outcome: "allow", evidenceMethod: "searchAvailability", resultType: "text" },
+      { event: "pms_agent_turn_result", profile: "customer_pms", resultType: "text", evidenceCount: 1, pendingActionCount: 0 }
+    ]);
+    expect(JSON.stringify(events)).not.toContain("王晓");
+    expect(JSON.stringify(events)).not.toContain("后天");
+    expect(JSON.stringify(events)).not.toContain(evidence.evidenceRef);
+  });
+
   it("maps non-call LLM plans into safe AgentResult without side effects", async () => {
     const order: string[] = [];
     const session = await createUnifiedAgentSession({
@@ -478,7 +660,12 @@ function fakeCreateAgentSession(calls: PiCreateAgentSessionOptions[], prompts: s
 }
 
 function fakeCreateAgentSessionWithAssistantText(text: string): PiCreateAgentSession {
+  return fakeCreateAgentSessionWithAssistantTextSequence([text]);
+}
+
+function fakeCreateAgentSessionWithAssistantTextSequence(texts: string[], prompts: string[] = []): PiCreateAgentSession {
   return async () => {
+    let index = 0;
     let listener: ((event: { type?: string; assistantMessageEvent?: { type?: string; delta?: string } }) => void) | undefined;
     return {
       session: {
@@ -488,8 +675,11 @@ function fakeCreateAgentSessionWithAssistantText(text: string): PiCreateAgentSes
             listener = undefined;
           };
         },
-        async prompt() {
-          listener?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: text } });
+        async prompt(text) {
+          prompts.push(text);
+          const reply = texts[Math.min(index, texts.length - 1)] ?? "";
+          index += 1;
+          listener?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: reply } });
         }
       }
     };

@@ -38,6 +38,14 @@ type TargetParams = {
   content?: string;
 };
 
+type PmsReadParams = TargetParams & {
+  checkInDate?: string;
+  checkOutDate?: string;
+  roomType?: string;
+  quantity?: number;
+  guestName?: string;
+};
+
 const targetParameters = {
   type: "object",
   additionalProperties: false,
@@ -49,6 +57,19 @@ const targetParameters = {
   }
 } as const;
 
+const pmsReadParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    target: { type: "string", enum: ["availability", "capabilities"] },
+    checkInDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+    checkOutDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+    roomType: { type: "string", minLength: 1 },
+    quantity: { type: "integer", minimum: 1 },
+    guestName: { type: "string", minLength: 1 }
+  }
+} as const;
+
 export function registerGatedTools(input: RegisterGatedToolsInput): PiToolDefinition[] {
   if (input.profile.id === "customer_pms") {
     return [pmsReadTool(input), pmsWorkflowTool(input), pmsConfirmTool(input)];
@@ -56,20 +77,25 @@ export function registerGatedTools(input: RegisterGatedToolsInput): PiToolDefini
   return [proposalReadTool(input), proposalWriteTool(input), proposalEditTool(input)];
 }
 
-function pmsReadTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_pms_read", "Gated PMS Read", "Read tenant-scoped PMS facts through the Safety Gateway.", async (params) => {
+function pmsReadTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsReadParams> {
+  return defineGatedTool("gated_pms_read", "Gated PMS Read", "Read tenant-scoped PMS facts through the Safety Gateway. For availability, pass ISO checkInDate/checkOutDate and optional roomType, quantity, guestName when the user provided them.", pmsReadParameters, async (params) => {
     return gatedPmsRead({
       gateway: input.gateway,
       actor: input.actor,
       tenantId: input.tenantId,
       target: params.target,
+      checkInDate: params.checkInDate,
+      checkOutDate: params.checkOutDate,
+      roomType: params.roomType,
+      quantity: params.quantity,
+      guestName: params.guestName,
       executor: input.executors?.pmsRead ?? notConfiguredExecutor("pmsRead")
     });
   });
 }
 
 function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation.", async (params) => {
+  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation.", targetParameters, async (params) => {
     return gatedPmsWorkflow({
       gateway: input.gateway,
       actor: input.actor,
@@ -81,7 +107,7 @@ function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<Targe
 }
 
 function pmsConfirmTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_pms_confirm", "Gated PMS Confirm", "Prepare a typed approval boundary for a PMS pending action.", async (params) => {
+  return defineGatedTool("gated_pms_confirm", "Gated PMS Confirm", "Prepare a typed approval boundary for a PMS pending action.", targetParameters, async (params) => {
     return gatedPmsConfirm({
       gateway: input.gateway,
       actor: input.actor,
@@ -94,7 +120,7 @@ function pmsConfirmTool(input: RegisterGatedToolsInput): PiToolDefinition<Target
 }
 
 function proposalReadTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_proposal_read", "Gated Proposal Read", "Read proposal workspace content through the Safety Gateway.", async (params) => {
+  return defineGatedTool("gated_proposal_read", "Gated Proposal Read", "Read proposal workspace content through the Safety Gateway.", targetParameters, async (params) => {
     const path = params.path ?? "proposal.md";
     return gatedRead({
       gateway: input.gateway,
@@ -108,7 +134,7 @@ function proposalReadTool(input: RegisterGatedToolsInput): PiToolDefinition<Targ
 }
 
 function proposalWriteTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_proposal_write", "Gated Proposal Write", "Write proposal workspace content through the Safety Gateway.", async (params) => {
+  return defineGatedTool("gated_proposal_write", "Gated Proposal Write", "Write proposal workspace content through the Safety Gateway.", targetParameters, async (params) => {
     const path = params.path ?? "proposal.md";
     return gatedWrite({
       gateway: input.gateway,
@@ -123,7 +149,7 @@ function proposalWriteTool(input: RegisterGatedToolsInput): PiToolDefinition<Tar
 }
 
 function proposalEditTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_proposal_edit", "Gated Proposal Edit", "Edit proposal workspace content through the Safety Gateway.", async (params) => {
+  return defineGatedTool("gated_proposal_edit", "Gated Proposal Edit", "Edit proposal workspace content through the Safety Gateway.", targetParameters, async (params) => {
     const path = params.path ?? "proposal.md";
     return gatedEdit({
       gateway: input.gateway,
@@ -137,12 +163,12 @@ function proposalEditTool(input: RegisterGatedToolsInput): PiToolDefinition<Targ
   });
 }
 
-function defineGatedTool(name: string, label: string, description: string, run: (params: TargetParams) => Promise<GatedToolResult<unknown>>): PiToolDefinition<TargetParams> {
+function defineGatedTool<Params extends TargetParams>(name: string, label: string, description: string, parameters: unknown, run: (params: Params) => Promise<GatedToolResult<unknown>>): PiToolDefinition<Params> {
   return {
     name,
     label,
     description,
-    parameters: targetParameters,
+    parameters,
     async execute(_toolCallId, params) {
       return toolResult(await run(params));
     }

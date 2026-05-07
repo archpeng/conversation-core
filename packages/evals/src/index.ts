@@ -445,7 +445,7 @@ async function llmPlanPmsReadGrounded(writer: SafetyAuditJsonlWriter): Promise<v
 
   const result = await runAgentTurn(session, customerTurn);
 
-  assert(prompts.length === 1 && prompts[0].includes("ToolPlanAction JSON-only output contract:"), "LLM plan eval must observe the planner prompt");
+  assert(prompts.length === 2 && prompts[0].includes("ToolPlanAction JSON-only output contract:") && prompts[1].includes("Final response synthesis after a gated PMS tool call."), "LLM plan eval must observe planner and post-tool synthesis prompts");
   assert(result.type === "text" && result.evidenceRefs?.[0] === evidenceItem.evidenceRef, "LLM PMS read plan must return evidence-grounded text");
   assert(executorCalls.join(",") === "pms_read", "LLM PMS read plan must call the read executor once");
   assert(auditCount(writer, "pms_read", "allow") === pmsReadAudits + 1, "LLM PMS read plan must audit PMS read");
@@ -552,7 +552,7 @@ async function llmPlanBeforeKeywordFallback(writer: SafetyAuditJsonlWriter): Pro
   const workflowAudits = auditCount(writer, "pms_workflow", "allow");
   const result = await runAgentTurn(session, { ...customerTurn, messageId: "message_keyword_bypass", message: { text: "book 2026-05-06 suite" } });
 
-  assert(prompts.length === 1, "keyword-bypass eval must prove the LLM prompt was observed before any PMS action");
+  assert(prompts.length === 2 && prompts[0].includes("ToolPlanAction JSON-only output contract:") && prompts[1].includes("Final response synthesis after a gated PMS tool call."), "keyword-bypass eval must prove planner and post-tool synthesis prompts were observed");
   assert(result.type === "text" && result.evidenceRefs?.[0] === readEvidence.evidenceRef, "keyword-bypass eval must return the LLM plan result");
   assert(executorCalls.join(",") === "pms_read", "deterministic booking keyword fallback must not run when a valid LLM plan exists");
   assert(auditCount(writer, "pms_workflow", "allow") === workflowAudits, "keyword-bypass eval must not audit deterministic workflow fallback");

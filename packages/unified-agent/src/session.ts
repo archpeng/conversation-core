@@ -1,6 +1,6 @@
-import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
+import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import type { PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle, contextBundlePrompt, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
 import { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState } from "./continuity.js";
 import type { PiAgentSession, PiAssistantEvent, PiCreateAgentSession, PiResourceLoaderFactory, PiToolDefinition, PiToolResult } from "./pi-session.js";
@@ -9,7 +9,7 @@ import { loadAgentProfile, type UnifiedAgentProfile } from "./profile.js";
 import { runCustomerPmsLoop } from "./customer-loop.js";
 import { runAdminProposalLoop } from "./proposal-loop.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
-import { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan } from "./tool-plan.js";
+import { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan, type ToolPlanAction } from "./tool-plan.js";
 import { registerGatedTools, type UnifiedAgentToolExecutors } from "./tool-registration.js";
 
 export type UnifiedAgentSession = {
@@ -34,12 +34,18 @@ export type CreateUnifiedAgentSessionInput = {
   executors?: UnifiedAgentToolExecutors;
 };
 
+export type UnifiedAgentTurnEvent =
+  | { event: "pms_agent_turn_planned"; profile: UnifiedAgentProfile["id"]; plannerPath: "structured_tool_plan" | "no_structured_plan" | "invalid_tool_plan"; toolPlanType?: string; toolName?: string; paramKeys?: readonly string[] }
+  | { event: "pms_agent_tool_result"; profile: UnifiedAgentProfile["id"]; toolName: string; outcome: string; evidenceMethod?: string; resultType: AgentResult["type"] }
+  | { event: "pms_agent_turn_result"; profile: UnifiedAgentProfile["id"]; resultType: AgentResult["type"]; evidenceCount: number; pendingActionCount: number };
+
 export type RunAgentTurnOptions = {
   evidenceRefs?: readonly string[];
   pendingActionRefs?: readonly string[];
   workspaceAdvisory?: readonly WorkspaceAdvisoryContextInput[];
   pmsEvidence?: readonly PmsEvidence<unknown>[];
   modelPriorSummary?: string;
+  eventSink?: (event: UnifiedAgentTurnEvent) => void;
 };
 
 export async function createUnifiedAgentSession(input: CreateUnifiedAgentSessionInput): Promise<UnifiedAgentSession> {
@@ -81,29 +87,33 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   const plannerOutcome = await runAssistantToolPlan(session, assistantText, turn, options);
   if (plannerOutcome.kind === "handled") {
     rememberRefs(session.state, plannerOutcome);
+    emitFinalResultEvent(session, options, plannerOutcome);
     return plannerOutcome.result;
   }
 
-  const fallbackResult = await runLegacySafetyScaffoldFallback({ session, turn, reason: plannerOutcome.reason });
+  const fallbackResult = await runPostLlmSafetyScaffoldFallback({ session, turn, reason: plannerOutcome.reason });
   if (fallbackResult) {
     rememberRefs(session.state, fallbackResult);
+    emitFinalResultEvent(session, options, fallbackResult);
     return fallbackResult.result;
   }
 
   const text = assistantText.trim() || fallbackNaturalReply(turn);
-  return synthesizeTextReply({
+  const result = synthesizeTextReply({
     text,
     evidenceRefs: options.evidenceRefs,
     pmsEvidence: options.pmsEvidence,
     context: turnContext(session, turn, options)
   }).result;
+  emitFinalResultEvent(session, options, { result, evidenceRefs: options.evidenceRefs ? [...options.evidenceRefs] : undefined, pendingActionRefs: options.pendingActionRefs ? [...options.pendingActionRefs] : undefined });
+  return result;
 }
 
 type PlannerPathOutcome =
   | (PlannedAgentResult & { kind: "handled" })
   | { kind: "no_structured_plan"; reason: "assistant_output_not_json" };
 
-type LegacySafetyScaffoldInput = {
+type PostLlmSafetyScaffoldInput = {
   session: UnifiedAgentSession;
   turn: FeishuTurnInput;
   reason: "assistant_output_not_json";
@@ -122,24 +132,34 @@ type PlannedAgentResult = {
 
 async function runAssistantToolPlan(session: UnifiedAgentSession, assistantText: string, turn: FeishuTurnInput, options: RunAgentTurnOptions): Promise<PlannerPathOutcome> {
   const json = parseAssistantToolPlanJson(assistantText);
-  if (!json.hasPlan) return { kind: "no_structured_plan", reason: "assistant_output_not_json" };
-  if (!json.ok) return { kind: "handled", result: { type: "refusal", reason: "invalid_request", message: "Invalid tool plan JSON." } };
+  if (!json.hasPlan) {
+    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "no_structured_plan" });
+    return { kind: "no_structured_plan", reason: "assistant_output_not_json" };
+  }
+  if (!json.ok) {
+    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "invalid_tool_plan" });
+    return { kind: "handled", result: { type: "refusal", reason: "invalid_request", message: "Invalid tool plan JSON." } };
+  }
 
   const manifest = buildVisibleGatedToolManifest(session.profile, session.tools);
   const parsed = parseToolPlan(json.value, manifest);
   if (!parsed.ok) {
+    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "invalid_tool_plan" });
     return { kind: "handled", result: { type: "refusal", reason: toolPlanRefusalReason(parsed.reason), message: `Invalid tool plan: ${parsed.reason}.` } };
   }
 
+  emitEvent(options, toolPlanEvent(session, parsed.plan));
   const executed = await executeToolPlan(parsed.plan, session.tools);
   if (!executed.ok) return { kind: "handled", result: executed.result };
-  return { kind: "handled", ...synthesizeToolResult(executed.toolResult, turnContext(session, turn, options), options) };
+  const planned = await synthesizeToolResult(session, turn, executed.toolResult, turnContext(session, turn, options), options);
+  emitToolResultEvent(session, options, parsed.plan.type === "call_tool" ? parsed.plan.toolName : "none", executed.toolResult, planned.result);
+  return { kind: "handled", ...planned };
 }
 
-async function runLegacySafetyScaffoldFallback(input: LegacySafetyScaffoldInput): Promise<PlannedAgentResult | undefined> {
+async function runPostLlmSafetyScaffoldFallback(input: PostLlmSafetyScaffoldInput): Promise<PlannedAgentResult | undefined> {
   void input.reason;
-  // This branch is a legacy safety/compatibility scaffold. It runs only after the LLM
-  // observed the turn and produced no structured ToolPlanAction JSON; it is not planner success.
+  // This bounded scaffold runs only after the LLM observed the turn and produced no
+  // structured ToolPlanAction JSON; it is not planner success and must not expand into the primary business brain.
   if (input.session.profile.id === "customer_pms") {
     return runCustomerPmsLoop({ turn: input.turn, tools: input.session.tools, state: input.session.state });
   }
@@ -167,22 +187,82 @@ function toolPlanRefusalReason(reason: string): "policy" | "unsupported" | "inva
   return "invalid_request";
 }
 
-function synthesizeToolResult(toolResult: PiToolResult, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): PlannedAgentResult {
+async function synthesizeToolResult(session: UnifiedAgentSession, turn: FeishuTurnInput, toolResult: PiToolResult, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): Promise<PlannedAgentResult> {
   const details = toolResult.details as Partial<GatedToolResult<unknown>>;
   if (details.outcome === "allow" && isPmsEvidence(details.value)) {
     const evidence = details.value;
-    const result = synthesizeTextReply({
-      text: `PMS evidence is available: ${evidence.summary}. evidenceRefs=${evidence.evidenceRef}`,
-      evidenceRefs: [evidence.evidenceRef],
-      pmsEvidence: [...(options.pmsEvidence ?? []), evidence],
-      currentPmsFact: true,
-      context
-    }).result;
-    return { result, evidenceRefs: [evidence.evidenceRef] };
+    const approval = synthesizePrepareConfirmApproval(evidence);
+    if (approval) return approval;
+
+    const llmReply = await promptAssistantText(session.piSession, evidenceReplyPrompt(turn, evidence));
+    const synthesized = synthesizeEvidenceTextReply(llmReply, evidence, context, options);
+    if (synthesized) return synthesized;
+    return fallbackEvidenceTextReply(evidence, context, options);
   }
 
   const text = toolResult.content.map((item) => item.text).filter(Boolean).join("\n").trim() || "Gated action completed.";
   return { result: synthesizeTextReply({ text, context }).result };
+}
+
+function synthesizeEvidenceTextReply(text: string, evidence: PmsEvidence<unknown>, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): PlannedAgentResult | undefined {
+  if (!text.trim() || parseAssistantToolPlanJson(text).hasPlan) return undefined;
+  const replyText = text.includes(evidence.evidenceRef) ? text : `${text.trim()} evidenceRefs=${evidence.evidenceRef}`;
+  const synthesized = synthesizeTextReply({
+    text: replyText,
+    evidenceRefs: [evidence.evidenceRef],
+    pmsEvidence: [...(options.pmsEvidence ?? []), evidence],
+    currentPmsFact: true,
+    context
+  });
+  if (!synthesized.ok) return undefined;
+  return { result: synthesized.result, evidenceRefs: [evidence.evidenceRef] };
+}
+
+function fallbackEvidenceTextReply(evidence: PmsEvidence<unknown>, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): PlannedAgentResult {
+  const result = synthesizeTextReply({
+    text: `PMS evidence is available: ${evidence.summary}. evidenceRefs=${evidence.evidenceRef}`,
+    evidenceRefs: [evidence.evidenceRef],
+    pmsEvidence: [...(options.pmsEvidence ?? []), evidence],
+    currentPmsFact: true,
+    context
+  }).result;
+  return { result, evidenceRefs: [evidence.evidenceRef] };
+}
+
+function synthesizePrepareConfirmApproval(evidence: PmsEvidence<unknown>): PlannedAgentResult | undefined {
+  if (evidence.source.method !== "prepareReservationConfirm" || !isReservationConfirmPreparation(evidence.data)) return undefined;
+  return {
+    result: { type: "approval_card", card: approvalCard(evidence.scope.tenantId, evidence.data.pendingActionId, evidence.data.expiresAt) },
+    evidenceRefs: [evidence.evidenceRef],
+    pendingActionRefs: [evidence.data.pendingActionId]
+  };
+}
+
+function isReservationConfirmPreparation(value: unknown): value is ReservationConfirmPreparation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<ReservationConfirmPreparation>;
+  return typeof record.pendingActionId === "string"
+    && record.pendingActionId.trim().length > 0
+    && record.confirmationMode === "typedCardOnly"
+    && record.mutationStatus === "none"
+    && (record.expiresAt === undefined || typeof record.expiresAt === "string");
+}
+
+function approvalCard(tenantId: string, pendingActionId: string, expiresAt?: string): PmsApprovalCard {
+  return {
+    type: "pms_pending_action_card",
+    ref: {
+      type: "pms_pending_action",
+      tenantId,
+      pendingActionId,
+      action: "reservation_confirm",
+      ...(expiresAt ? { expiresAt } : {})
+    },
+    title: "确认预订",
+    summary: "PMS 已准备待审批操作；只有点击确认卡片才会继续执行。",
+    confirmLabel: "确认",
+    cancelLabel: "取消"
+  };
 }
 
 function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
@@ -195,6 +275,47 @@ function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
     && typeof evidence.fetchedAt === "string"
     && evidence.scope !== undefined
     && "data" in evidence;
+}
+
+function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): UnifiedAgentTurnEvent {
+  if (plan.type !== "call_tool") {
+    return { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "structured_tool_plan", toolPlanType: plan.type };
+  }
+  return {
+    event: "pms_agent_turn_planned",
+    profile: session.profile.id,
+    plannerPath: "structured_tool_plan",
+    toolPlanType: plan.type,
+    toolName: plan.toolName,
+    paramKeys: Object.keys(plan.params).sort()
+  };
+}
+
+function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, toolName: string, toolResult: PiToolResult, result: AgentResult): void {
+  const details = toolResult.details as Partial<GatedToolResult<unknown>>;
+  const value = "value" in details ? details.value : undefined;
+  emitEvent(options, {
+    event: "pms_agent_tool_result",
+    profile: session.profile.id,
+    toolName,
+    outcome: details.outcome ?? "unknown",
+    ...(isPmsEvidence(value) ? { evidenceMethod: value.source.method } : {}),
+    resultType: result.type
+  });
+}
+
+function emitFinalResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, result: PlannedAgentResult): void {
+  emitEvent(options, {
+    event: "pms_agent_turn_result",
+    profile: session.profile.id,
+    resultType: result.result.type,
+    evidenceCount: result.evidenceRefs?.length ?? 0,
+    pendingActionCount: result.pendingActionRefs?.length ?? 0
+  });
+}
+
+function emitEvent(options: RunAgentTurnOptions, event: UnifiedAgentTurnEvent): void {
+  options.eventSink?.(event);
 }
 
 function turnContext(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions) {
@@ -262,6 +383,21 @@ function extractContentPartText(part: unknown): string {
   if (typeof text === "string") return text;
   if (record.type === "text" && typeof record.content === "string") return record.content;
   return "";
+}
+
+function evidenceReplyPrompt(turn: FeishuTurnInput, evidence: PmsEvidence<unknown>): string {
+  return [
+    "Final response synthesis after a gated PMS tool call.",
+    "Reply naturally in the user's language, using only the PMS evidence summary below for current PMS facts.",
+    "Include the exact evidenceRefs value in the final answer.",
+    "If the user also requested a booking or other high-risk PMS change, explain that natural language cannot complete the mutation; ask only for the smallest missing confirmation or say an approval card/workflow is required.",
+    "Do not invent room IDs, prices, pending action IDs, or completed mutation claims.",
+    `PMS evidence method=${evidence.source.method}`,
+    `PMS evidence summary=${evidence.summary}`,
+    `evidenceRefs=${evidence.evidenceRef}`,
+    "User message:",
+    turn.message.text
+  ].join("\n");
 }
 
 function fallbackNaturalReply(turn: FeishuTurnInput): string {

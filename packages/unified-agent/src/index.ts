@@ -8,5 +8,5 @@ export { buildSystemPrompt } from "./prompt.js";
 export { loadAgentProfile, type UnifiedAgentProfile, type UnifiedAgentProfileId } from "./profile.js";
 export { runCustomerPmsLoop, type CustomerLoopResult } from "./customer-loop.js";
 export { runAdminProposalLoop, type ProposalLoopResult } from "./proposal-loop.js";
-export { createUnifiedAgentSession, runAgentTurn, type CreateUnifiedAgentSessionInput, type RunAgentTurnOptions, type UnifiedAgentSession } from "./session.js";
+export { createUnifiedAgentSession, runAgentTurn, type CreateUnifiedAgentSessionInput, type RunAgentTurnOptions, type UnifiedAgentSession, type UnifiedAgentTurnEvent } from "./session.js";
 export { registerGatedTools, type RegisterGatedToolsInput, type UnifiedAgentToolExecutors } from "./tool-registration.js";

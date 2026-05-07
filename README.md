@@ -18,6 +18,7 @@ adapter-feishu -> pms-agent-v2/apps/agent-service -> pms-platform
 6. Natural-language PMS mutation is forbidden; high-risk actions are proposal or approval first.
 7. Audit and eval proof start with the MVP and gate changes before closeout.
 8. Architecture and AI-readability constraints in `docs/ARCHITECTURE_CONSTRAINTS.md` must stay true as the Agent becomes stronger.
+9. MVP changes must stay minimal: wire existing typed `pms-platform` capabilities and shrink deterministic scaffolding before adding frameworks, generic platforms, supervisors, rollout machinery, or broad workspace/memory abstractions.
 
 ## Plan control plane
 

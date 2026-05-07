@@ -22,6 +22,7 @@ export type AgentServiceRuntimeConfig = {
   piSessionMode: "memory" | "persistent";
   piModelProvider?: string;
   piModelId?: string;
+  logTurnEvents: boolean;
   defaultHotelId: string;
   defaultPropertyId: string;
   defaultRoomId: string;
@@ -55,6 +56,7 @@ export function loadAgentServiceRuntimeConfig(env: Env = process.env): AgentServ
     piSessionMode: env.PMS_AGENT_PI_SESSION_MODE === "persistent" ? "persistent" : "memory",
     piModelProvider: env.PMS_AGENT_PI_MODEL_PROVIDER?.trim() || undefined,
     piModelId: env.PMS_AGENT_PI_MODEL_ID?.trim() || undefined,
+    logTurnEvents: env.PMS_AGENT_LOG_TURN_EVENTS !== "false",
     defaultHotelId: env.PMS_AGENT_DEFAULT_HOTEL_ID?.trim() || "property-small-hotel",
     defaultPropertyId: env.PMS_AGENT_DEFAULT_PROPERTY_ID?.trim() || "property-small-hotel",
     defaultRoomId: env.PMS_AGENT_DEFAULT_ROOM_ID?.trim() || "room-A1",
@@ -71,7 +73,8 @@ export function createRuntimeAgentService(config: AgentServiceRuntimeConfig): Ag
     createAgentSession: createRuntimePiSessionFactory(config),
     createResourceLoader: createRuntimeResourceLoaderFactory(config),
     cwd: config.cwd,
-    executors: createRuntimeExecutors(config)
+    executors: createRuntimeExecutors(config),
+    eventSink: config.logTurnEvents ? (event) => console.log(JSON.stringify(event)) : undefined
   });
 }
 
@@ -148,7 +151,7 @@ export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig,
   };
 }
 
-function createRuntimeExecutors(config: AgentServiceRuntimeConfig): UnifiedAgentToolExecutors {
+export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): UnifiedAgentToolExecutors {
   const client = createPmsPlatformClient({
     baseUrl: config.pmsPlatformBaseUrl,
     authToken: config.pmsPlatformAuthToken,
@@ -161,9 +164,9 @@ function createRuntimeExecutors(config: AgentServiceRuntimeConfig): UnifiedAgent
         return client.searchAvailability({
           tenantId: tenantId(request),
           hotelId: config.defaultHotelId,
-          checkInDate: config.defaultCheckInDate,
-          checkOutDate: config.defaultCheckOutDate,
-          ...(config.defaultRoomType ? { roomType: config.defaultRoomType } : {})
+          checkInDate: request.checkInDate ?? config.defaultCheckInDate,
+          checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
+          ...(request.roomType ?? config.defaultRoomType ? { roomType: request.roomType ?? config.defaultRoomType } : {})
         });
       }
       return client.capabilitiesManifest({ tenantId: tenantId(request) });

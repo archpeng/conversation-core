@@ -66,7 +66,30 @@ function parseCallToolPlan(record: Record<string, unknown>, manifest: readonly V
   if (rawToolNames.has(record.toolName)) return { ok: false, reason: "raw_tool_not_visible" };
   if (!manifest.some((tool) => tool.name === record.toolName)) return { ok: false, reason: "tool_not_visible" };
   if (!record.params || typeof record.params !== "object" || Array.isArray(record.params)) return { ok: false, reason: "invalid_tool_params" };
-  return { ok: true, plan: { type: "call_tool", toolName: record.toolName, params: record.params as Record<string, unknown> } };
+  const params = record.params as Record<string, unknown>;
+  if (!validParamsForTool(record.toolName, params)) return { ok: false, reason: "invalid_tool_params" };
+  return { ok: true, plan: { type: "call_tool", toolName: record.toolName, params } };
+}
+
+function validParamsForTool(toolName: string, params: Record<string, unknown>): boolean {
+  if (toolName !== "gated_pms_read") return true;
+  const allowed = new Set(["target", "checkInDate", "checkOutDate", "roomType", "quantity", "guestName"]);
+  if (!Object.keys(params).every((key) => allowed.has(key))) return false;
+  if (params.target !== undefined && typeof params.target !== "string") return false;
+  if (params.checkInDate !== undefined && !isIsoDate(params.checkInDate)) return false;
+  if (params.checkOutDate !== undefined && !isIsoDate(params.checkOutDate)) return false;
+  if (params.roomType !== undefined && !isNonEmptyString(params.roomType)) return false;
+  if (params.guestName !== undefined && !isNonEmptyString(params.guestName)) return false;
+  if (params.quantity !== undefined && (typeof params.quantity !== "number" || !Number.isInteger(params.quantity) || params.quantity < 1)) return false;
+  return true;
+}
+
+function isIsoDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function parseMessagePlan<T extends "ask_clarification" | "require_approval">(

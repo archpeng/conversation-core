@@ -14,7 +14,8 @@ export async function main(): Promise<void> {
     pmsPlatformBaseUrl: config.pmsPlatformBaseUrl,
     proposalWorkspacePath: config.proposalWorkspacePath,
     piMode: config.piMode,
-    piSessionMode: config.piSessionMode
+    piSessionMode: config.piSessionMode,
+    logTurnEvents: config.logTurnEvents
   })}\n`);
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
