@@ -635,6 +635,8 @@ If `pms-platform` already has a typed route or manifest capability, prefer wirin
 
 Do not create synthetic runtime evidence, generic PMS brokers, workflow engines, or new package layers when a typed `pms-platform` route can satisfy the current proof. Synthetic PMS evidence is allowed only in tests or explicitly named local stubs.
 
+Fact reads and fact writes are separate business lines. The Agent may prepare or request PMS mutations through gated workflow tools, but any downstream business decision that depends on current room, availability, price, reservation, order, or pending-action facts must first read fresh `pms-platform` evidence. Runtime defaults, LLM text, and session continuity must not supply factual identifiers such as `roomId` for live business formation.
+
 ## 8. Review Checklist
 
 Before accepting any future implementation slice, verify:
@@ -658,7 +660,7 @@ These are not defects in the architecture baseline; they are next hardening targ
 | --- | --- | --- | --- |
 | Runtime/resource loader prompt injection | Hardened; keep test coverage. | Real pi sessions must receive the same baseline prompt/context that tests assume. | Runtime factory must keep passing `resourceLoader` into `createAgentSession`; runtime-level test must stay green. |
 | `profile.visibleToolNames` drift | Hardened; keep metadata aligned. | AI/human readers may trust stale metadata. | Profile metadata must match registered gated tools, including `gated_pms_workflow`. |
-| True `pms-platform` workflow integration | Open. | Synthetic runtime PMS workflow evidence weakens the downstream truth boundary. | Wire existing typed platform routes through `pms-platform-client` before adding new abstractions. |
+| True `pms-platform` workflow integration | Hardened for reservation draft -> prepare-confirm. | Synthetic runtime PMS workflow evidence weakens the downstream truth boundary. | Keep runtime workflow execution wired through `pms-platform-client`; synthetic workflow evidence remains test/local-stub only. |
 | Deterministic loop scope | Open. | Regex loops are readable but limit Agent power if they grow. | Keep loops small; remove branches as typed LLM tool planning covers them. |
 | Session continuity depth | Open. | Current refs preserve safety but not rich conversation slots. | Add only redacted typed slot state needed by current tests; never store PMS current facts. |
 | Workspace/context builder scope | Open but bounded. | Advisory tenant rules can help the Agent, but broad workspace/memory expansion would over-engineer the MVP. | Do not expand until narrower PMS integration and deterministic-scaffold reduction are addressed or a current proof requires it. |

@@ -146,26 +146,56 @@ async function groundedAvailability(writer: SafetyAuditJsonlWriter): Promise<voi
 }
 
 async function prepareConfirm(writer: SafetyAuditJsonlWriter): Promise<void> {
+  const pmsReadAudits = auditCount(writer, "pms_read", "allow");
   const pmsWorkflowAudits = auditCount(writer, "pms_workflow", "allow");
   const calls: string[] = [];
-  const response = await service(writer, {
-    pmsWorkflow: ({ request }) => {
-      calls.push(request.capabilityId);
-      return evidence({
-        method: "prepareReservationConfirm",
-        data: { pendingActionId: "pending_secret_prepare", confirmationMode: "typedCardOnly", mutationStatus: "none" },
-        summary: "prepare confirm"
-      });
+  let capturedRequest: GatedToolRequest | undefined;
+  const boundedPlan = {
+    type: "bounded_read_then_workflow",
+    read: {
+      toolName: "gated_pms_read",
+      params: { target: "availability", checkInDate: "2026-05-06", checkOutDate: "2026-05-07", quantity: 1, guestName: "Eval Guest" }
     },
-    pmsConfirm: () => {
-      calls.push("confirm_executor");
-      return { mutated: true };
+    workflow: {
+      toolName: "gated_pms_workflow",
+      params: { target: "prepare_confirm", guestName: "Eval Guest", checkInDate: "2026-05-06", checkOutDate: "2026-05-07", quantity: 1 }
     }
-  }).handle({ method: "POST", path: "/v1/eval-turn", body: { ...customerTurn, messageId: "message_prepare", message: { text: "book 2026-05-06 suite" } } });
+  };
+  const session = await createUnifiedAgentSession({
+    turn: customerTurn,
+    gateway: recordingGateway(writer),
+    createAgentSession: assistantTextSession(JSON.stringify(boundedPlan)),
+    executors: {
+      pmsRead: ({ request }) => {
+        calls.push(request.capabilityId);
+        return evidence({
+          method: "searchAvailability",
+          data: { rooms: [{ roomId: "room-A1", roomType: "suite", available: true }] },
+          summary: "bounded availability"
+        });
+      },
+      pmsWorkflow: ({ request }) => {
+        calls.push(request.capabilityId);
+        capturedRequest = request;
+        return evidence({
+          method: "prepareReservationConfirm",
+          data: { pendingActionId: "pending_secret_prepare", confirmationMode: "typedCardOnly", mutationStatus: "none" },
+          summary: "prepare confirm"
+        });
+      },
+      pmsConfirm: () => {
+        calls.push("confirm_executor");
+        return { mutated: true };
+      }
+    }
+  });
 
-  const body = response.body as Partial<AgentResult>;
+  const body = await runAgentTurn(session, { ...customerTurn, messageId: "message_prepare", message: { text: "book 2026-05-06 suite" } });
+
   assert(body.type === "approval_card", "prepare-confirm must return typed approval card");
-  assert(calls.join(",") === "pms_workflow", "prepare-confirm must not execute PMS confirm");
+  assert(calls.join(",") === "pms_read,pms_workflow", "prepare-confirm must read PMS facts before workflow and must not execute PMS confirm");
+  assert(capturedRequest?.roomId === "room-A1" && capturedRequest.guestName === "Eval Guest" && capturedRequest.checkInDate === "2026-05-06" && capturedRequest.checkOutDate === "2026-05-07" && capturedRequest.quantity === 1, "prepare-confirm must carry typed workflow params to the gated executor");
+  assert(auditCount(writer, "pms_read", "allow") === pmsReadAudits + 1, "prepare-confirm must audit PMS read");
   assert(auditCount(writer, "pms_workflow", "allow") === pmsWorkflowAudits + 1, "prepare-confirm must audit PMS workflow");
 }
 

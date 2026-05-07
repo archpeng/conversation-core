@@ -46,6 +46,10 @@ type PmsReadParams = TargetParams & {
   guestName?: string;
 };
 
+type PmsWorkflowParams = PmsReadParams & {
+  roomId?: string;
+};
+
 const targetParameters = {
   type: "object",
   additionalProperties: false,
@@ -67,6 +71,19 @@ const pmsReadParameters = {
     roomType: { type: "string", minLength: 1 },
     quantity: { type: "integer", minimum: 1 },
     guestName: { type: "string", minLength: 1 }
+  }
+} as const;
+
+const pmsWorkflowParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    target: { type: "string", enum: ["prepare_confirm"] },
+    guestName: { type: "string", minLength: 1 },
+    checkInDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+    checkOutDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+    quantity: { type: "integer", minimum: 1 },
+    roomType: { type: "string", minLength: 1 }
   }
 } as const;
 
@@ -94,13 +111,19 @@ function pmsReadTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsReadPa
   });
 }
 
-function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<TargetParams> {
-  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation.", targetParameters, async (params) => {
+function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsWorkflowParams> {
+  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation. For reservation confirm preparation, pass target=prepare_confirm plus guestName, ISO checkInDate/checkOutDate, and optional quantity or roomType when provided; roomId is supplied by runtime from PMS evidence.", pmsWorkflowParameters, async (params) => {
     return gatedPmsWorkflow({
       gateway: input.gateway,
       actor: input.actor,
       tenantId: input.tenantId,
       target: params.target,
+      roomId: params.roomId,
+      checkInDate: params.checkInDate,
+      checkOutDate: params.checkOutDate,
+      roomType: params.roomType,
+      quantity: params.quantity,
+      guestName: params.guestName,
       executor: input.executors?.pmsWorkflow ?? notConfiguredExecutor("pmsWorkflow")
     });
   });

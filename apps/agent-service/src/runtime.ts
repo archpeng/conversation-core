@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { AuthStorage, createAgentSession, DefaultResourceLoader, getAgentDir, ModelRegistry, SessionManager, type ResourceLoader } from "@mariozechner/pi-coding-agent";
 import { createAgentService, type AgentService } from "./index.js";
 import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import { createPmsEvidence, createPmsPlatformClient, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import { createPmsPlatformClient, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
 import type { PiCreateAgentSession, PiResourceLoaderFactory, UnifiedAgentToolExecutors } from "@pms-agent-v2/unified-agent";
 
@@ -171,17 +171,18 @@ export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): Unifi
       }
       return client.capabilitiesManifest({ tenantId: tenantId(request) });
     },
-    pmsWorkflow: async ({ request }) => createPmsEvidence({
-      method: "prepareReservationConfirm",
-      tenantId: tenantId(request),
-      fetchedAt: new Date().toISOString(),
-      data: {
-        pendingActionId: `manual-${Date.now()}`,
-        confirmationMode: "typedCardOnly",
-        mutationStatus: "none"
-      },
-      summary: "Runtime prepare-confirm is intentionally approval-card only; configure a production draft executor before live mutation."
-    }),
+    pmsWorkflow: async ({ request }) => {
+      const tenant = tenantId(request);
+      const draftId = request.draftId ?? (await client.createReservationDraft({
+        tenantId: tenant,
+        roomId: requiredWorkflowText(request.roomId, "pms_workflow_room_required"),
+        guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
+        checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
+        checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required")
+      })).data.draftId;
+
+      return client.prepareReservationConfirm({ tenantId: tenant, draftId });
+    },
     pmsConfirm: async ({ request }) => client.pendingActionStatus({
       tenantId: tenantId(request),
       pendingActionId: request.pendingActionId ?? request.target ?? "missing-pending-action"
@@ -257,6 +258,11 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown):
 
 function tenantId(request: GatedToolRequest): string {
   return request.tenantId ?? "default-tenant";
+}
+
+function requiredWorkflowText(value: string | undefined, message: string): string {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  throw new Error(message);
 }
 
 function defaultRuntimeCwd(processCwd: string): string {

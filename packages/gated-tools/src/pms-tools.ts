@@ -5,6 +5,8 @@ export type GatedPmsInput<T> = {
   actor: GatedToolRequest["actor"];
   tenantId: string;
   target?: string;
+  roomId?: string;
+  draftId?: string;
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;
@@ -47,6 +49,8 @@ function pmsRequest<T>(input: GatedPmsInput<T>, capabilityId: string): GatedTool
     actor: input.actor,
     tenantId: input.tenantId,
     target: input.target,
+    roomId: input.roomId,
+    draftId: input.draftId,
     checkInDate: input.checkInDate,
     checkOutDate: input.checkOutDate,
     roomType: input.roomType,

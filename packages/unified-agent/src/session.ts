@@ -1,6 +1,6 @@
 import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import type { PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
+import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle, contextBundlePrompt, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
 import { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState } from "./continuity.js";
 import type { PiAgentSession, PiAssistantEvent, PiCreateAgentSession, PiResourceLoaderFactory, PiToolDefinition, PiToolResult } from "./pi-session.js";
@@ -149,11 +149,39 @@ async function runAssistantToolPlan(session: UnifiedAgentSession, assistantText:
   }
 
   emitEvent(options, toolPlanEvent(session, parsed.plan));
+  if (parsed.plan.type === "bounded_read_then_workflow") {
+    return executeBoundedReadThenWorkflowPlan(session, parsed.plan, turn, options);
+  }
   const executed = await executeToolPlan(parsed.plan, session.tools);
   if (!executed.ok) return { kind: "handled", result: executed.result };
   const planned = await synthesizeToolResult(session, turn, executed.toolResult, turnContext(session, turn, options), options);
   emitToolResultEvent(session, options, parsed.plan.type === "call_tool" ? parsed.plan.toolName : "none", executed.toolResult, planned.result);
   return { kind: "handled", ...planned };
+}
+
+async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, plan: Extract<ToolPlanAction, { type: "bounded_read_then_workflow" }>, turn: FeishuTurnInput, options: RunAgentTurnOptions): Promise<PlannerPathOutcome> {
+  const readResult = await executeToolPlan({ type: "call_tool", toolName: plan.read.toolName, params: plan.read.params }, session.tools);
+  if (!readResult.ok) return { kind: "handled", result: readResult.result };
+  const readDetails = readResult.toolResult.details as Partial<GatedToolResult<unknown>>;
+  const readValue = "value" in readDetails ? readDetails.value : undefined;
+  const readEvidence = readDetails.outcome === "allow" && isPmsEvidence(readValue) ? readValue : undefined;
+  if (!isAvailabilityEvidence(readEvidence)) {
+    return { kind: "handled", result: { type: "refusal", reason: "unsupported", message: "PMS availability evidence is missing." } };
+  }
+  emitToolResultEvent(session, options, plan.read.toolName, readResult.toolResult, { type: "text", text: "PMS read evidence captured.", evidenceRefs: [readEvidence.evidenceRef] });
+
+  const candidate = selectRoomCandidate(readEvidence, plan.workflow.params);
+  if (!candidate) {
+    const shortage = unavailableCandidateReply(readEvidence, turnContext(session, turn, options));
+    return { kind: "handled", result: shortage.result, evidenceRefs: [readEvidence.evidenceRef] };
+  }
+
+  const workflowParams = { ...plan.workflow.params, roomId: candidate.roomId };
+  const workflowResult = await executeToolPlan({ type: "call_tool", toolName: plan.workflow.toolName, params: workflowParams }, session.tools);
+  if (!workflowResult.ok) return { kind: "handled", result: workflowResult.result, evidenceRefs: [readEvidence.evidenceRef] };
+  const planned = await synthesizeToolResult(session, turn, workflowResult.toolResult, turnContext(session, turn, options), options);
+  emitToolResultEvent(session, options, plan.workflow.toolName, workflowResult.toolResult, planned.result);
+  return { kind: "handled", ...planned, evidenceRefs: [readEvidence.evidenceRef, ...(planned.evidenceRefs ?? [])] };
 }
 
 async function runPostLlmSafetyScaffoldFallback(input: PostLlmSafetyScaffoldInput): Promise<PlannedAgentResult | undefined> {
@@ -275,6 +303,30 @@ function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
     && typeof evidence.fetchedAt === "string"
     && evidence.scope !== undefined
     && "data" in evidence;
+}
+
+function isAvailabilityEvidence(value: PmsEvidence<unknown> | undefined): value is PmsEvidence<AvailabilitySearchResult> {
+  if (!value || value.source.method !== "searchAvailability") return false;
+  const data = value.data as Partial<AvailabilitySearchResult> | undefined;
+  return Boolean(data && Array.isArray(data.rooms));
+}
+
+function selectRoomCandidate(evidence: PmsEvidence<AvailabilitySearchResult>, workflowParams: Record<string, unknown>): RoomAvailability | undefined {
+  const requestedQuantity = typeof workflowParams.quantity === "number" && Number.isInteger(workflowParams.quantity) && workflowParams.quantity > 0 ? workflowParams.quantity : 1;
+  const availableRooms = evidence.data.rooms.filter((room) => room.available === true && typeof room.roomId === "string" && room.roomId.trim().length > 0);
+  if (availableRooms.length < requestedQuantity) return undefined;
+  return availableRooms[0];
+}
+
+function unavailableCandidateReply(evidence: PmsEvidence<AvailabilitySearchResult>, context: ReturnType<typeof turnContext>): PlannedAgentResult {
+  const result = synthesizeTextReply({
+    text: `PMS 证据显示可用候选不足，无法准备预订审批卡。evidenceRefs=${evidence.evidenceRef}`,
+    evidenceRefs: [evidence.evidenceRef],
+    pmsEvidence: [evidence],
+    currentPmsFact: true,
+    context
+  }).result;
+  return { result, evidenceRefs: [evidence.evidenceRef] };
 }
 
 function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): UnifiedAgentTurnEvent {
@@ -426,6 +478,11 @@ function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, options
     "Allowed shapes:",
     JSON.stringify([
       { type: "call_tool", toolName: "one visible gated tool name", params: {} },
+      {
+        type: "bounded_read_then_workflow",
+        read: { toolName: "gated_pms_read", params: { target: "availability" } },
+        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm" } }
+      },
       { type: "ask_clarification", message: "focused clarification question" },
       { type: "refuse", reason: "policy|unsupported|invalid_request", message: "safe refusal text" },
       { type: "require_approval", message: "approval-card/proposal required text" }

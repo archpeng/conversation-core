@@ -17,6 +17,8 @@ export type ToolRequest = {
   };
   pendingActionId?: string;
   target?: string;
+  roomId?: string;
+  draftId?: string;
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;

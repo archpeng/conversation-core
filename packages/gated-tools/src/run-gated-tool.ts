@@ -13,6 +13,8 @@ export type GatedToolRequest = {
   };
   pendingActionId?: string;
   target?: string;
+  roomId?: string;
+  draftId?: string;
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;

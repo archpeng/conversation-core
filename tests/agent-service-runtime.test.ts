@@ -84,6 +84,103 @@ describe("agent service runtime wiring", () => {
     }
   });
 
+  it("uses typed PMS workflow params to create a draft before preparing confirm", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      calls.push({ url: href, body: JSON.parse(String(init?.body)) });
+      if (href.endsWith("/v1/pms/reservation-drafts/create")) {
+        return { ok: true, status: 200, json: async () => ({ draftId: "draft_typed_1", status: "draft" }) } as Response;
+      }
+      if (href.endsWith("/v1/pms/reservation-drafts/prepare-confirm")) {
+        return { ok: true, status: 200, json: async () => ({ pendingActionId: "pending_typed_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791",
+        PMS_AGENT_DEFAULT_CHECK_IN_DATE: "2026-05-06",
+        PMS_AGENT_DEFAULT_CHECK_OUT_DATE: "2026-05-07",
+        PMS_AGENT_DEFAULT_ROOM_ID: "room-default",
+        PMS_AGENT_DEFAULT_GUEST_NAME: "Default Guest"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      const evidence = await executors.pmsWorkflow?.({
+        auditId: "audit_1",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_workflow" } },
+        request: {
+          capabilityId: "pms_workflow",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          target: "prepare_confirm",
+          roomId: "room-A1",
+          guestName: "王晓",
+          checkInDate: "2026-05-09",
+          checkOutDate: "2026-05-10",
+          quantity: 2
+        }
+      });
+
+      expect(calls).toEqual([
+        {
+          url: "http://127.0.0.1:8791/v1/pms/reservation-drafts/create",
+          body: { tenantId: "tenant_1", roomId: "room-A1", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" }
+        },
+        {
+          url: "http://127.0.0.1:8791/v1/pms/reservation-drafts/prepare-confirm",
+          body: { tenantId: "tenant_1", draftId: "draft_typed_1" }
+        }
+      ]);
+      expect(evidence).toMatchObject({
+        source: { system: "pms-platform", method: "prepareReservationConfirm" },
+        data: { pendingActionId: "pending_typed_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does not use runtime defaults to create workflow drafts without a PMS room fact", async () => {
+    const calls: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      calls.push(init?.body);
+      return { ok: true, status: 200, json: async () => ({ draftId: "draft_unexpected", status: "draft" }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791",
+        PMS_AGENT_DEFAULT_ROOM_ID: "room-default",
+        PMS_AGENT_DEFAULT_GUEST_NAME: "Default Guest",
+        PMS_AGENT_DEFAULT_CHECK_IN_DATE: "2026-05-06",
+        PMS_AGENT_DEFAULT_CHECK_OUT_DATE: "2026-05-07"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      await expect(executors.pmsWorkflow?.({
+        auditId: "audit_1",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_workflow" } },
+        request: {
+          capabilityId: "pms_workflow",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          target: "prepare_confirm",
+          guestName: "王晓",
+          checkInDate: "2026-05-09",
+          checkOutDate: "2026-05-10"
+        }
+      })).rejects.toThrow("pms_workflow_room_required");
+      expect(calls).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("fails visibly when a configured runtime model cannot be resolved", async () => {
     const config = loadAgentServiceRuntimeConfig({
       PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
