@@ -501,7 +501,7 @@ describe("unified Agent runtime", () => {
 
     expect(result).toEqual({
       type: "text",
-      text: `PMS 证据显示可用候选不足，无法准备预订审批卡。evidenceRefs=${readEvidence.evidenceRef}`,
+      text: `PMS 证据显示该入住区间没有可订房间，无法准备预订审批卡。请调整日期或房型后再试。evidenceRefs=${readEvidence.evidenceRef}`,
       evidenceRefs: [readEvidence.evidenceRef]
     });
     expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
@@ -576,6 +576,181 @@ describe("unified Agent runtime", () => {
     });
     expect(session.state.evidenceRefs).toEqual([readEvidence.evidenceRef, workflowEvidence.evidenceRef]);
     expect(session.state.pendingActionRefs).toEqual(["pending_group_bounded"]);
+  });
+
+  it("resolves spoken room type text against PMS availability evidence before workflow", async () => {
+    const order: string[] = [];
+    const prompts: string[] = [];
+    let readRequest: GatedToolRequest | undefined;
+    let workflowRequest: GatedToolRequest | undefined;
+    const readEvidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed availability",
+      data: {
+        rooms: [
+          { roomId: "room-A1", roomType: "花园别墅", available: true },
+          { roomId: "room-D1", roomType: "秘境洞穴", available: true },
+          { roomId: "room-D2", roomType: "秘境洞穴", available: true }
+        ]
+      }
+    });
+    const workflowEvidence = createPmsEvidence({
+      method: "prepareReservationGroupConfirm",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:01:00.000Z",
+      summary: "typed group approval is ready",
+      data: { pendingActionId: "pending_group_cave", pendingActionRef: "pending_group_cave", cardPayloadRef: "card_group_cave", quoteRef: "quote_group_cave", selectionCount: 2, confirmationMode: "typedCardOnly", mutationStatus: "none" }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({
+          type: "bounded_read_then_workflow",
+          read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-08", checkOutDate: "2026-05-10", quantity: 2, roomType: "洞穴房", guestName: "小杨" } },
+          workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "小杨", checkInDate: "2026-05-08", checkOutDate: "2026-05-10", quantity: 2, roomTypeText: "洞穴房" } }
+        }),
+        JSON.stringify({ ok: true, roomType: "秘境洞穴", roomIds: ["room-D1", "room-D2"] })
+      ], prompts),
+      executors: {
+        pmsRead: ({ request }) => {
+          readRequest = request;
+          order.push("executor:pmsRead");
+          return readEvidence;
+        },
+        pmsWorkflow: ({ request }) => {
+          workflowRequest = request;
+          order.push("executor:pmsWorkflow");
+          return workflowEvidence;
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "先两间洞穴" } });
+
+    expect(result.type).toBe("approval_card");
+    expect(readRequest).toMatchObject({ target: "availability", quantity: 2 });
+    expect(readRequest?.roomType).toBeUndefined();
+    expect(prompts[1]).toContain("requestedRoomTypeText=洞穴房");
+    expect(prompts[1]).toContain("秘境洞穴");
+    expect(workflowRequest).toMatchObject({
+      capabilityId: "pms_workflow",
+      quantity: 2,
+      roomType: "秘境洞穴",
+      selections: [
+        { roomId: "room-D1", selectedCandidateRef: `${readEvidence.evidenceRef}:room-D1`, roomType: "秘境洞穴" },
+        { roomId: "room-D2", selectedCandidateRef: `${readEvidence.evidenceRef}:room-D2`, roomType: "秘境洞穴" }
+      ]
+    });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead", "decide:pms_workflow", "audit:allow", "executor:pmsWorkflow"]);
+  });
+
+  it("does not run workflow when room type resolution returns non-evidence rooms", async () => {
+    const order: string[] = [];
+    const readEvidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed availability",
+      data: {
+        rooms: [
+          { roomId: "room-A1", roomType: "花园别墅", available: true },
+          { roomId: "room-D1", roomType: "秘境洞穴", available: true }
+        ]
+      }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({
+          type: "bounded_read_then_workflow",
+          read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-08", checkOutDate: "2026-05-10", quantity: 1, guestName: "小杨" } },
+          workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "小杨", checkInDate: "2026-05-08", checkOutDate: "2026-05-10", quantity: 1, roomTypeText: "别墅房" } }
+        }),
+        JSON.stringify({ ok: true, roomType: "花园别墅", roomIds: ["room-not-in-evidence"] })
+      ]),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return readEvidence;
+        },
+        pmsWorkflow: () => {
+          order.push("executor:pmsWorkflow");
+          return createPmsEvidence({
+            method: "prepareReservationConfirm",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:01:00.000Z",
+            summary: "unexpected",
+            data: { pendingActionId: "pending_unexpected", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "先一间别墅" } });
+
+    expect(result).toEqual({
+      type: "text",
+      text: `我查到该日期有这些可订房型：花园别墅（1 间）、秘境洞穴（1 间）。请确认你想订哪一种。 evidenceRefs=${readEvidence.evidenceRef}`,
+      evidenceRefs: [readEvidence.evidenceRef]
+    });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
+  });
+
+  it("asks to adjust when resolved room type has insufficient PMS candidates", async () => {
+    const order: string[] = [];
+    const readEvidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed availability",
+      data: {
+        rooms: [
+          { roomId: "room-D1", roomType: "秘境洞穴", available: true },
+          { roomId: "room-A1", roomType: "花园别墅", available: true }
+        ]
+      }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantTextSequence([
+        JSON.stringify({
+          type: "bounded_read_then_workflow",
+          read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-08", checkOutDate: "2026-05-10", quantity: 2, guestName: "小杨" } },
+          workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "小杨", checkInDate: "2026-05-08", checkOutDate: "2026-05-10", quantity: 2, roomTypeText: "洞穴房" } }
+        }),
+        JSON.stringify({ ok: true, roomType: "秘境洞穴", roomIds: ["room-D1"] })
+      ]),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return readEvidence;
+        },
+        pmsWorkflow: () => {
+          order.push("executor:pmsWorkflow");
+          return createPmsEvidence({
+            method: "prepareReservationGroupConfirm",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:01:00.000Z",
+            summary: "unexpected",
+            data: { pendingActionId: "pending_unexpected", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "先两间洞穴" } });
+
+    expect(result).toEqual({
+      type: "text",
+      text: `PMS 证据显示“秘境洞穴”当前可订 1 间，不足 2 间，无法准备预订审批卡。是否调整间数或更换房型？evidenceRefs=${readEvidence.evidenceRef}`,
+      evidenceRefs: [readEvidence.evidenceRef]
+    });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
   });
 
   it("uses a second LLM pass to synthesize user-facing PMS evidence replies", async () => {

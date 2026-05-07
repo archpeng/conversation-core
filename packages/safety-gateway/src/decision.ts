@@ -22,6 +22,7 @@ export type ToolRequest = {
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;
+  roomTypeText?: string;
   quantity?: number;
   guestName?: string;
   content?: string;

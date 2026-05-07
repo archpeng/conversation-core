@@ -116,13 +116,14 @@ function validPmsReadParams(params: Record<string, unknown>): boolean {
 }
 
 function validPmsWorkflowParams(params: Record<string, unknown>): boolean {
-  const allowed = new Set(["target", "guestName", "checkInDate", "checkOutDate", "quantity", "roomType"]);
+  const allowed = new Set(["target", "guestName", "checkInDate", "checkOutDate", "quantity", "roomType", "roomTypeText"]);
   if (!Object.keys(params).every((key) => allowed.has(key))) return false;
   if (params.target !== undefined && params.target !== "prepare_confirm") return false;
   if (params.guestName !== undefined && !isNonEmptyString(params.guestName)) return false;
   if (params.checkInDate !== undefined && !isIsoDate(params.checkInDate)) return false;
   if (params.checkOutDate !== undefined && !isIsoDate(params.checkOutDate)) return false;
   if (params.roomType !== undefined && !isNonEmptyString(params.roomType)) return false;
+  if (params.roomTypeText !== undefined && !isNonEmptyString(params.roomTypeText)) return false;
   if (params.quantity !== undefined && (typeof params.quantity !== "number" || !Number.isInteger(params.quantity) || params.quantity < 1)) return false;
   return true;
 }

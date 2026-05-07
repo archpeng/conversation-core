@@ -10,6 +10,7 @@ export type GatedPmsInput<T> = {
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;
+  roomTypeText?: string;
   quantity?: number;
   selections?: GatedToolRequest["selections"];
   guestName?: string;
@@ -56,6 +57,7 @@ function pmsRequest<T>(input: GatedPmsInput<T>, capabilityId: string): GatedTool
     checkInDate: input.checkInDate,
     checkOutDate: input.checkOutDate,
     roomType: input.roomType,
+    roomTypeText: input.roomTypeText,
     quantity: input.quantity,
     selections: input.selections,
     guestName: input.guestName,

@@ -52,13 +52,13 @@ describe("C1 LLM gated tool planning", () => {
     expect(parseToolPlan({
       type: "bounded_read_then_workflow",
       read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } },
-      workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2 } }
+      workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, roomTypeText: "洞穴房" } }
     }, manifest)).toEqual({
       ok: true,
       plan: {
         type: "bounded_read_then_workflow",
         read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } },
-        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2 } }
+        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, roomTypeText: "洞穴房" } }
       }
     });
     expect(parseToolPlan({ type: "ask_clarification", message: "请提供日期。" }, manifest))
@@ -89,6 +89,11 @@ describe("C1 LLM gated tool planning", () => {
       .toEqual({ ok: false, reason: "invalid_tool_params" });
     expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2 } }, manifest))
       .toEqual({ ok: false, reason: "invalid_tool_params" });
+    expect(parseToolPlan({
+      type: "bounded_read_then_workflow",
+      read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } },
+      workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", roomTypeText: "" } }
+    }, manifest)).toEqual({ ok: false, reason: "invalid_tool_params" });
     expect(parseToolPlan({
       type: "bounded_read_then_workflow",
       read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } },

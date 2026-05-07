@@ -42,6 +42,7 @@ type PmsReadParams = TargetParams & {
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;
+  roomTypeText?: string;
   quantity?: number;
   guestName?: string;
   sourceEpisodeRefs?: readonly string[];
@@ -85,7 +86,8 @@ const pmsWorkflowParameters = {
     checkInDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
     checkOutDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
     quantity: { type: "integer", minimum: 1 },
-    roomType: { type: "string", minLength: 1 }
+    roomType: { type: "string", minLength: 1 },
+    roomTypeText: { type: "string", minLength: 1 }
   }
 } as const;
 
@@ -97,7 +99,7 @@ export function registerGatedTools(input: RegisterGatedToolsInput): PiToolDefini
 }
 
 function pmsReadTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsReadParams> {
-  return defineGatedTool("gated_pms_read", "Gated PMS Read", "Read tenant-scoped PMS facts through the Safety Gateway. For availability, pass ISO checkInDate/checkOutDate and optional roomType, quantity, guestName when the user provided them.", pmsReadParameters, async (params) => {
+  return defineGatedTool("gated_pms_read", "Gated PMS Read", "Read tenant-scoped PMS facts through the Safety Gateway. For availability, pass ISO checkInDate/checkOutDate and optional roomType, quantity, guestName when the user provided them. For booking workflows with fuzzy spoken room types, prefer a broad availability read and put the user's room wording in gated_pms_workflow.roomTypeText.", pmsReadParameters, async (params) => {
     return gatedPmsRead({
       gateway: input.gateway,
       actor: input.actor,
@@ -114,7 +116,7 @@ function pmsReadTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsReadPa
 }
 
 function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsWorkflowParams> {
-  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation. Room selections are supplied by runtime from PMS evidence before approval-card preparation.", pmsWorkflowParameters, async (params) => {
+  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation. Room selections are supplied by runtime from PMS evidence before approval-card preparation. Use roomTypeText for the user's spoken room preference; runtime resolves it against PMS availability evidence.", pmsWorkflowParameters, async (params) => {
     return gatedPmsWorkflow({
       gateway: input.gateway,
       actor: input.actor,
@@ -124,6 +126,7 @@ function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsWo
       checkInDate: params.checkInDate,
       checkOutDate: params.checkOutDate,
       roomType: params.roomType,
+      roomTypeText: params.roomTypeText,
       quantity: params.quantity,
       selections: params.selections,
       guestName: params.guestName,

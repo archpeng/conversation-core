@@ -18,6 +18,7 @@ export type GatedToolRequest = {
   checkInDate?: string;
   checkOutDate?: string;
   roomType?: string;
+  roomTypeText?: string;
   quantity?: number;
   selections?: readonly {
     roomId: string;
