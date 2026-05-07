@@ -26,6 +26,10 @@ const approvalCard: PmsApprovalCard = {
     type: "pms_pending_action",
     tenantId: "tenant_1",
     pendingActionId: "pending_1",
+    pendingActionRef: "pending_1",
+    cardPayloadRef: "card_1",
+    quoteRef: "quote_1",
+    selectionCount: 2,
     action: "reservation_confirm",
     expiresAt: "2026-05-06T12:10:00.000Z"
   },

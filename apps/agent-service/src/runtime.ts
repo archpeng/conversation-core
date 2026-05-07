@@ -173,8 +173,45 @@ export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): Unifi
       return client.capabilitiesManifest({ tenantId: tenantId(request) });
     },
     pmsWorkflow: async ({ request }) => {
-      if (request.quantity !== undefined && request.quantity > 1) throw new Error("pms_workflow_multi_room_unsupported");
       const tenant = tenantId(request);
+      const quantity = request.quantity ?? 1;
+      if (quantity > 1) {
+        const selections = requiredWorkflowSelections(request.selections, quantity);
+        const sourceEvidenceRef = request.sourceEpisodeRefs?.[0];
+        const groupDraft = await client.createReservationGroupDraft({
+          tenantId: tenant,
+          propertyId: config.defaultPropertyId,
+          guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
+          checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
+          checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
+          quantity,
+          ...(request.roomType ? { roomType: request.roomType } : {}),
+          ...(sourceEvidenceRef ? { sourceEvidenceRef } : {})
+        });
+        const groupDraftIdentifier = groupDraft.data.groupDraftRef ?? groupDraft.data.groupDraftId;
+        await client.updateReservationGroupDraft({
+          tenantId: tenant,
+          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required"),
+          selections,
+          ...(sourceEvidenceRef ? { sourceEvidenceRef } : {})
+        });
+        const quote = await client.quoteReservationGroupDraft({
+          tenantId: tenant,
+          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required")
+        });
+        const prepared = await client.prepareReservationGroupConfirm({
+          tenantId: tenant,
+          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required"),
+          quoteRef: requiredWorkflowText(quote.data.quoteRef, "pms_workflow_quote_required")
+        });
+        await client.pendingActionStatus({
+          tenantId: tenant,
+          pendingActionRef: prepared.data.pendingActionRef ?? prepared.data.pendingActionId,
+          ...(prepared.data.cardPayloadRef ? { cardPayloadRef: prepared.data.cardPayloadRef } : {})
+        });
+        return prepared;
+      }
+
       const draft = request.draftId ? undefined : await client.createReservationDraft({
         tenantId: tenant,
         propertyId: config.defaultPropertyId,
@@ -286,6 +323,11 @@ function readBody(request: IncomingMessage): Promise<string> {
 function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function requiredWorkflowSelections(value: GatedToolRequest["selections"], quantity: number): NonNullable<GatedToolRequest["selections"]> {
+  if (!Array.isArray(value) || value.length < quantity) throw new Error("pms_workflow_group_selections_required");
+  return value.slice(0, quantity);
 }
 
 function tenantId(request: GatedToolRequest): string {

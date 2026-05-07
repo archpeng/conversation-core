@@ -8,19 +8,27 @@ import {
   parseReservationConfirmPreparation,
   parseReservationDraftFact,
   parseReservationFact,
+  parseReservationGroupConfirmPreparation,
+  parseReservationGroupDraftFact,
+  parseReservationGroupQuoteFact,
   parseReservationQuoteFact,
   parseRoomFact,
   validateCreateReservationDraftInput,
+  validateCreateReservationGroupDraftInput,
   validateGetReservationInput,
   validateGetRoomInput,
   validatePendingActionStatusInput,
   validatePrepareReservationConfirmInput,
+  validatePrepareReservationGroupConfirmInput,
+  validateQuoteReservationGroupDraftInput,
   validateQuoteReservationDraftInput,
   validateSearchAvailabilityInput,
   validateTenantScopedInput,
   validateUpdateReservationDraftInput,
+  validateUpdateReservationGroupDraftInput,
   type AvailabilitySearchResult,
   type CreateReservationDraftInput,
+  type CreateReservationGroupDraftInput,
   type GetReservationInput,
   type GetRoomInput,
   type HealthResult,
@@ -28,14 +36,19 @@ import {
   type PendingActionStatusInput,
   type PmsCapabilityManifest,
   type PrepareReservationConfirmInput,
+  type PrepareReservationGroupConfirmInput,
+  type QuoteReservationGroupDraftInput,
   type QuoteReservationDraftInput,
   type ReservationConfirmPreparation,
   type ReservationDraftFact,
   type ReservationFact,
+  type ReservationGroupDraftFact,
+  type ReservationGroupQuoteFact,
   type ReservationQuoteFact,
   type RoomFact,
   type SearchAvailabilityInput,
-  type UpdateReservationDraftInput
+  type UpdateReservationDraftInput,
+  type UpdateReservationGroupDraftInput
 } from "./schemas.js";
 
 type HttpMethod = "GET" | "POST";
@@ -49,6 +62,10 @@ type PmsRoute =
   | "/v1/pms/reservation-drafts/update"
   | "/v1/pms/reservation-drafts/quote"
   | "/v1/pms/reservation-drafts/prepare-confirm"
+  | "/v1/pms/reservation-group-drafts/create"
+  | "/v1/pms/reservation-group-drafts/update"
+  | "/v1/pms/reservation-group-drafts/quote"
+  | "/v1/pms/reservation-group-drafts/prepare-confirm"
   | "/v1/pms/pending-actions/status";
 
 type RequestPlan = {
@@ -83,6 +100,10 @@ export type PmsPlatformClient = {
   updateReservationDraft(input: UpdateReservationDraftInput): Promise<PmsEvidence<ReservationDraftFact>>;
   quoteReservationDraft(input: QuoteReservationDraftInput): Promise<PmsEvidence<ReservationQuoteFact>>;
   prepareReservationConfirm(input: PrepareReservationConfirmInput): Promise<PmsEvidence<ReservationConfirmPreparation>>;
+  createReservationGroupDraft(input: CreateReservationGroupDraftInput): Promise<PmsEvidence<ReservationGroupDraftFact>>;
+  updateReservationGroupDraft(input: UpdateReservationGroupDraftInput): Promise<PmsEvidence<ReservationGroupDraftFact>>;
+  quoteReservationGroupDraft(input: QuoteReservationGroupDraftInput): Promise<PmsEvidence<ReservationGroupQuoteFact>>;
+  prepareReservationGroupConfirm(input: PrepareReservationGroupConfirmInput): Promise<PmsEvidence<ReservationConfirmPreparation>>;
   pendingActionStatus(input: PendingActionStatusInput): Promise<PmsEvidence<PendingActionStatusFact>>;
 };
 
@@ -136,6 +157,22 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
     prepareReservationConfirm: (input) => {
       validateInput("prepareReservationConfirm", () => validatePrepareReservationConfirmInput(input));
       return requestEvidence(options, now, "prepareReservationConfirm", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/prepare-confirm", body: reservationWorkflowRequestBody("pms.reservation.prepare_confirm", input, now) }, parseReservationConfirmPreparation, () => "Typed approval is required before PMS confirmation; no mutation executed.");
+    },
+    createReservationGroupDraft: (input) => {
+      validateInput("createReservationGroupDraft", () => validateCreateReservationGroupDraftInput(input));
+      return requestEvidence(options, now, "createReservationGroupDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-group-drafts/create", body: createReservationGroupDraftRequestBody(input, now) }, parseReservationGroupDraftFact, () => "Reservation group draft evidence returned without production mutation.");
+    },
+    updateReservationGroupDraft: (input) => {
+      validateInput("updateReservationGroupDraft", () => validateUpdateReservationGroupDraftInput(input));
+      return requestEvidence(options, now, "updateReservationGroupDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-group-drafts/update", body: updateReservationGroupDraftRequestBody(input, now) }, parseReservationGroupDraftFact, () => "Reservation group draft update evidence returned without production mutation.");
+    },
+    quoteReservationGroupDraft: (input) => {
+      validateInput("quoteReservationGroupDraft", () => validateQuoteReservationGroupDraftInput(input));
+      return requestEvidence(options, now, "quoteReservationGroupDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-group-drafts/quote", body: reservationGroupWorkflowRequestBody("pms.reservation.group_quote", input, now) }, parseReservationGroupQuoteFact, () => "Reservation group quote facts returned from PMS Platform.");
+    },
+    prepareReservationGroupConfirm: (input) => {
+      validateInput("prepareReservationGroupConfirm", () => validatePrepareReservationGroupConfirmInput(input));
+      return requestEvidence(options, now, "prepareReservationGroupConfirm", input.tenantId, { method: "POST", route: "/v1/pms/reservation-group-drafts/prepare-confirm", body: reservationGroupWorkflowRequestBody("pms.reservation.group_prepare_confirm", input, now) }, parseReservationGroupConfirmPreparation, () => "Typed group approval is required before PMS confirmation; no final reservation mutation executed.");
     },
     pendingActionStatus: (input) => {
       validateInput("pendingActionStatus", () => validatePendingActionStatusInput(input));
@@ -234,6 +271,28 @@ function updateReservationDraftRequestBody(input: UpdateReservationDraftInput, n
   };
 }
 
+function createReservationGroupDraftRequestBody(input: CreateReservationGroupDraftInput, now: () => Date): Record<string, unknown> {
+  return {
+    ...reservationGroupWorkflowRequestBody("pms.reservation.group_draft.create", input, now),
+    slots: {
+      guestDisplayName: input.guestName,
+      arrivalDate: input.checkInDate,
+      departureDate: input.checkOutDate,
+      quantity: input.quantity,
+      ...(input.roomType ? { roomTypeKeyword: input.roomType } : {})
+    },
+    evidenceRefs: input.sourceEvidenceRef ? [{ source: "availabilitySearch", refId: input.sourceEvidenceRef }] : []
+  };
+}
+
+function updateReservationGroupDraftRequestBody(input: UpdateReservationGroupDraftInput, now: () => Date): Record<string, unknown> {
+  return {
+    ...reservationGroupWorkflowRequestBody("pms.reservation.group_draft.update", input, now),
+    slots: { selections: input.selections },
+    ...(input.sourceEvidenceRef ? { evidenceRefs: [{ source: "availabilitySearch", refId: input.sourceEvidenceRef }] } : {})
+  };
+}
+
 function reservationWorkflowRequestBody(operation: string, input: { tenantId: string; propertyId?: string; draftId?: string; draftRef?: string; quoteRef?: string }, now: () => Date): Record<string, unknown> {
   const requestedAt = now().toISOString();
   const fingerprint = workflowFingerprint(operation, input);
@@ -248,6 +307,24 @@ function reservationWorkflowRequestBody(operation: string, input: { tenantId: st
     requestedAt,
     ...(input.draftRef ? { draftRef: input.draftRef } : {}),
     ...(input.draftId ? { draftId: input.draftId } : {}),
+    ...(input.quoteRef ? { quoteRef: input.quoteRef } : {})
+  };
+}
+
+function reservationGroupWorkflowRequestBody(operation: string, input: { tenantId: string; propertyId?: string; groupDraftId?: string; groupDraftRef?: string; quoteRef?: string }, now: () => Date): Record<string, unknown> {
+  const requestedAt = now().toISOString();
+  const fingerprint = workflowFingerprint(operation, input);
+  return {
+    operation,
+    propertyId: input.propertyId ?? "property-small-hotel",
+    actor: { type: "ai", id: "pms-agent-v2", displayName: "PMS Agent V2" },
+    source: "api",
+    clientToken: `pms-agent-v2-${operationHash(operation)}-${fingerprint.slice(0, 16)}`,
+    requestFingerprint: `sha256:${fingerprint}`,
+    correlationId: `corr-${fingerprint.slice(0, 24)}`,
+    requestedAt,
+    ...(input.groupDraftRef ? { groupDraftRef: input.groupDraftRef } : {}),
+    ...(input.groupDraftId ? { groupDraftId: input.groupDraftId } : {}),
     ...(input.quoteRef ? { quoteRef: input.quoteRef } : {})
   };
 }

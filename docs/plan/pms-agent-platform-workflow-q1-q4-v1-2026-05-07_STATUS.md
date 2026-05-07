@@ -26,9 +26,10 @@ Last updated: 2026-05-07
 - `gated_pms_workflow` runtime now uses the typed PMS Platform workflow route sequence: `reservation-drafts/create -> reservation-drafts/update -> reservation-drafts/quote -> reservation-drafts/prepare-confirm -> pending-actions/status`.
 - Availability search forwards requested `quantity` to PMS Platform as `count`; PMS facts still come from platform evidence, not model/session guesses.
 - Workflow room selection for bounded `read -> workflow` is injected from PMS availability evidence; bounded plans cannot provide their own `roomId`.
-- Current platform draft contract is treated as single-room only. `quantity > 1` does not produce a misleading single-room approval card; direct workflow plans reject multi-room quantity, and runtime executor refuses it before any platform route.
+- Multi-room requests are no longer represented as single-room approval cards. `quantity > 1` now uses PMS Platform reservation group draft routes with evidence-derived selections.
 - Runtime workflow no longer creates local synthetic PMS workflow evidence. Test/eval fake evidence remains only in explicitly named fake/local stub helpers.
 - Confirm/cancel remain adapter typed-card callback concerns; natural-language workflow does not expose or execute confirm/cancel mutation routes.
+- Superseding implementation note: PMS Platform now owns a reservation group draft contract, and this repo consumes it for `quantity > 1` via `reservation-group-drafts/*` routes instead of refusing multi-room requests.
 
 ## Verification
 
@@ -42,5 +43,5 @@ Last updated: 2026-05-07
 
 ## Residual / Successor Handoff
 
-- Multi-room/group reservation requires a PMS Platform-owned contract, for example `selectedCandidates[]`, `rooms[]`, quantity semantics, and a group pending-action ref. The agent must not emulate this with single-room truth.
+- Final multi-room reservation creation after typed confirmation remains a PMS Platform successor capability. This repo only prepares group draft approval cards and never creates final reservations directly.
 - Feishu card click failures and typed callback ref alignment belong to the adapter transport plan, with final PMS truth still owned by PMS Platform.

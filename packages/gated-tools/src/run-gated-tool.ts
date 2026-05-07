@@ -19,6 +19,12 @@ export type GatedToolRequest = {
   checkOutDate?: string;
   roomType?: string;
   quantity?: number;
+  selections?: readonly {
+    roomId: string;
+    selectedCandidateRef: string;
+    roomTypeId?: string;
+    roomType?: string;
+  }[];
   guestName?: string;
   content?: string;
   operation?: string;

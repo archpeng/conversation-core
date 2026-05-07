@@ -1,5 +1,5 @@
 import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
-import type { GatedToolResult, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
+import type { GatedToolRequest, GatedToolResult, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle, contextBundlePrompt, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
 import { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState } from "./continuity.js";
@@ -170,17 +170,18 @@ async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, 
   }
   emitToolResultEvent(session, options, plan.read.toolName, readResult.toolResult, { type: "text", text: "PMS read evidence captured.", evidenceRefs: [readEvidence.evidenceRef] });
 
-  const candidate = selectRoomCandidate(readEvidence, plan.workflow.params);
-  if (!candidate) {
+  const candidates = selectRoomCandidates(readEvidence, plan.workflow.params);
+  if (!candidates) {
     const shortage = unavailableCandidateReply(readEvidence, turnContext(session, turn, options));
     return { kind: "handled", result: shortage.result, evidenceRefs: [readEvidence.evidenceRef] };
   }
-  if (requestedWorkflowQuantity(plan.workflow.params) > 1) {
-    const quantityBoundary = unsupportedMultiRoomReply(readEvidence, turnContext(session, turn, options));
-    return { kind: "handled", result: quantityBoundary.result, evidenceRefs: [readEvidence.evidenceRef] };
-  }
 
-  const workflowParams = { ...plan.workflow.params, roomId: candidate.roomId, sourceEpisodeRefs: [readEvidence.evidenceRef] };
+  const workflowParams = {
+    ...plan.workflow.params,
+    roomId: candidates[0]?.roomId,
+    ...(candidates.length > 1 ? { selections: candidates.map((candidate) => roomSelection(candidate, readEvidence.evidenceRef)) } : {}),
+    sourceEpisodeRefs: [readEvidence.evidenceRef]
+  };
   const workflowResult = await executeToolPlan({ type: "call_tool", toolName: plan.workflow.toolName, params: workflowParams }, session.tools);
   if (!workflowResult.ok) return { kind: "handled", result: workflowResult.result, evidenceRefs: [readEvidence.evidenceRef] };
   const planned = await synthesizeToolResult(session, turn, workflowResult.toolResult, turnContext(session, turn, options), options);
@@ -262,9 +263,9 @@ function fallbackEvidenceTextReply(evidence: PmsEvidence<unknown>, context: Retu
 }
 
 function synthesizePrepareConfirmApproval(evidence: PmsEvidence<unknown>): PlannedAgentResult | undefined {
-  if (evidence.source.method !== "prepareReservationConfirm" || !isReservationConfirmPreparation(evidence.data)) return undefined;
+  if ((evidence.source.method !== "prepareReservationConfirm" && evidence.source.method !== "prepareReservationGroupConfirm") || !isReservationConfirmPreparation(evidence.data)) return undefined;
   return {
-    result: { type: "approval_card", card: approvalCard(evidence.scope.tenantId, evidence.data.pendingActionId, evidence.data.expiresAt) },
+    result: { type: "approval_card", card: approvalCard(evidence.scope.tenantId, evidence.data) },
     evidenceRefs: [evidence.evidenceRef],
     pendingActionRefs: [evidence.data.pendingActionId]
   };
@@ -277,18 +278,26 @@ function isReservationConfirmPreparation(value: unknown): value is ReservationCo
     && record.pendingActionId.trim().length > 0
     && record.confirmationMode === "typedCardOnly"
     && record.mutationStatus === "none"
+    && (record.pendingActionRef === undefined || typeof record.pendingActionRef === "string")
+    && (record.cardPayloadRef === undefined || typeof record.cardPayloadRef === "string")
+    && (record.quoteRef === undefined || typeof record.quoteRef === "string")
+    && (record.selectionCount === undefined || typeof record.selectionCount === "number")
     && (record.expiresAt === undefined || typeof record.expiresAt === "string");
 }
 
-function approvalCard(tenantId: string, pendingActionId: string, expiresAt?: string): PmsApprovalCard {
+function approvalCard(tenantId: string, preparation: ReservationConfirmPreparation): PmsApprovalCard {
   return {
     type: "pms_pending_action_card",
     ref: {
       type: "pms_pending_action",
       tenantId,
-      pendingActionId,
+      pendingActionId: preparation.pendingActionId,
+      ...(preparation.pendingActionRef ? { pendingActionRef: preparation.pendingActionRef } : {}),
+      ...(preparation.cardPayloadRef ? { cardPayloadRef: preparation.cardPayloadRef } : {}),
+      ...(preparation.quoteRef ? { quoteRef: preparation.quoteRef } : {}),
+      ...(preparation.selectionCount ? { selectionCount: preparation.selectionCount } : {}),
       action: "reservation_confirm",
-      ...(expiresAt ? { expiresAt } : {})
+      ...(preparation.expiresAt ? { expiresAt: preparation.expiresAt } : {})
     },
     title: "确认预订",
     summary: "PMS 已准备待审批操作；只有点击确认卡片才会继续执行。",
@@ -315,26 +324,23 @@ function isAvailabilityEvidence(value: PmsEvidence<unknown> | undefined): value 
   return Boolean(data && Array.isArray(data.rooms));
 }
 
-function selectRoomCandidate(evidence: PmsEvidence<AvailabilitySearchResult>, workflowParams: Record<string, unknown>): RoomAvailability | undefined {
+function selectRoomCandidates(evidence: PmsEvidence<AvailabilitySearchResult>, workflowParams: Record<string, unknown>): RoomAvailability[] | undefined {
   const requestedQuantity = requestedWorkflowQuantity(workflowParams);
   const availableRooms = evidence.data.rooms.filter((room) => room.available === true && typeof room.roomId === "string" && room.roomId.trim().length > 0);
   if (availableRooms.length < requestedQuantity) return undefined;
-  return availableRooms[0];
+  return availableRooms.slice(0, requestedQuantity);
 }
 
 function requestedWorkflowQuantity(workflowParams: Record<string, unknown>): number {
   return typeof workflowParams.quantity === "number" && Number.isInteger(workflowParams.quantity) && workflowParams.quantity > 0 ? workflowParams.quantity : 1;
 }
 
-function unsupportedMultiRoomReply(evidence: PmsEvidence<AvailabilitySearchResult>, context: ReturnType<typeof turnContext>): PlannedAgentResult {
-  const result = synthesizeTextReply({
-    text: `当前 PMS 预订审批流一次只能准备一间房的确认卡；我不能把两间房请求伪装成单房审批。请确认是否先准备一间房，或等待多房预订能力。evidenceRefs=${evidence.evidenceRef}`,
-    evidenceRefs: [evidence.evidenceRef],
-    pmsEvidence: [evidence],
-    currentPmsFact: true,
-    context
-  }).result;
-  return { result, evidenceRefs: [evidence.evidenceRef] };
+function roomSelection(room: RoomAvailability, evidenceRef: string): NonNullable<GatedToolRequest["selections"]>[number] {
+  return {
+    roomId: room.roomId,
+    selectedCandidateRef: `${evidenceRef}:${room.roomId}`,
+    roomType: room.roomType
+  };
 }
 
 function unavailableCandidateReply(evidence: PmsEvidence<AvailabilitySearchResult>, context: ReturnType<typeof turnContext>): PlannedAgentResult {

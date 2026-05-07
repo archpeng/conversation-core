@@ -163,12 +163,28 @@ describe("agent service runtime wiring", () => {
     }
   });
 
-  it("does not create a single-room workflow draft for quantity greater than one", async () => {
-    const calls: unknown[] = [];
+  it("uses reservation group draft routes for quantity greater than one", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-      calls.push(init?.body);
-      return { ok: true, status: 200, json: async () => ({ draftId: "draft_unexpected", status: "draft" }) } as Response;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      calls.push({ url: href, body: JSON.parse(String(init?.body)) });
+      if (href.endsWith("/v1/pms/reservation-group-drafts/create")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.group_draft.create", mutationStatus: "draftOnly", groupDraft: { groupDraftRef: "group_draft_ref_1", status: "collectingSlots", missingSlots: ["roomSelections"], evidenceRefs: [] } }) } as Response;
+      }
+      if (href.endsWith("/v1/pms/reservation-group-drafts/update")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.group_draft.update", mutationStatus: "draftOnly", groupDraft: { groupDraftRef: "group_draft_ref_1", status: "quoteReady", missingSlots: [], evidenceRefs: [], slots: { selections: [{ roomId: "room-A1" }, { roomId: "room-A2" }] } } }) } as Response;
+      }
+      if (href.endsWith("/v1/pms/reservation-group-drafts/quote")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.group_quote", mutationStatus: "draftOnly", groupDraft: { groupDraftRef: "group_draft_ref_1", status: "quoteReady", quote: { quoteRef: "group_quote_ref_1", status: "pricingUnsupported" } } }) } as Response;
+      }
+      if (href.endsWith("/v1/pms/reservation-group-drafts/prepare-confirm")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.group_prepare_confirm", mutationStatus: "draftOnly", groupDraft: { groupDraftRef: "group_draft_ref_1", status: "awaitingConfirmation", pendingAction: { pendingActionRef: "pending_group_1", cardPayloadRef: "card_group_1", quoteRef: "group_quote_ref_1", confirmationMode: "typedCardOnly", mutationStatus: "none", status: "awaitingConfirmation", selectionCount: 2 } } }) } as Response;
+      }
+      if (href.endsWith("/v1/pms/pending-actions/status")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.pending_action.status", mutationStatus: "none", pendingAction: { pendingActionRef: "pending_group_1", cardPayloadRef: "card_group_1", status: "awaitingConfirmation" } }) } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
     }) as typeof fetch;
     try {
       const config = loadAgentServiceRuntimeConfig({
@@ -177,7 +193,7 @@ describe("agent service runtime wiring", () => {
       });
       const executors = createRuntimeExecutors(config);
 
-      await expect(executors.pmsWorkflow?.({
+      const evidence = await executors.pmsWorkflow?.({
         auditId: "audit_1",
         decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_workflow" } },
         request: {
@@ -190,10 +206,30 @@ describe("agent service runtime wiring", () => {
           checkInDate: "2026-05-09",
           checkOutDate: "2026-05-10",
           quantity: 2,
+          selections: [
+            { roomId: "room-A1", selectedCandidateRef: "pms_ev_read_1:room-A1", roomType: "suite" },
+            { roomId: "room-A2", selectedCandidateRef: "pms_ev_read_1:room-A2", roomType: "suite" }
+          ],
           sourceEpisodeRefs: ["pms_ev_read_1"]
         }
-      })).rejects.toThrow("pms_workflow_multi_room_unsupported");
-      expect(calls).toEqual([]);
+      });
+
+      expect(calls.map((call) => call.url)).toEqual([
+        "http://127.0.0.1:8791/v1/pms/reservation-group-drafts/create",
+        "http://127.0.0.1:8791/v1/pms/reservation-group-drafts/update",
+        "http://127.0.0.1:8791/v1/pms/reservation-group-drafts/quote",
+        "http://127.0.0.1:8791/v1/pms/reservation-group-drafts/prepare-confirm",
+        "http://127.0.0.1:8791/v1/pms/pending-actions/status"
+      ]);
+      expect(calls[0].body).toMatchObject({ operation: "pms.reservation.group_draft.create", slots: { guestDisplayName: "王晓", arrivalDate: "2026-05-09", departureDate: "2026-05-10", quantity: 2 }, evidenceRefs: [{ source: "availabilitySearch", refId: "pms_ev_read_1" }] });
+      expect(calls[1].body).toMatchObject({ operation: "pms.reservation.group_draft.update", groupDraftRef: "group_draft_ref_1", slots: { selections: [{ roomId: "room-A1", selectedCandidateRef: "pms_ev_read_1:room-A1" }, { roomId: "room-A2", selectedCandidateRef: "pms_ev_read_1:room-A2" }] } });
+      expect(calls[2].body).toMatchObject({ operation: "pms.reservation.group_quote", groupDraftRef: "group_draft_ref_1" });
+      expect(calls[3].body).toMatchObject({ operation: "pms.reservation.group_prepare_confirm", groupDraftRef: "group_draft_ref_1", quoteRef: "group_quote_ref_1" });
+      expect(calls[4].body).toMatchObject({ operation: "pms.pending_action.status", pendingActionRef: "pending_group_1", cardPayloadRef: "card_group_1" });
+      expect(evidence).toMatchObject({
+        source: { system: "pms-platform", method: "prepareReservationGroupConfirm" },
+        data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", cardPayloadRef: "card_group_1", quoteRef: "group_quote_ref_1", selectionCount: 2, confirmationMode: "typedCardOnly", mutationStatus: "none" }
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }

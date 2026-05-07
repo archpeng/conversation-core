@@ -12,6 +12,10 @@ export type PmsEvidenceMethod =
   | "updateReservationDraft"
   | "quoteReservationDraft"
   | "prepareReservationConfirm"
+  | "createReservationGroupDraft"
+  | "updateReservationGroupDraft"
+  | "quoteReservationGroupDraft"
+  | "prepareReservationGroupConfirm"
   | "pendingActionStatus";
 
 export type PmsEvidenceScope = {

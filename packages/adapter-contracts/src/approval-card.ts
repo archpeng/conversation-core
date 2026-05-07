@@ -4,6 +4,10 @@ export type PmsPendingActionRef = {
   type: "pms_pending_action";
   tenantId: string;
   pendingActionId: string;
+  pendingActionRef?: string;
+  cardPayloadRef?: string;
+  quoteRef?: string;
+  selectionCount?: number;
   action: "reservation_confirm";
   expiresAt?: string;
 };
@@ -40,6 +44,10 @@ export function validatePmsApprovalCard(input: unknown): PmsApprovalCardValidati
     requireLiteral(ref.type, "pms_pending_action", "ref.type", issues);
     requireNonEmptyString(ref.tenantId, "ref.tenantId", issues);
     requireNonEmptyString(ref.pendingActionId, "ref.pendingActionId", issues);
+    requireOptionalString(ref.pendingActionRef, "ref.pendingActionRef", issues);
+    requireOptionalString(ref.cardPayloadRef, "ref.cardPayloadRef", issues);
+    requireOptionalString(ref.quoteRef, "ref.quoteRef", issues);
+    if (ref.selectionCount !== undefined && (typeof ref.selectionCount !== "number" || !Number.isInteger(ref.selectionCount) || ref.selectionCount < 1)) issues.push("ref.selectionCount must be a positive integer");
     requireLiteral(ref.action, "reservation_confirm", "ref.action", issues);
     requireOptionalString(ref.expiresAt, "ref.expiresAt", issues);
   }
@@ -51,4 +59,3 @@ export function validatePmsApprovalCard(input: unknown): PmsApprovalCardValidati
 export function isPmsApprovalCard(input: unknown): input is PmsApprovalCard {
   return validatePmsApprovalCard(input).ok;
 }
-

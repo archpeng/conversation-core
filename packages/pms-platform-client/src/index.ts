@@ -12,6 +12,7 @@ export { createPmsEvidence, type PmsEvidence, type PmsEvidenceMethod, type PmsEv
 export type {
   AvailabilitySearchResult,
   CreateReservationDraftInput,
+  CreateReservationGroupDraftInput,
   GetReservationInput,
   GetRoomInput,
   HealthResult,
@@ -19,12 +20,18 @@ export type {
   PendingActionStatusInput,
   PmsCapabilityManifest,
   PrepareReservationConfirmInput,
+  PrepareReservationGroupConfirmInput,
+  QuoteReservationGroupDraftInput,
   ReservationConfirmPreparation,
   ReservationDraftFact,
   ReservationFact,
+  ReservationGroupDraftFact,
+  ReservationGroupQuoteFact,
+  ReservationGroupRoomSelection,
   ReservationQuoteFact,
   RoomAvailability,
   RoomFact,
   SearchAvailabilityInput,
-  UpdateReservationDraftInput
+  UpdateReservationDraftInput,
+  UpdateReservationGroupDraftInput
 } from "./schemas.js";

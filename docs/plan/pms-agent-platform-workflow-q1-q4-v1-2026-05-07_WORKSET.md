@@ -22,8 +22,9 @@ Plan ID: `pms-agent-platform-workflow-q1-q4-v1-2026-05-07`
 
 - `Q1`: Added tests for full typed platform workflow sequence, PMS evidence-sourced room selection, and multi-room safety.
 - `Q2`: Wired runtime/client to typed PMS Platform routes: create, update, quote, prepare-confirm, and status readback.
-- `Q3`: Enforced single-room workflow boundary. Bounded two-room requests return an evidence-grounded unsupported message; direct workflow `quantity > 1` is invalid; runtime refuses multi-room before network calls.
+- `Q3`: Preserved the anti-fake boundary. Direct LLM workflow plans still cannot submit multi-room selections, while bounded `read -> workflow` now derives multi-room selections from PMS availability evidence and routes through the PMS Platform group draft contract.
 - `Q4`: Updated endpoint boundary docs and renamed test/eval PMS evidence helpers to fake/local stub names.
+- Successor implementation: multi-room consumer support now uses PMS Platform reservation group draft routes for `quantity > 1`, while final reservation creation remains outside this repo.
 
 ## Verification Matrix
 
@@ -35,5 +36,5 @@ Plan ID: `pms-agent-platform-workflow-q1-q4-v1-2026-05-07`
 
 ## Residual / Successor Handoff
 
-- `pms-platform` multi-room/group reservation draft contract remains a successor plan, not an agent workaround.
+- Final multi-room reservation creation after pending-action confirmation remains a PMS Platform successor plan, not an agent workaround.
 - `adapter-feishu` PMS approval-card callback ref alignment remains a sibling transport plan.
