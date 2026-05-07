@@ -64,10 +64,12 @@ Runtime env:
 | Env | Purpose |
 | --- | --- |
 | `PMS_AGENT_SERVICE_HOST` / `PMS_AGENT_SERVICE_PORT` | HTTP bind host/port for `/health`, `/v1/feishu-turn`, and `/v1/eval-turn`. |
+| `PMS_AGENT_MAX_BODY_BYTES` | Maximum inbound HTTP request body size before service handling; defaults to `262144` bytes. |
 | `PMS_AGENT_AUTH_TOKEN` | Optional inbound token required in `X-PMS-AGENT-TOKEN`; set this when adapter-feishu calls the service. |
 | `PMS_PLATFORM_BASE_URL` / `PMS_PLATFORM_AUTH_TOKEN` | PMS Platform HTTP base URL and bearer token for evidence reads. |
 | `PMS_AGENT_PROPOSAL_WORKSPACE` | Workspace root for admin proposal artifacts. |
 | `PMS_AGENT_PI_MODE` | `real` uses `pi-coding-agent` SDK; `stub` is for deterministic local smoke only. |
 | `PMS_AGENT_PI_SESSION_MODE` | `memory` or `persistent` SDK session manager. |
 | `PMS_AGENT_PI_MODEL_PROVIDER` / `PMS_AGENT_PI_MODEL_ID` | Intended live override: `openai` / `gpt-5.5`. Real mode resolves this pair through Pi's `ModelRegistry` at startup and fails fast if the configured pair is not found. |
+| `PMS_AGENT_LOG_TURN_EVENTS` | Redacted runtime turn-event stdout logging. Default/unset and `false` disable logging; set exactly `true` to emit redacted planner/tool/result events. Events must not include user text, raw PMS payloads, evidence refs, or pending action IDs. |
 | `PMS_AGENT_DEFAULT_CHECK_IN_DATE` / `PMS_AGENT_DEFAULT_CHECK_OUT_DATE` / `PMS_AGENT_DEFAULT_ROOM_TYPE` | Local MVP defaults used by the deterministic PMS availability executor. |

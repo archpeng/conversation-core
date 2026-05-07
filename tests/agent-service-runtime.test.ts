@@ -1,8 +1,83 @@
 import { describe, expect, it } from "vitest";
-import { createRuntimeExecutors, createRuntimePiSessionFactory, loadAgentServiceRuntimeConfig } from "../apps/agent-service/src/runtime.js";
+import { createAgentService } from "../apps/agent-service/src/index.js";
+import { createRuntimeExecutors, createRuntimePiSessionFactory, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
 import type { PiCreateAgentSessionOptions } from "../packages/unified-agent/src/index.js";
 
 describe("agent service runtime wiring", () => {
+  it("loads turn-event logging as explicit opt-in only", () => {
+    expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test" }).logTurnEvents).toBe(false);
+    expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_LOG_TURN_EVENTS: "false" }).logTurnEvents).toBe(false);
+    expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_LOG_TURN_EVENTS: "true" }).logTurnEvents).toBe(true);
+  });
+
+  it("loads an explicit inbound body size limit", () => {
+    expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test" }).maxInboundBodyBytes).toBe(256 * 1024);
+    expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_MAX_BODY_BYTES: "8" }).maxInboundBodyBytes).toBe(8);
+  });
+
+  it("rejects oversized HTTP request bodies before service handling", async () => {
+    const handled: unknown[] = [];
+    const service = {
+      async handle(request: unknown) {
+        handled.push(request);
+        return { status: 200, headers: { "content-type": "application/json" } as const, body: { type: "text", text: "unexpected" } };
+      }
+    };
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_MAX_BODY_BYTES: "8",
+      PMS_AGENT_PI_MODE: "stub",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const started = await startAgentHttpServer({ ...config, port: 0 }, service);
+    try {
+      const response = await fetch(`${started.url}/v1/feishu-turn`, { method: "POST", body: "012345678" });
+
+      expect(response.status).toBe(413);
+      expect(await response.json()).toEqual({ type: "refusal", reason: "invalid_request", message: "Request body too large." });
+      expect(handled).toEqual([]);
+    } finally {
+      await started.close();
+    }
+  });
+
+  it("keeps health and valid turn behavior under the body limit", async () => {
+    const service = createAgentService({
+      gateway: { decide: () => ({ outcome: "deny", reasons: [] }), audit: () => ({ id: "audit_1" }) },
+      createAgentSession: async () => ({ session: { async prompt() {} } })
+    });
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_MAX_BODY_BYTES: "4096",
+      PMS_AGENT_PI_MODE: "stub",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const started = await startAgentHttpServer({ ...config, port: 0 }, service);
+    try {
+      const health = await fetch(`${started.url}/health`);
+      expect(health.status).toBe(200);
+      expect(await health.json()).toEqual({ status: "ok", service: "pms-agent-v2-agent-service" });
+
+      const turn = await fetch(`${started.url}/v1/feishu-turn`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tenantId: "tenant_1",
+          channel: "feishu",
+          sessionId: "session_1",
+          messageId: "message_1",
+          actor: { role: "customer", id: "customer_1" },
+          message: { text: "你好" },
+          receivedAt: "2026-05-07T00:00:00.000Z"
+        })
+      });
+      expect(turn.status).toBe(200);
+      expect(await turn.json()).toMatchObject({ type: "text" });
+    } finally {
+      await started.close();
+    }
+  });
+
   it("passes resourceLoader through the real-mode runtime factory into pi session creation", async () => {
     const config = loadAgentServiceRuntimeConfig({
       PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",

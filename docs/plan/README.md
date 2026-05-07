@@ -2,25 +2,21 @@
 
 ## Active Pack
 
-- `docs/plan/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_PLAN.md`
-- `docs/plan/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_STATUS.md`
-- `docs/plan/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_WORKSET.md`
+- None. Latest active pack reached `PACK_COMPLETE` and was archived.
 
 ## Current Active Slice
 
-- `H1`
-
+- `PACK_COMPLETE`
 ## Intended Handoff
 
-- `execute-plan`
-
+- `none`
 ## Status
 
-- Active parser pack: `pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07`
-- Current active slice: `H1`
-- Current active state: `READY`
-- Next runnable phase: `execute-plan`
-- Latest closed pack: `pms-agent-platform-workflow-q1-q4-v1-2026-05-07`
+- Active parser pack: `none`
+- Current active slice: `PACK_COMPLETE`
+- Current active state: `DONE`
+- Next runnable phase: `none`
+- Latest closed pack: `pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
 - Source roadmap: `docs/roadmap/ai-native-code-quality-hardening-roadmap.md`
@@ -29,28 +25,28 @@
 
 Closed pack archive:
 
-- `docs/plan-archive/pms-agent-platform-workflow-q1-q4-v1-2026-05-07/`
+- `docs/plan-archive/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07/`
 
 Closed pack result:
 
-- `gated_pms_workflow` runtime consumes typed PMS Platform route sequences for single-room and group-draft prepare-confirm workflows.
-- PMS availability evidence remains authoritative for room selection; bounded plans cannot submit factual room IDs directly.
-- Multi-room prepare-confirm uses `reservation-group-drafts/*` routes and stops before final reservation creation.
-- Confirm/cancel remain adapter typed-card callback concerns; natural language does not execute PMS mutations.
+- H1 import-boundary guard converts documented package-plane forbidden directions into executable checks while preserving legacy exclusion scans.
+- H2 HTTP body size limit rejects oversized request bodies before service handling and documents `PMS_AGENT_MAX_BODY_BYTES`.
+- H3 PMS tool public content is minimized to safe summary fields while complete PMS evidence remains in `toolResult.details.value`.
+- H4 runtime turn-event stdout logging is explicit opt-in through `PMS_AGENT_LOG_TURN_EVENTS=true` and redacted event behavior remains tested.
 
-Successor roadmap:
+Closeout artifact:
 
-- `docs/roadmap/ai-native-code-quality-hardening-roadmap.md`
+- `docs/plan-archive/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_CLOSEOUT.md`
+
+Successor residual:
+
+- Roadmap H5 (`session.ts` owner-block extraction) remains opportunistic and requires a new active pack if promoted.
 
 ## Parser Scope Contract
 
-`docs/plan/` is the hot autopilot scheduling surface. Keep it small: this README plus exactly one active PLAN/STATUS/WORKSET triplet. Historical evidence and closed packs stay under `docs/plan-archive/`.
+`docs/plan/` is the hot autopilot scheduling surface. Keep it small: this README plus at most one active PLAN/STATUS/WORKSET triplet. Historical evidence and closed packs stay under `docs/plan-archive/`.
 
-Active execution pack:
-
-- PLAN: `docs/plan/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_PLAN.md`
-- STATUS: `docs/plan/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_STATUS.md`
-- WORKSET: `docs/plan/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_WORKSET.md`
+There is currently no active execution triplet in `docs/plan/`.
 
 ## Control-Plane Mode
 
@@ -62,10 +58,7 @@ Active execution pack:
 
 ## Autopilot Transition Contract
 
-- If active slice owner/state is `execute-plan` / `READY`, dispatch `execute` for the current active slice.
-- `execute/completed` means implementation evidence is ready for same-slice `review`; it does not advance the active slice by itself.
-- `review/completed` is the accepted-slice writeback point: mark the reviewed slice done, set the next `Stage Order` item as `Current Active Slice`, and set `Intended Handoff` from that next stage owner.
-- `review/continue` keeps the same active slice and dispatches another bounded `execute` cycle.
-- `needs_replan` dispatches `replan`; `blocked`/`failed` stop; `done` is reserved for full objective or `PACK_COMPLETE` closeout.
-- `PACK_COMPLETE` with `Intended Handoff` `autopilot-closeout` is the only terminal parser state.
-- Closeout is forbidden while `Current Active Slice` is any non-`PACK_COMPLETE` stage.
+- If a new successor effort starts, create a fresh PLAN/STATUS/WORKSET triplet before executing.
+- Archived packs are historical evidence and must not be resumed as active work.
+- `PACK_COMPLETE` with no active triplet is terminal for this closed pack.
+- Closeout is complete for `pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07`.

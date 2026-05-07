@@ -134,6 +134,42 @@ describe("unified Agent runtime", () => {
     expect(result?.content[0].text).toContain("evidenceRef");
   });
 
+  it("keeps PMS facts behind minimized public tool content while preserving full evidence details", async () => {
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "availability search summary",
+      data: { rooms: [{ roomId: "room_secret_tool_content", roomType: "suite", available: true }], token: "raw-platform-secret" }
+    });
+    const profile = loadAgentProfile("customer");
+    const tools = registerGatedTools({
+      profile,
+      gateway: safetyGateway([]),
+      actor: { profile: "customer", id: "customer_1" },
+      tenantId: "tenant_1",
+      executors: { pmsRead: () => evidence }
+    });
+
+    const read = tools.find((tool) => tool.name === "gated_pms_read");
+    const result = await read?.execute("tool_1", { target: "availability" });
+    const publicContent = String(result?.content[0].text);
+
+    expect(JSON.parse(publicContent)).toEqual({
+      outcome: "allow",
+      auditId: "audit_pms_read_allow",
+      evidenceRef: evidence.evidenceRef,
+      source: { system: "pms-platform", method: "searchAvailability" },
+      summary: "availability search summary"
+    });
+    expect(publicContent).not.toContain("value");
+    expect(publicContent).not.toContain("data");
+    expect(publicContent).not.toContain("room_secret_tool_content");
+    expect(publicContent).not.toContain("raw-platform-secret");
+    expect(result?.details).toMatchObject({ outcome: "allow", auditId: "audit_pms_read_allow", value: evidence });
+    expect((result?.details as { value?: unknown }).value).toBe(evidence);
+  });
+
   it("returns captured assistant text for non-PMS natural turns", async () => {
     const session = await createUnifiedAgentSession({
       turn: { ...baseTurn, message: { text: "你好" } },
@@ -848,6 +884,31 @@ describe("unified Agent runtime", () => {
     expect(JSON.stringify(events)).not.toContain("王晓");
     expect(JSON.stringify(events)).not.toContain("后天");
     expect(JSON.stringify(events)).not.toContain(evidence.evidenceRef);
+    expect(JSON.stringify(events)).not.toContain("pending_secret_event");
+  });
+
+  it("emits approval-card result events without pending-action identifiers", async () => {
+    const events: unknown[] = [];
+    const evidence = createPmsEvidence({
+      method: "prepareReservationConfirm",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed approval is ready",
+      data: { pendingActionId: "pending_secret_event", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } })),
+      executors: { pmsWorkflow: () => evidence }
+    });
+
+    await runAgentTurn(session, { ...baseTurn, message: { text: "给王晓准备预订审批" } }, { eventSink: (event) => events.push(event) });
+
+    expect(events.at(-1)).toEqual({ event: "pms_agent_turn_result", profile: "customer_pms", resultType: "approval_card", evidenceCount: 1, pendingActionCount: 1 });
+    expect(JSON.stringify(events)).not.toContain("pending_secret_event");
+    expect(JSON.stringify(events)).not.toContain(evidence.evidenceRef);
+    expect(JSON.stringify(events)).not.toContain("王晓");
   });
 
   it("maps non-call LLM plans into safe AgentResult without side effects", async () => {

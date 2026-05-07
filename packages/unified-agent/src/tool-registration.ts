@@ -214,7 +214,25 @@ function toolResult(result: GatedToolResult<unknown>): PiToolResult {
 
 function publicToolResult(result: GatedToolResult<unknown>): unknown {
   if (result.outcome !== "allow") return { outcome: result.outcome, auditId: result.auditId };
+  if (isPmsEvidence(result.value)) {
+    return {
+      outcome: result.outcome,
+      auditId: result.auditId,
+      evidenceRef: result.value.evidenceRef,
+      source: result.value.source,
+      summary: result.value.summary
+    };
+  }
   return { outcome: result.outcome, auditId: result.auditId, value: result.value };
+}
+
+function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<PmsEvidence<unknown>>;
+  return typeof record.evidenceRef === "string"
+    && typeof record.summary === "string"
+    && record.source?.system === "pms-platform"
+    && typeof record.source.method === "string";
 }
 
 function notConfiguredExecutor<T = unknown>(name: string): GatedToolExecutor<T> {

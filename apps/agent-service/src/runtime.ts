@@ -23,6 +23,7 @@ export type AgentServiceRuntimeConfig = {
   piModelProvider?: string;
   piModelId?: string;
   logTurnEvents: boolean;
+  maxInboundBodyBytes: number;
   defaultHotelId: string;
   defaultPropertyId: string;
   defaultRoomId: string;
@@ -56,7 +57,8 @@ export function loadAgentServiceRuntimeConfig(env: Env = process.env): AgentServ
     piSessionMode: env.PMS_AGENT_PI_SESSION_MODE === "persistent" ? "persistent" : "memory",
     piModelProvider: env.PMS_AGENT_PI_MODEL_PROVIDER?.trim() || undefined,
     piModelId: env.PMS_AGENT_PI_MODEL_ID?.trim() || undefined,
-    logTurnEvents: env.PMS_AGENT_LOG_TURN_EVENTS !== "false",
+    logTurnEvents: env.PMS_AGENT_LOG_TURN_EVENTS === "true",
+    maxInboundBodyBytes: parsePositiveInteger(env.PMS_AGENT_MAX_BODY_BYTES, 256 * 1024),
     defaultHotelId: env.PMS_AGENT_DEFAULT_HOTEL_ID?.trim() || "property-small-hotel",
     defaultPropertyId: env.PMS_AGENT_DEFAULT_PROPERTY_ID?.trim() || "property-small-hotel",
     defaultRoomId: env.PMS_AGENT_DEFAULT_ROOM_ID?.trim() || "room-A1",
@@ -295,7 +297,16 @@ async function handleHttpRequest(config: AgentServiceRuntimeConfig, service: Age
     return;
   }
 
-  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readBody(request);
+  let body: string | undefined;
+  try {
+    body = request.method === "GET" || request.method === "HEAD" ? undefined : await readBody(request, config.maxInboundBodyBytes);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      writeJson(response, 413, { type: "refusal", reason: "invalid_request", message: "Request body too large." });
+      return;
+    }
+    throw error;
+  }
   const serviceResponse = await service.handle({
     method: request.method ?? "GET",
     path: url.pathname,
@@ -311,11 +322,33 @@ function authorized(config: AgentServiceRuntimeConfig, request: IncomingMessage)
   return token === config.inboundAuthToken;
 }
 
-function readBody(request: IncomingMessage): Promise<string> {
+class BodyTooLargeError extends Error {
+  constructor() {
+    super("request_body_too_large");
+  }
+}
+
+function readBody(request: IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolveBody, rejectBody) => {
     const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => resolveBody(Buffer.concat(chunks).toString("utf8")));
+    let bytes = 0;
+    let tooLarge = false;
+    request.on("data", (chunk: Buffer) => {
+      bytes += chunk.byteLength;
+      if (bytes > maxBytes) {
+        tooLarge = true;
+        chunks.length = 0;
+        return;
+      }
+      if (!tooLarge) chunks.push(chunk);
+    });
+    request.on("end", () => {
+      if (tooLarge) {
+        rejectBody(new BodyTooLargeError());
+        return;
+      }
+      resolveBody(Buffer.concat(chunks).toString("utf8"));
+    });
     request.on("error", rejectBody);
   });
 }
@@ -348,6 +381,11 @@ function defaultRuntimeCwd(processCwd: string): string {
 function parsePort(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw ?? "", 10);
   return Number.isInteger(parsed) && parsed > 0 && parsed < 65_536 ? parsed : fallback;
+}
+
+function parsePositiveInteger(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function todayIsoDate(): string {

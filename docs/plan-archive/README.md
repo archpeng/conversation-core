@@ -8,4 +8,6 @@ Cold evidence and closed/non-active plan packs live here. `docs/plan/` remains t
 | `pms-agent-llm-capability-c0-c5-v1-2026-05-06` | `docs/plan-archive/pms-agent-llm-capability-c0-c5-v1-2026-05-06/` | `PACK_COMPLETE` | Closed LLM capability pack; closeout artifact is `pms-agent-llm-capability-c0-c5-v1-2026-05-06_CLOSEOUT.md`. |
 | `pms-agent-llm-planner-runtime-r0-r3-v1-2026-05-06` | `docs/plan-archive/pms-agent-llm-planner-runtime-r0-r3-v1-2026-05-06/` | `PACK_COMPLETE` | Closed planner-runtime pack; closeout artifact is `pms-agent-llm-planner-runtime-r0-r3-v1-2026-05-06_CLOSEOUT.md`. |
 
+| `pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07` | `docs/plan-archive/pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07/` | `PACK_COMPLETE` | Closed AI-native hardening pack; closeout artifact is `pms-agent-ai-native-hardening-h1-h4-v1-2026-05-07_CLOSEOUT.md`. |
+
 Archived files are historical evidence. Do not treat them as active execution truth unless a new plan explicitly re-promotes a bounded successor scope.
