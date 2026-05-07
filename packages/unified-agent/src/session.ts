@@ -176,7 +176,7 @@ async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, 
     return { kind: "handled", result: shortage.result, evidenceRefs: [readEvidence.evidenceRef] };
   }
 
-  const workflowParams = { ...plan.workflow.params, roomId: candidate.roomId };
+  const workflowParams = { ...plan.workflow.params, roomId: candidate.roomId, sourceEpisodeRefs: [readEvidence.evidenceRef] };
   const workflowResult = await executeToolPlan({ type: "call_tool", toolName: plan.workflow.toolName, params: workflowParams }, session.tools);
   if (!workflowResult.ok) return { kind: "handled", result: workflowResult.result, evidenceRefs: [readEvidence.evidenceRef] };
   const planned = await synthesizeToolResult(session, turn, workflowResult.toolResult, turnContext(session, turn, options), options);

@@ -173,15 +173,27 @@ export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): Unifi
     },
     pmsWorkflow: async ({ request }) => {
       const tenant = tenantId(request);
-      const draftId = request.draftId ?? (await client.createReservationDraft({
+      const draft = request.draftId ? undefined : await client.createReservationDraft({
         tenantId: tenant,
+        propertyId: config.defaultPropertyId,
         roomId: requiredWorkflowText(request.roomId, "pms_workflow_room_required"),
         guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
         checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
-        checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required")
-      })).data.draftId;
+        checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
+        ...(request.roomType ? { roomType: request.roomType } : {}),
+        ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
+      });
+      const draftIdentifier = request.draftId ?? draft?.data.draftRef ?? draft?.data.draftId;
+      const quote = await client.quoteReservationDraft({
+        tenantId: tenant,
+        draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required")
+      });
 
-      return client.prepareReservationConfirm({ tenantId: tenant, draftId });
+      return client.prepareReservationConfirm({
+        tenantId: tenant,
+        draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
+        quoteRef: requiredWorkflowText(quote.data.quoteRef ?? quote.data.quoteId, "pms_workflow_quote_required")
+      });
     },
     pmsConfirm: async ({ request }) => client.pendingActionStatus({
       tenantId: tenantId(request),

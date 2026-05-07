@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createPmsEvidence, type PmsEvidence, type PmsEvidenceMethod } from "./evidence.js";
 import {
   parseAvailabilitySearchResult,
@@ -122,23 +123,23 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
     },
     createReservationDraft: (input) => {
       validateInput("createReservationDraft", () => validateCreateReservationDraftInput(input));
-      return requestEvidence(options, now, "createReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/create", body: input }, parseReservationDraftFact, () => "Reservation draft evidence returned without production mutation.");
+      return requestEvidence(options, now, "createReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/create", body: createReservationDraftRequestBody(input, now) }, parseReservationDraftFact, () => "Reservation draft evidence returned without production mutation.");
     },
     updateReservationDraft: (input) => {
       validateInput("updateReservationDraft", () => validateUpdateReservationDraftInput(input));
-      return requestEvidence(options, now, "updateReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/update", body: input }, parseReservationDraftFact, () => "Reservation draft update evidence returned without production mutation.");
+      return requestEvidence(options, now, "updateReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/update", body: reservationWorkflowRequestBody("pms.reservation.draft.update", input, now) }, parseReservationDraftFact, () => "Reservation draft update evidence returned without production mutation.");
     },
     quoteReservationDraft: (input) => {
       validateInput("quoteReservationDraft", () => validateQuoteReservationDraftInput(input));
-      return requestEvidence(options, now, "quoteReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/quote", body: input }, parseReservationQuoteFact, () => "Reservation quote facts returned from PMS Platform.");
+      return requestEvidence(options, now, "quoteReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/quote", body: reservationWorkflowRequestBody("pms.reservation.quote", input, now) }, parseReservationQuoteFact, () => "Reservation quote facts returned from PMS Platform.");
     },
     prepareReservationConfirm: (input) => {
       validateInput("prepareReservationConfirm", () => validatePrepareReservationConfirmInput(input));
-      return requestEvidence(options, now, "prepareReservationConfirm", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/prepare-confirm", body: input }, parseReservationConfirmPreparation, () => "Typed approval is required before PMS confirmation; no mutation executed.");
+      return requestEvidence(options, now, "prepareReservationConfirm", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/prepare-confirm", body: reservationWorkflowRequestBody("pms.reservation.prepare_confirm", input, now) }, parseReservationConfirmPreparation, () => "Typed approval is required before PMS confirmation; no mutation executed.");
     },
     pendingActionStatus: (input) => {
       validateInput("pendingActionStatus", () => validatePendingActionStatusInput(input));
-      return requestEvidence(options, now, "pendingActionStatus", input.tenantId, { method: "POST", route: "/v1/pms/pending-actions/status", body: input }, parsePendingActionStatusFact, () => "Pending action status facts returned from PMS Platform.");
+      return requestEvidence(options, now, "pendingActionStatus", input.tenantId, { method: "POST", route: "/v1/pms/pending-actions/status", body: pendingActionStatusRequestBody(input, now) }, parsePendingActionStatusFact, () => "Pending action status facts returned from PMS Platform.");
     }
   };
 }
@@ -206,6 +207,64 @@ function availabilityRequestBody(input: SearchAvailabilityInput): Record<string,
     endDate: input.checkOutDate,
     ...(input.roomType ? { roomTypeKeyword: input.roomType } : {})
   };
+}
+
+function createReservationDraftRequestBody(input: CreateReservationDraftInput, now: () => Date): Record<string, unknown> {
+  return {
+    ...reservationWorkflowRequestBody("pms.reservation.draft.create", input, now),
+    slots: {
+      roomId: input.roomId,
+      guestDisplayName: input.guestName,
+      arrivalDate: input.checkInDate,
+      departureDate: input.checkOutDate,
+      selectedCandidateRef: input.sourceEvidenceRef ? `${input.sourceEvidenceRef}:${input.roomId}` : undefined,
+      ...(input.roomType ? { roomTypeKeyword: input.roomType } : {})
+    },
+    evidenceRefs: input.sourceEvidenceRef ? [{ source: "availabilitySearch", refId: input.sourceEvidenceRef }] : []
+  };
+}
+
+function reservationWorkflowRequestBody(operation: string, input: { tenantId: string; propertyId?: string; draftId?: string; draftRef?: string; quoteRef?: string }, now: () => Date): Record<string, unknown> {
+  const requestedAt = now().toISOString();
+  const fingerprint = workflowFingerprint(operation, input);
+  return {
+    operation,
+    propertyId: input.propertyId ?? "property-small-hotel",
+    actor: { type: "ai", id: "pms-agent-v2", displayName: "PMS Agent V2" },
+    source: "api",
+    clientToken: `pms-agent-v2-${operationHash(operation)}-${fingerprint.slice(0, 16)}`,
+    requestFingerprint: `sha256:${fingerprint}`,
+    correlationId: `corr-${fingerprint.slice(0, 24)}`,
+    requestedAt,
+    ...(input.draftRef ? { draftRef: input.draftRef } : {}),
+    ...(input.draftId ? { draftId: input.draftId } : {}),
+    ...(input.quoteRef ? { quoteRef: input.quoteRef } : {})
+  };
+}
+
+function pendingActionStatusRequestBody(input: PendingActionStatusInput, now: () => Date): Record<string, unknown> {
+  const requestedAt = now().toISOString();
+  const pendingActionRef = input.pendingActionRef ?? input.pendingActionId;
+  const fingerprint = workflowFingerprint("pms.pending_action.status", input);
+  return {
+    operation: "pms.pending_action.status",
+    pendingActionRef,
+    actor: { type: "ai", id: "pms-agent-v2", displayName: "PMS Agent V2" },
+    scope: { propertyId: "property-small-hotel", channel: "typed_card" },
+    clientToken: `pms-agent-v2-pending-status-${fingerprint.slice(0, 16)}`,
+    requestFingerprint: `sha256:${fingerprint}`,
+    correlationId: `corr-${fingerprint.slice(0, 24)}`,
+    requestedAt,
+    ...(input.cardPayloadRef ? { cardPayloadRef: input.cardPayloadRef } : {})
+  };
+}
+
+function workflowFingerprint(operation: string, input: unknown): string {
+  return createHash("sha256").update(JSON.stringify({ operation, input })).digest("hex");
+}
+
+function operationHash(operation: string): string {
+  return createHash("sha256").update(operation).digest("hex").slice(0, 8);
 }
 
 function headers(authToken: string | undefined, body: unknown): Record<string, string> {

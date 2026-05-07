@@ -84,17 +84,20 @@ describe("agent service runtime wiring", () => {
     }
   });
 
-  it("uses typed PMS workflow params to create a draft before preparing confirm", async () => {
+  it("uses typed PMS workflow params to create, quote, and prepare confirm through platform envelopes", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const href = String(url);
       calls.push({ url: href, body: JSON.parse(String(init?.body)) });
       if (href.endsWith("/v1/pms/reservation-drafts/create")) {
-        return { ok: true, status: 200, json: async () => ({ draftId: "draft_typed_1", status: "draft" }) } as Response;
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.draft.create", mutationStatus: "draftOnly", draft: { draftRef: "draft_ref_typed_1", status: "collectingSlots", missingSlots: [], evidenceRefs: [] } }) } as Response;
+      }
+      if (href.endsWith("/v1/pms/reservation-drafts/quote")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.quote", mutationStatus: "draftOnly", draft: { draftRef: "draft_ref_typed_1", status: "quoteReady", missingSlots: [], evidenceRefs: [], quote: { quoteRef: "quote_ref_typed_1", status: "pricingUnsupported" } } }) } as Response;
       }
       if (href.endsWith("/v1/pms/reservation-drafts/prepare-confirm")) {
-        return { ok: true, status: 200, json: async () => ({ pendingActionId: "pending_typed_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }) } as Response;
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.prepare_confirm", mutationStatus: "none", draft: { draftRef: "draft_ref_typed_1", status: "awaitingConfirmation", missingSlots: [], evidenceRefs: [], pendingAction: { pendingActionRef: "pending_typed_1", cardPayloadRef: "card_payload_typed_1", quoteRef: "quote_ref_typed_1", confirmationMode: "typedCardOnly", mutationStatus: "none", status: "awaitingConfirmation" } } }) } as Response;
       }
       return { ok: false, status: 404, json: async () => ({}) } as Response;
     }) as typeof fetch;
@@ -121,23 +124,29 @@ describe("agent service runtime wiring", () => {
           guestName: "王晓",
           checkInDate: "2026-05-09",
           checkOutDate: "2026-05-10",
-          quantity: 2
+          quantity: 2,
+          sourceEpisodeRefs: ["pms_ev_read_1"]
         }
       });
 
-      expect(calls).toEqual([
-        {
-          url: "http://127.0.0.1:8791/v1/pms/reservation-drafts/create",
-          body: { tenantId: "tenant_1", roomId: "room-A1", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" }
-        },
-        {
-          url: "http://127.0.0.1:8791/v1/pms/reservation-drafts/prepare-confirm",
-          body: { tenantId: "tenant_1", draftId: "draft_typed_1" }
-        }
+      expect(calls.map((call) => call.url)).toEqual([
+        "http://127.0.0.1:8791/v1/pms/reservation-drafts/create",
+        "http://127.0.0.1:8791/v1/pms/reservation-drafts/quote",
+        "http://127.0.0.1:8791/v1/pms/reservation-drafts/prepare-confirm"
       ]);
+      expect(calls[0].body).toMatchObject({
+        operation: "pms.reservation.draft.create",
+        propertyId: "property-small-hotel",
+        actor: { type: "ai", id: "pms-agent-v2" },
+        source: "api",
+        slots: { roomId: "room-A1", guestDisplayName: "王晓", arrivalDate: "2026-05-09", departureDate: "2026-05-10", selectedCandidateRef: "pms_ev_read_1:room-A1" },
+        evidenceRefs: [{ source: "availabilitySearch", refId: "pms_ev_read_1" }]
+      });
+      expect(calls[1].body).toMatchObject({ operation: "pms.reservation.quote", draftRef: "draft_ref_typed_1" });
+      expect(calls[2].body).toMatchObject({ operation: "pms.reservation.prepare_confirm", draftRef: "draft_ref_typed_1", quoteRef: "quote_ref_typed_1" });
       expect(evidence).toMatchObject({
         source: { system: "pms-platform", method: "prepareReservationConfirm" },
-        data: { pendingActionId: "pending_typed_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+        data: { pendingActionId: "pending_typed_1", cardPayloadRef: "card_payload_typed_1", quoteRef: "quote_ref_typed_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }
       });
     } finally {
       globalThis.fetch = originalFetch;

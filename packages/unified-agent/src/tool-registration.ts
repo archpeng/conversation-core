@@ -44,6 +44,7 @@ type PmsReadParams = TargetParams & {
   roomType?: string;
   quantity?: number;
   guestName?: string;
+  sourceEpisodeRefs?: readonly string[];
 };
 
 type PmsWorkflowParams = PmsReadParams & {
@@ -124,6 +125,7 @@ function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsWo
       roomType: params.roomType,
       quantity: params.quantity,
       guestName: params.guestName,
+      sourceEpisodeRefs: params.sourceEpisodeRefs,
       executor: input.executors?.pmsWorkflow ?? notConfiguredExecutor("pmsWorkflow")
     });
   });

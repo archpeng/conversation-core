@@ -75,6 +75,45 @@ describe("PMS Platform client evidence", () => {
     expect(evidence.data.rooms).toEqual([{ roomId: "room-A1", roomType: "花园别墅", available: true }]);
   });
 
+  it("accepts current pms-platform local reservation workflow envelopes", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async (url, init) => {
+        calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : undefined });
+        if (url.endsWith("/v1/pms/reservation-drafts/create")) {
+          return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.draft.create", mutationStatus: "draftOnly", draft: { draftRef: "draft_ref_1", status: "collectingSlots", missingSlots: [], evidenceRefs: [] } }) };
+        }
+        if (url.endsWith("/v1/pms/reservation-drafts/quote")) {
+          return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.quote", mutationStatus: "draftOnly", draft: { draftRef: "draft_ref_1", status: "quoteReady", missingSlots: [], evidenceRefs: [], quote: { quoteRef: "quote-ref-1", status: "pricingUnsupported" } } }) };
+        }
+        if (url.endsWith("/v1/pms/reservation-drafts/prepare-confirm")) {
+          return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.prepare_confirm", mutationStatus: "none", draft: { draftRef: "draft_ref_1", status: "awaitingConfirmation", missingSlots: [], evidenceRefs: [], pendingAction: { pendingActionRef: "pending-action-ref-1", cardPayloadRef: "card-payload-ref-1", quoteRef: "quote-ref-1", confirmationMode: "typedCardOnly", mutationStatus: "none", status: "awaitingConfirmation" } } }) };
+        }
+        throw new Error(`unexpected route ${url}`);
+      },
+      now: () => new Date("2026-05-06T12:00:00.000Z")
+    });
+
+    const draft = await client.createReservationDraft({ tenantId: "tenant_1", propertyId: "property-small-hotel", roomId: "room-A1", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", sourceEvidenceRef: "pms_ev_1" });
+    const quote = await client.quoteReservationDraft({ tenantId: "tenant_1", draftRef: draft.data.draftRef });
+    const prepared = await client.prepareReservationConfirm({ tenantId: "tenant_1", draftRef: draft.data.draftRef, quoteRef: quote.data.quoteRef });
+
+    expect(draft.data).toEqual({ draftRef: "draft_ref_1", status: "collectingSlots" });
+    expect(quote.data).toEqual({ quoteRef: "quote-ref-1", status: "pricingUnsupported" });
+    expect(prepared.data).toMatchObject({ pendingActionId: "pending-action-ref-1", cardPayloadRef: "card-payload-ref-1", quoteRef: "quote-ref-1", confirmationMode: "typedCardOnly", mutationStatus: "none" });
+    expect(calls[0].body).toMatchObject({
+      operation: "pms.reservation.draft.create",
+      propertyId: "property-small-hotel",
+      actor: { type: "ai", id: "pms-agent-v2" },
+      source: "api",
+      slots: { roomId: "room-A1", guestDisplayName: "王晓", arrivalDate: "2026-05-09", departureDate: "2026-05-10", selectedCandidateRef: "pms_ev_1:room-A1" },
+      evidenceRefs: [{ source: "availabilitySearch", refId: "pms_ev_1" }]
+    });
+    expect(calls[1].body).toMatchObject({ operation: "pms.reservation.quote", draftRef: "draft_ref_1" });
+    expect(calls[2].body).toMatchObject({ operation: "pms.reservation.prepare_confirm", draftRef: "draft_ref_1", quoteRef: "quote-ref-1" });
+  });
+
   it("keeps the client method set typed and MVP-only", () => {
     const client = createPmsPlatformClient({ baseUrl: "https://pms.local", fetch: fakeFetch([]) });
 
