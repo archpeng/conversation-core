@@ -175,6 +175,10 @@ async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, 
     const shortage = unavailableCandidateReply(readEvidence, turnContext(session, turn, options));
     return { kind: "handled", result: shortage.result, evidenceRefs: [readEvidence.evidenceRef] };
   }
+  if (requestedWorkflowQuantity(plan.workflow.params) > 1) {
+    const quantityBoundary = unsupportedMultiRoomReply(readEvidence, turnContext(session, turn, options));
+    return { kind: "handled", result: quantityBoundary.result, evidenceRefs: [readEvidence.evidenceRef] };
+  }
 
   const workflowParams = { ...plan.workflow.params, roomId: candidate.roomId, sourceEpisodeRefs: [readEvidence.evidenceRef] };
   const workflowResult = await executeToolPlan({ type: "call_tool", toolName: plan.workflow.toolName, params: workflowParams }, session.tools);
@@ -312,10 +316,25 @@ function isAvailabilityEvidence(value: PmsEvidence<unknown> | undefined): value 
 }
 
 function selectRoomCandidate(evidence: PmsEvidence<AvailabilitySearchResult>, workflowParams: Record<string, unknown>): RoomAvailability | undefined {
-  const requestedQuantity = typeof workflowParams.quantity === "number" && Number.isInteger(workflowParams.quantity) && workflowParams.quantity > 0 ? workflowParams.quantity : 1;
+  const requestedQuantity = requestedWorkflowQuantity(workflowParams);
   const availableRooms = evidence.data.rooms.filter((room) => room.available === true && typeof room.roomId === "string" && room.roomId.trim().length > 0);
   if (availableRooms.length < requestedQuantity) return undefined;
   return availableRooms[0];
+}
+
+function requestedWorkflowQuantity(workflowParams: Record<string, unknown>): number {
+  return typeof workflowParams.quantity === "number" && Number.isInteger(workflowParams.quantity) && workflowParams.quantity > 0 ? workflowParams.quantity : 1;
+}
+
+function unsupportedMultiRoomReply(evidence: PmsEvidence<AvailabilitySearchResult>, context: ReturnType<typeof turnContext>): PlannedAgentResult {
+  const result = synthesizeTextReply({
+    text: `当前 PMS 预订审批流一次只能准备一间房的确认卡；我不能把两间房请求伪装成单房审批。请确认是否先准备一间房，或等待多房预订能力。evidenceRefs=${evidence.evidenceRef}`,
+    evidenceRefs: [evidence.evidenceRef],
+    pmsEvidence: [evidence],
+    currentPmsFact: true,
+    context
+  }).result;
+  return { result, evidenceRefs: [evidence.evidenceRef] };
 }
 
 function unavailableCandidateReply(evidence: PmsEvidence<AvailabilitySearchResult>, context: ReturnType<typeof turnContext>): PlannedAgentResult {

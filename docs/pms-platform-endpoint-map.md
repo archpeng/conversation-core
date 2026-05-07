@@ -13,8 +13,14 @@ This MVP client must call only typed `pms-platform` routes and wrap returned PMS
 | `updateReservationDraft(input)` | `POST /v1/pms/reservation-drafts/update` | draft mutation stays draft-only until pending-action approval |
 | `quoteReservationDraft(input)` | `POST /v1/pms/reservation-drafts/quote` | quote facts come from response evidence |
 | `prepareReservationConfirm(input)` | `POST /v1/pms/reservation-drafts/prepare-confirm` | produces `pms_pending_action` refs for approval cards |
-| `pendingActionStatus(input)` | `POST /v1/pms/pending-actions/status` | status facts come from response evidence |
-| `confirmPendingAction(input)` | `POST /v1/pms/pending-actions/confirm` | callable only after typed approval callback |
-| `cancelPendingAction(input)` | `POST /v1/pms/pending-actions/cancel` | callable only after typed approval callback |
+| `pendingActionStatus(input)` | `POST /v1/pms/pending-actions/status` | status facts come from response evidence; readback only |
+
+The `pms-agent-v2` natural-language client does not expose `confirmPendingAction(...)` or `cancelPendingAction(...)`.
+Confirm/cancel routes are future adapter-callback-only surfaces for typed Feishu card actions:
+
+| Adapter callback route | PMS route | Boundary |
+| --- | --- | --- |
+| typed card confirm | `POST /v1/pms/pending-actions/confirm` | callable only by `adapter-feishu` after typed approval callback |
+| typed card cancel | `POST /v1/pms/pending-actions/cancel` | callable only by `adapter-feishu` after typed approval callback |
 
 Natural-language PMS mutation is not a client method. Confirmation and cancellation use only typed pending-action callbacks owned by `adapter-feishu` card actions.

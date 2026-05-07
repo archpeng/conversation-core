@@ -114,6 +114,33 @@ describe("PMS Platform client evidence", () => {
     expect(calls[2].body).toMatchObject({ operation: "pms.reservation.prepare_confirm", draftRef: "draft_ref_1", quoteRef: "quote-ref-1" });
   });
 
+  it("maps draft update patches to current pms-platform slot update envelopes", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async (url, init) => {
+        calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : undefined });
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.reservation.draft.update", mutationStatus: "draftOnly", draft: { draftRef: "draft_ref_1", status: "collectingSlots", missingSlots: [], evidenceRefs: [] } }) };
+      },
+      now: () => new Date("2026-05-06T12:00:00.000Z")
+    });
+
+    const updated = await client.updateReservationDraft({
+      tenantId: "tenant_1",
+      draftRef: "draft_ref_1",
+      patch: { roomId: "room-A1", selectedCandidateRef: "pms_ev_1:room-A1" },
+      sourceEvidenceRef: "pms_ev_1"
+    });
+
+    expect(updated.data).toEqual({ draftRef: "draft_ref_1", status: "collectingSlots" });
+    expect(calls[0].body).toMatchObject({
+      operation: "pms.reservation.draft.update",
+      draftRef: "draft_ref_1",
+      slots: { roomId: "room-A1", selectedCandidateRef: "pms_ev_1:room-A1" },
+      evidenceRefs: [{ source: "availabilitySearch", refId: "pms_ev_1" }]
+    });
+  });
+
   it("keeps the client method set typed and MVP-only", () => {
     const client = createPmsPlatformClient({ baseUrl: "https://pms.local", fetch: fakeFetch([]) });
 

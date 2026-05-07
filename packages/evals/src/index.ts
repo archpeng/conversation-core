@@ -130,7 +130,7 @@ function evalCases(writer: SafetyAuditJsonlWriter): readonly { id: string; categ
 async function groundedAvailability(writer: SafetyAuditJsonlWriter): Promise<void> {
   const pmsReadAudits = auditCount(writer, "pms_read", "allow");
   const response = await service(writer, {
-    pmsRead: () => evidence({
+    pmsRead: () => fakePmsEvidence({
       method: "searchAvailability",
       data: { rooms: [{ roomId: "room_secret_grounding", roomType: "suite", available: true, priceCents: 188800 }] },
       summary: "availability"
@@ -168,7 +168,7 @@ async function prepareConfirm(writer: SafetyAuditJsonlWriter): Promise<void> {
     executors: {
       pmsRead: ({ request }) => {
         calls.push(request.capabilityId);
-        return evidence({
+        return fakePmsEvidence({
           method: "searchAvailability",
           data: { rooms: [{ roomId: "room-A1", roomType: "suite", available: true }] },
           summary: "bounded availability"
@@ -177,7 +177,7 @@ async function prepareConfirm(writer: SafetyAuditJsonlWriter): Promise<void> {
       pmsWorkflow: ({ request }) => {
         calls.push(request.capabilityId);
         capturedRequest = request;
-        return evidence({
+        return fakePmsEvidence({
           method: "prepareReservationConfirm",
           data: { pendingActionId: "pending_secret_prepare", confirmationMode: "typedCardOnly", mutationStatus: "none" },
           summary: "prepare confirm"
@@ -208,7 +208,7 @@ async function naturalConfirm(writer: SafetyAuditJsonlWriter): Promise<void> {
     executors: {
       pmsWorkflow: ({ request }) => {
         calls.push(request.capabilityId);
-        return evidence({
+        return fakePmsEvidence({
           method: "prepareReservationConfirm",
           data: { pendingActionId: "pending_secret_natural", confirmationMode: "typedCardOnly", mutationStatus: "none" },
           summary: "prepare confirm"
@@ -301,7 +301,7 @@ async function sessionContinuity(writer: SafetyAuditJsonlWriter): Promise<void> 
     createAgentSession: fakeCreateAgentSession,
     executors: {
       pmsRead: () => {
-        const item = evidence({
+        const item = fakePmsEvidence({
           method: "searchAvailability",
           fetchedAt: `2026-05-06T12:0${refs.length}:00.000Z`,
           data: { rooms: [{ roomId: `room_secret_continuity_${refs.length}`, roomType: "suite", available: true }] },
@@ -349,7 +349,7 @@ async function structuredSlotFollowup(writer: SafetyAuditJsonlWriter): Promise<v
     createAgentSession: fakeCreateAgentSession,
     executors: {
       pmsRead: () => {
-        const item = evidence({
+        const item = fakePmsEvidence({
           method: "searchAvailability",
           fetchedAt: `2026-05-06T12:1${refs.length}:00.000Z`,
           data: { rooms: [{ roomId: `room_secret_slot_${refs.length}`, roomType: "suite", available: true }] },
@@ -426,7 +426,7 @@ async function visibleToolPlanBoundary(writer: SafetyAuditJsonlWriter): Promise<
     executors: {
       pmsRead: () => {
         executorCalls.push("pms_read");
-        return evidence({ method: "searchAvailability", data: { rooms: [] }, summary: "availability" });
+        return fakePmsEvidence({ method: "searchAvailability", data: { rooms: [] }, summary: "availability" });
       },
       pmsConfirm: () => {
         executorCalls.push("pms_confirm");
@@ -456,7 +456,7 @@ async function llmPlanPmsReadGrounded(writer: SafetyAuditJsonlWriter): Promise<v
   const prompts: string[] = [];
   const executorCalls: string[] = [];
   const pmsReadAudits = auditCount(writer, "pms_read", "allow");
-  const evidenceItem = evidence({
+  const evidenceItem = fakePmsEvidence({
     method: "searchAvailability",
     data: { rooms: [{ roomId: "room_secret_llm_plan", roomType: "suite", available: true, priceCents: 188800 }] },
     summary: "planner eval availability"
@@ -492,7 +492,7 @@ async function llmPlanRawToolRejected(writer: SafetyAuditJsonlWriter): Promise<v
     executors: {
       pmsRead: () => {
         executorCalls.push("pms_read");
-        return evidence({ method: "searchAvailability", data: { rooms: [] }, summary: "unexpected" });
+        return fakePmsEvidence({ method: "searchAvailability", data: { rooms: [] }, summary: "unexpected" });
       }
     }
   });
@@ -558,7 +558,7 @@ async function llmFactTextRequiresEvidence(writer: SafetyAuditJsonlWriter): Prom
 async function llmPlanBeforeKeywordFallback(writer: SafetyAuditJsonlWriter): Promise<void> {
   const prompts: string[] = [];
   const executorCalls: string[] = [];
-  const readEvidence = evidence({ method: "searchAvailability", data: { rooms: [{ roomId: "room_secret_keyword_bypass", roomType: "suite", available: true }] }, summary: "planner beats keyword fallback" });
+  const readEvidence = fakePmsEvidence({ method: "searchAvailability", data: { rooms: [{ roomId: "room_secret_keyword_bypass", roomType: "suite", available: true }] }, summary: "planner beats keyword fallback" });
   const session = await createUnifiedAgentSession({
     turn: customerTurn,
     gateway: recordingGateway(writer),
@@ -570,7 +570,7 @@ async function llmPlanBeforeKeywordFallback(writer: SafetyAuditJsonlWriter): Pro
       },
       pmsWorkflow: () => {
         executorCalls.push("pms_workflow");
-        return evidence({
+        return fakePmsEvidence({
           method: "prepareReservationConfirm",
           data: { pendingActionId: "pending_secret_keyword_bypass", confirmationMode: "typedCardOnly", mutationStatus: "none" },
           summary: "unexpected deterministic fallback"
@@ -589,8 +589,8 @@ async function llmPlanBeforeKeywordFallback(writer: SafetyAuditJsonlWriter): Pro
 }
 
 function service(writer: SafetyAuditJsonlWriter, executors: {
-  pmsRead?: GatedToolExecutor<ReturnType<typeof evidence<AvailabilitySearchResult>>>;
-  pmsWorkflow?: GatedToolExecutor<ReturnType<typeof evidence<ReservationConfirmPreparation>>>;
+  pmsRead?: GatedToolExecutor<ReturnType<typeof fakePmsEvidence<AvailabilitySearchResult>>>;
+  pmsWorkflow?: GatedToolExecutor<ReturnType<typeof fakePmsEvidence<ReservationConfirmPreparation>>>;
   pmsConfirm?: GatedToolExecutor<unknown>;
   proposalWrite?: GatedToolExecutor<unknown>;
 }) {
@@ -612,7 +612,7 @@ function assistantTextSessionWithPromptCapture(text: string, prompts: string[]):
   });
 }
 
-function evidence<T>(input: { method: "searchAvailability" | "prepareReservationConfirm"; data: T; summary: string; fetchedAt?: string }) {
+function fakePmsEvidence<T>(input: { method: "searchAvailability" | "prepareReservationConfirm"; data: T; summary: string; fetchedAt?: string }) {
   return createPmsEvidence({
     method: input.method,
     tenantId: "tenant_1",

@@ -99,7 +99,7 @@ function parseCallToolPlan(record: Record<string, unknown>, manifest: readonly V
 
 function validParamsForTool(toolName: string, params: Record<string, unknown>): boolean {
   if (toolName === "gated_pms_read") return validPmsReadParams(params);
-  if (toolName === "gated_pms_workflow") return validPmsWorkflowParams(params);
+  if (toolName === "gated_pms_workflow") return validDirectPmsWorkflowParams(params);
   return true;
 }
 
@@ -125,6 +125,10 @@ function validPmsWorkflowParams(params: Record<string, unknown>): boolean {
   if (params.roomType !== undefined && !isNonEmptyString(params.roomType)) return false;
   if (params.quantity !== undefined && (typeof params.quantity !== "number" || !Number.isInteger(params.quantity) || params.quantity < 1)) return false;
   return true;
+}
+
+function validDirectPmsWorkflowParams(params: Record<string, unknown>): boolean {
+  return validPmsWorkflowParams(params) && (params.quantity === undefined || params.quantity === 1);
 }
 
 function validBoundedWorkflowParams(params: Record<string, unknown>): boolean {

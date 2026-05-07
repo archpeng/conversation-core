@@ -113,7 +113,7 @@ function pmsReadTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsReadPa
 }
 
 function pmsWorkflowTool(input: RegisterGatedToolsInput): PiToolDefinition<PmsWorkflowParams> {
-  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation. For reservation confirm preparation, pass target=prepare_confirm plus guestName, ISO checkInDate/checkOutDate, and optional quantity or roomType when provided; roomId is supplied by runtime from PMS evidence.", pmsWorkflowParameters, async (params) => {
+  return defineGatedTool("gated_pms_workflow", "Gated PMS Workflow", "Prepare tenant-scoped PMS workflow evidence without final mutation. Current workflow approval is single-room only: direct workflow quantity must be 1 or omitted; roomId is supplied by runtime from PMS evidence.", pmsWorkflowParameters, async (params) => {
     return gatedPmsWorkflow({
       gateway: input.gateway,
       actor: input.actor,

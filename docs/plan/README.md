@@ -2,7 +2,7 @@
 
 ## Active Pack
 
-- None
+- `pms-agent-platform-workflow-q1-q4-v1-2026-05-07`
 
 ## Current Active Slice
 
@@ -10,14 +10,14 @@
 
 ## Intended Handoff
 
-- `none`
+- `execute-plan`
 
 ## Status
 
-- Active parser pack: `none`
+- Active parser pack: `pms-agent-platform-workflow-q1-q4-v1-2026-05-07`
 - Current active slice: `PACK_COMPLETE`
-- Current active state: `PACK_COMPLETE`
-- Next runnable phase: `none`
+- Current active state: `DONE`
+- Next runnable phase: `closeout archived by operator decision`
 - Latest closed pack: `pms-agent-llm-planner-runtime-r0-r3-v1-2026-05-06`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
@@ -47,7 +47,11 @@ Residuals outside the closed pack:
 
 `docs/plan/` is the hot autopilot scheduling surface. Keep it small: this README plus at most one active PLAN/STATUS/WORKSET triplet. Historical evidence and closed packs stay under `docs/plan-archive/`.
 
-No active execution pack is currently promoted. Any successor effort must create a new plan pack under `docs/plan/` and cite archived evidence explicitly.
+Active execution pack:
+
+- PLAN: `docs/plan/pms-agent-platform-workflow-q1-q4-v1-2026-05-07_PLAN.md`
+- STATUS: `docs/plan/pms-agent-platform-workflow-q1-q4-v1-2026-05-07_STATUS.md`
+- WORKSET: `docs/plan/pms-agent-platform-workflow-q1-q4-v1-2026-05-07_WORKSET.md`
 
 ## Control-Plane Mode
 

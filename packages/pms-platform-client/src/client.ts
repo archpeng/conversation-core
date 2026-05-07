@@ -127,7 +127,7 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
     },
     updateReservationDraft: (input) => {
       validateInput("updateReservationDraft", () => validateUpdateReservationDraftInput(input));
-      return requestEvidence(options, now, "updateReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/update", body: reservationWorkflowRequestBody("pms.reservation.draft.update", input, now) }, parseReservationDraftFact, () => "Reservation draft update evidence returned without production mutation.");
+      return requestEvidence(options, now, "updateReservationDraft", input.tenantId, { method: "POST", route: "/v1/pms/reservation-drafts/update", body: updateReservationDraftRequestBody(input, now) }, parseReservationDraftFact, () => "Reservation draft update evidence returned without production mutation.");
     },
     quoteReservationDraft: (input) => {
       validateInput("quoteReservationDraft", () => validateQuoteReservationDraftInput(input));
@@ -201,10 +201,12 @@ function urlFor(baseUrl: string, route: PmsRoute): string {
 }
 
 function availabilityRequestBody(input: SearchAvailabilityInput): Record<string, unknown> {
+  const { quantity, ...body } = input;
   return {
-    ...input,
+    ...body,
     startDate: input.checkInDate,
     endDate: input.checkOutDate,
+    ...(quantity ? { count: quantity } : {}),
     ...(input.roomType ? { roomTypeKeyword: input.roomType } : {})
   };
 }
@@ -221,6 +223,14 @@ function createReservationDraftRequestBody(input: CreateReservationDraftInput, n
       ...(input.roomType ? { roomTypeKeyword: input.roomType } : {})
     },
     evidenceRefs: input.sourceEvidenceRef ? [{ source: "availabilitySearch", refId: input.sourceEvidenceRef }] : []
+  };
+}
+
+function updateReservationDraftRequestBody(input: UpdateReservationDraftInput, now: () => Date): Record<string, unknown> {
+  return {
+    ...reservationWorkflowRequestBody("pms.reservation.draft.update", input, now),
+    ...(Object.keys(input.patch).length > 0 ? { slots: input.patch } : {}),
+    ...(input.sourceEvidenceRef ? { evidenceRefs: [{ source: "availabilitySearch", refId: input.sourceEvidenceRef }] } : {})
   };
 }
 

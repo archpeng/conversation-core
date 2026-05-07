@@ -65,14 +65,14 @@ describe("customer PMS loop", () => {
       body: { ...turn, messageId: "message_5", message: { text: "大床房有房吗" } },
       pmsRead: () => {
         readCalls.push("read");
-        return evidence({ method: "searchAvailability", data: { rooms: [] }, summary: "should not be used" });
+        return fakePmsEvidence({ method: "searchAvailability", data: { rooms: [] }, summary: "should not be used" });
       }
     });
     const missingRoomType = await runEvalTurn({
       body: { ...turn, messageId: "message_6", message: { text: "2026-05-06 有房吗" } },
       pmsRead: () => {
         readCalls.push("read");
-        return evidence({ method: "searchAvailability", data: { rooms: [] }, summary: "should not be used" });
+        return fakePmsEvidence({ method: "searchAvailability", data: { rooms: [] }, summary: "should not be used" });
       }
     });
 
@@ -84,7 +84,7 @@ describe("customer PMS loop", () => {
   it("refuses PMS-looking facts that are not evidence envelopes", async () => {
     const response = await runEvalTurn({
       body: turn,
-      pmsRead: (() => ({ rooms: [{ roomId: "room_secret_6", roomType: "大床房", available: true }] })) as GatedToolExecutor<ReturnType<typeof evidence<AvailabilitySearchResult>>>
+      pmsRead: (() => ({ rooms: [{ roomId: "room_secret_6", roomType: "大床房", available: true }] })) as GatedToolExecutor<ReturnType<typeof fakePmsEvidence<AvailabilitySearchResult>>>
     });
 
     expect(response.body).toEqual({ type: "refusal", reason: "unsupported", message: "PMS evidence envelope is missing." });
@@ -97,7 +97,7 @@ describe("customer PMS loop", () => {
       body: { ...turn, messageId: "message_7", message: { text: "我要预订 2026-05-06 大床房" } },
       pmsWorkflow: ({ request }) => {
         calls.push(request.capabilityId);
-        return evidence({
+        return fakePmsEvidence({
           method: "prepareReservationConfirm",
           data: { pendingActionId: "pending_secret_1", confirmationMode: "typedCardOnly", mutationStatus: "none" },
           summary: "prepare confirm"
@@ -129,7 +129,7 @@ describe("customer PMS loop", () => {
       executors: {
         pmsWorkflow: ({ request }) => {
           calls.push(request.capabilityId);
-          return evidence({
+          return fakePmsEvidence({
             method: "prepareReservationConfirm",
             data: { pendingActionId: "pending_secret_2", confirmationMode: "typedCardOnly", mutationStatus: "none" },
             summary: "prepare confirm"
@@ -161,7 +161,7 @@ describe("customer PMS loop", () => {
       executors: {
         pmsRead: () => {
           const fetchedAt = `2026-05-06T12:0${refs.length}:00.000Z`;
-          const item = evidence({ method: "searchAvailability", fetchedAt, data: { rooms: [{ roomId: `room_secret_${refs.length}`, roomType: "大床房", available: true }] }, summary: "availability" });
+          const item = fakePmsEvidence({ method: "searchAvailability", fetchedAt, data: { rooms: [{ roomId: `room_secret_${refs.length}`, roomType: "大床房", available: true }] }, summary: "availability" });
           refs.push(item.evidenceRef);
           return item;
         }
@@ -181,8 +181,8 @@ describe("customer PMS loop", () => {
 
 type RunEvalTurnInput = {
   body: FeishuTurnInput;
-  pmsRead?: GatedToolExecutor<ReturnType<typeof evidence<AvailabilitySearchResult>>>;
-  pmsWorkflow?: GatedToolExecutor<ReturnType<typeof evidence<ReservationConfirmPreparation>>>;
+  pmsRead?: GatedToolExecutor<ReturnType<typeof fakePmsEvidence<AvailabilitySearchResult>>>;
+  pmsWorkflow?: GatedToolExecutor<ReturnType<typeof fakePmsEvidence<ReservationConfirmPreparation>>>;
   pmsConfirm?: GatedToolExecutor<unknown>;
 };
 
@@ -200,10 +200,10 @@ async function runEvalTurn(input: RunEvalTurnInput) {
 }
 
 function evidenceRead(data: AvailabilitySearchResult) {
-  return () => evidence({ method: "searchAvailability", data, summary: "availability" });
+  return () => fakePmsEvidence({ method: "searchAvailability", data, summary: "availability" });
 }
 
-function evidence<T>(input: { method: "searchAvailability" | "prepareReservationConfirm"; data: T; summary: string; fetchedAt?: string }) {
+function fakePmsEvidence<T>(input: { method: "searchAvailability" | "prepareReservationConfirm"; data: T; summary: string; fetchedAt?: string }) {
   return createPmsEvidence({
     method: input.method,
     tenantId: "tenant_1",

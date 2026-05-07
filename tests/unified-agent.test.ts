@@ -357,7 +357,7 @@ describe("unified Agent runtime", () => {
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
       gateway: safetyGateway(order),
-      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2 } })),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 1 } })),
       executors: {
         pmsWorkflow: ({ request }) => {
           capturedRequest = request;
@@ -397,7 +397,7 @@ describe("unified Agent runtime", () => {
       guestName: "王晓",
       checkInDate: "2026-05-09",
       checkOutDate: "2026-05-10",
-      quantity: 2
+      quantity: 1
     });
     expect(session.state.evidenceRefs).toEqual([evidence.evidenceRef]);
     expect(session.state.pendingActionRefs).toEqual(["pending_secret_llm_workflow"]);
@@ -506,6 +506,58 @@ describe("unified Agent runtime", () => {
     });
     expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
     expect(session.state.evidenceRefs).toEqual([readEvidence.evidenceRef]);
+  });
+
+  it("does not turn a multi-room request into a single-room approval card", async () => {
+    const order: string[] = [];
+    const readEvidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "typed availability",
+      data: {
+        rooms: [
+          { roomId: "room-A1", roomType: "suite", available: true },
+          { roomId: "room-A2", roomType: "suite", available: true }
+        ]
+      }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText(JSON.stringify({
+        type: "bounded_read_then_workflow",
+        read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } },
+        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2 } }
+      })),
+      executors: {
+        pmsRead: () => {
+          order.push("executor:pmsRead");
+          return readEvidence;
+        },
+        pmsWorkflow: () => {
+          order.push("executor:pmsWorkflow");
+          return createPmsEvidence({
+            method: "prepareReservationConfirm",
+            tenantId: "tenant_1",
+            fetchedAt: "2026-05-06T12:01:00.000Z",
+            summary: "unexpected",
+            data: { pendingActionId: "pending_secret_unexpected", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+          });
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "查一下后天的房态, 并给王晓定两间房" } });
+
+    expect(result).toEqual({
+      type: "text",
+      text: `当前 PMS 预订审批流一次只能准备一间房的确认卡；我不能把两间房请求伪装成单房审批。请确认是否先准备一间房，或等待多房预订能力。evidenceRefs=${readEvidence.evidenceRef}`,
+      evidenceRefs: [readEvidence.evidenceRef]
+    });
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor:pmsRead"]);
+    expect(session.state.evidenceRefs).toEqual([readEvidence.evidenceRef]);
+    expect(session.state.pendingActionRefs).toEqual([]);
   });
 
   it("uses a second LLM pass to synthesize user-facing PMS evidence replies", async () => {

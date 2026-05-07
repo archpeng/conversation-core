@@ -166,10 +166,10 @@ function expectAgentResultResponse(response: AgentServiceResponse): asserts resp
   expect(response.body).not.toHaveProperty("result");
 }
 
-function localPmsRead(calls: string[]): GatedToolExecutor<ReturnType<typeof evidence<AvailabilitySearchResult>>> {
+function localPmsRead(calls: string[]): GatedToolExecutor<ReturnType<typeof localStubEvidence<AvailabilitySearchResult>>> {
   return ({ request }) => {
     calls.push(request.capabilityId);
-    return evidence({
+    return localStubEvidence({
       method: "searchAvailability",
       data: { rooms: [{ roomId: "room_secret_smoke", roomType: "suite", available: true, priceCents: 188800 }] },
       summary: "local availability smoke"
@@ -177,10 +177,10 @@ function localPmsRead(calls: string[]): GatedToolExecutor<ReturnType<typeof evid
   };
 }
 
-function localPrepareConfirm(calls: string[]): GatedToolExecutor<ReturnType<typeof evidence<ReservationConfirmPreparation>>> {
+function localPrepareConfirm(calls: string[]): GatedToolExecutor<ReturnType<typeof localStubEvidence<ReservationConfirmPreparation>>> {
   return ({ request }) => {
     calls.push(request.capabilityId);
-    return evidence({
+    return localStubEvidence({
       method: "prepareReservationConfirm",
       data: { pendingActionId: "pending_secret_smoke", confirmationMode: "typedCardOnly", mutationStatus: "none" },
       summary: "local prepare-confirm smoke"
@@ -195,7 +195,7 @@ function writeRecorder(writes: WrittenArtifact[]): GatedToolExecutor<{ path: str
   };
 }
 
-function evidence<T>(input: { method: "searchAvailability" | "prepareReservationConfirm"; data: T; summary: string }) {
+function localStubEvidence<T>(input: { method: "searchAvailability" | "prepareReservationConfirm"; data: T; summary: string }) {
   return createPmsEvidence({
     method: input.method,
     tenantId: "tenant_1",

@@ -8,6 +8,7 @@ export type SearchAvailabilityInput = {
   checkInDate: string;
   checkOutDate: string;
   roomType?: string;
+  quantity?: number;
 };
 
 export type RoomAvailability = {
@@ -59,6 +60,7 @@ export type UpdateReservationDraftInput = {
   draftId?: string;
   draftRef?: string;
   patch: Record<string, unknown>;
+  sourceEvidenceRef?: string;
 };
 
 export type ReservationDraftFact = {
@@ -123,6 +125,7 @@ export function validateSearchAvailabilityInput(input: SearchAvailabilityInput):
   assertText(input.hotelId, "hotelId");
   assertText(input.checkInDate, "checkInDate");
   assertText(input.checkOutDate, "checkOutDate");
+  if (input.quantity !== undefined && (!Number.isInteger(input.quantity) || input.quantity < 1)) throw new Error("quantity must be a positive integer");
 }
 
 export function validateGetRoomInput(input: GetRoomInput): void {

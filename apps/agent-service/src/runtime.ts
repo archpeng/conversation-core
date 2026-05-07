@@ -166,12 +166,14 @@ export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): Unifi
           hotelId: config.defaultHotelId,
           checkInDate: request.checkInDate ?? config.defaultCheckInDate,
           checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
+          ...(request.quantity ? { quantity: request.quantity } : {}),
           ...(request.roomType ?? config.defaultRoomType ? { roomType: request.roomType ?? config.defaultRoomType } : {})
         });
       }
       return client.capabilitiesManifest({ tenantId: tenantId(request) });
     },
     pmsWorkflow: async ({ request }) => {
+      if (request.quantity !== undefined && request.quantity > 1) throw new Error("pms_workflow_multi_room_unsupported");
       const tenant = tenantId(request);
       const draft = request.draftId ? undefined : await client.createReservationDraft({
         tenantId: tenant,
@@ -184,16 +186,34 @@ export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): Unifi
         ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
       });
       const draftIdentifier = request.draftId ?? draft?.data.draftRef ?? draft?.data.draftId;
+      const selectedCandidateRef = request.sourceEpisodeRefs?.[0] ? `${request.sourceEpisodeRefs[0]}:${request.roomId}` : undefined;
+      if (draft?.data.draftRef ?? draft?.data.draftId) {
+        await client.updateReservationDraft({
+          tenantId: tenant,
+          draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
+          patch: {
+            roomId: request.roomId,
+            ...(selectedCandidateRef ? { selectedCandidateRef } : {})
+          },
+          ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
+        });
+      }
       const quote = await client.quoteReservationDraft({
         tenantId: tenant,
         draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required")
       });
 
-      return client.prepareReservationConfirm({
+      const prepared = await client.prepareReservationConfirm({
         tenantId: tenant,
         draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
         quoteRef: requiredWorkflowText(quote.data.quoteRef ?? quote.data.quoteId, "pms_workflow_quote_required")
       });
+      await client.pendingActionStatus({
+        tenantId: tenant,
+        pendingActionRef: prepared.data.pendingActionId,
+        ...(prepared.data.cardPayloadRef ? { cardPayloadRef: prepared.data.cardPayloadRef } : {})
+      });
+      return prepared;
     },
     pmsConfirm: async ({ request }) => client.pendingActionStatus({
       tenantId: tenantId(request),
