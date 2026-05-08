@@ -1,56 +1,47 @@
-import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
-import type { GatedToolRequest, GatedToolResult, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
-import { buildContextBundle, contextBundlePrompt, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
-import { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState } from "./continuity.js";
-import type { PiAgentSession, PiAssistantEvent, PiCreateAgentSession, PiResourceLoaderFactory, PiToolDefinition, PiToolResult } from "./pi-session.js";
+import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
+import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
+import { buildContextBundle } from "./context-bundle.js";
+import { createRedactedSessionState, rememberRefs, rememberTurn } from "./continuity.js";
 import { parseAssistantToolPlanJson, promptAssistantText } from "./pi-io.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { loadAgentProfile, type UnifiedAgentProfile } from "./profile.js";
+import { loadAgentProfile } from "./profile.js";
 import { runCustomerPmsLoop } from "./customer-loop.js";
 import { runAdminProposalLoop } from "./proposal-loop.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
-import { omitParam, requestedRoomTypeText, roomSelection, selectRoomCandidates, type RoomCandidateSelection } from "./room-selection.js";
+import { omitParam, requestedRoomTypeText, roomSelection, selectRoomCandidates } from "./room-selection.js";
 import { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan, type ToolPlanAction } from "./tool-plan.js";
-import { registerGatedTools, type UnifiedAgentToolExecutors } from "./tool-registration.js";
+import { registerGatedTools } from "./tool-registration.js";
+import { fallbackNaturalReply, turnPrompt } from "./session-turn-prompt.js";
+import { isAvailabilityEvidence, isPmsEvidence, synthesizeToolResult, type PlannedAgentResult } from "./session-evidence.js";
+import type {
+  CreateUnifiedAgentSessionInput,
+  RunAgentTurnOptions,
+  UnifiedAgentSession,
+  UnifiedAgentTurnEvent
+} from "./session-types.js";
 
-export type UnifiedAgentSession = {
-  agentRuntime: "pi-coding-agent";
-  profile: UnifiedAgentProfile;
-  piSession: PiAgentSession;
-  tools: readonly PiToolDefinition[];
-  systemPrompt: string;
-  systemPromptInjected: boolean;
-  state: RedactedSessionState;
-};
+export type {
+  CreateUnifiedAgentSessionInput,
+  RegisteredGatedTool,
+  RunAgentTurnOptions,
+  UnifiedAgentSession,
+  UnifiedAgentTurnEvent
+} from "./session-types.js";
 
-export type CreateUnifiedAgentSessionInput = {
+type PlannerPathOutcome =
+  | (PlannedAgentResult & { kind: "handled" })
+  | { kind: "no_structured_plan"; reason: "assistant_output_not_json" };
+
+type PostLlmSafetyScaffoldInput = {
+  session: UnifiedAgentSession;
   turn: FeishuTurnInput;
-  gateway: SafetyGatewayPort;
-  createAgentSession: PiCreateAgentSession;
-  createResourceLoader?: PiResourceLoaderFactory;
-  cwd?: string;
-  sessionFile?: string;
-  sessionManager?: unknown;
-  authStorage?: unknown;
-  modelRegistry?: unknown;
-  executors?: UnifiedAgentToolExecutors;
+  reason: "llm_unavailable";
 };
 
-export type UnifiedAgentTurnEvent =
-  | { event: "pms_agent_turn_planned"; profile: UnifiedAgentProfile["id"]; plannerPath: "structured_tool_plan" | "no_structured_plan" | "invalid_tool_plan"; toolPlanType?: string; toolName?: string; paramKeys?: readonly string[] }
-  | { event: "pms_agent_tool_result"; profile: UnifiedAgentProfile["id"]; toolName: string; outcome: string; evidenceMethod?: string; resultType: AgentResult["type"] }
-  | { event: "pms_agent_turn_result"; profile: UnifiedAgentProfile["id"]; resultType: AgentResult["type"]; evidenceCount: number; pendingActionCount: number }
-  | { event: "pms_agent_turn_failed"; stage: "create_or_run_turn"; status: 502; errorName: string; errorMessageHash: string };
-
-export type RunAgentTurnOptions = {
-  evidenceRefs?: readonly string[];
-  pendingActionRefs?: readonly string[];
-  workspaceAdvisory?: readonly WorkspaceAdvisoryContextInput[];
-  pmsEvidence?: readonly PmsEvidence<unknown>[];
-  modelPriorSummary?: string;
-  eventSink?: (event: UnifiedAgentTurnEvent) => void;
-};
+type AssistantToolPlanJson =
+  | { ok: true; hasPlan: true; value: unknown }
+  | { ok: true; hasPlan: false }
+  | { ok: false; hasPlan: true };
 
 export async function createUnifiedAgentSession(input: CreateUnifiedAgentSessionInput): Promise<UnifiedAgentSession> {
   const profile = loadAgentProfile(input.turn.actor.role);
@@ -126,27 +117,6 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   emitFinalResultEvent(session, options, { result, evidenceRefs: options.evidenceRefs ? [...options.evidenceRefs] : undefined, pendingActionRefs: options.pendingActionRefs ? [...options.pendingActionRefs] : undefined });
   return result;
 }
-
-type PlannerPathOutcome =
-  | (PlannedAgentResult & { kind: "handled" })
-  | { kind: "no_structured_plan"; reason: "assistant_output_not_json" };
-
-type PostLlmSafetyScaffoldInput = {
-  session: UnifiedAgentSession;
-  turn: FeishuTurnInput;
-  reason: "llm_unavailable";
-};
-
-type AssistantToolPlanJson =
-  | { ok: true; hasPlan: true; value: unknown }
-  | { ok: true; hasPlan: false }
-  | { ok: false; hasPlan: true };
-
-type PlannedAgentResult = {
-  result: AgentResult;
-  evidenceRefs?: string[];
-  pendingActionRefs?: string[];
-};
 
 async function runAssistantToolPlan(session: UnifiedAgentSession, assistantText: string, turn: FeishuTurnInput, options: RunAgentTurnOptions): Promise<PlannerPathOutcome> {
   const json = parseAssistantToolPlanJson(assistantText);
@@ -241,111 +211,6 @@ function toolPlanRefusalReason(reason: string): "policy" | "unsupported" | "inva
   return "invalid_request";
 }
 
-async function synthesizeToolResult(session: UnifiedAgentSession, turn: FeishuTurnInput, toolResult: PiToolResult, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): Promise<PlannedAgentResult> {
-  const details = toolResult.details as Record<string, unknown>;
-  if (details.outcome === "allow" && isPmsEvidence(details.value)) {
-    const evidence = details.value;
-    const approval = synthesizePrepareConfirmApproval(evidence);
-    if (approval) return approval;
-
-    const llmReply = await promptAssistantText(session.piSession, evidenceReplyPrompt(turn, evidence));
-    const synthesized = synthesizeEvidenceTextReply(llmReply, evidence, context, options);
-    if (synthesized) return synthesized;
-    return fallbackEvidenceTextReply(evidence, context, options);
-  }
-
-  const text = toolResult.content.map((item) => item.text).filter(Boolean).join("\n").trim() || "Gated action completed.";
-  return { result: synthesizeTextReply({ text, context }).result };
-}
-
-function synthesizeEvidenceTextReply(text: string, evidence: PmsEvidence<unknown>, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): PlannedAgentResult | undefined {
-  if (!text.trim() || parseAssistantToolPlanJson(text).hasPlan) return undefined;
-  const replyText = text.includes(evidence.evidenceRef) ? text : `${text.trim()} evidenceRefs=${evidence.evidenceRef}`;
-  const synthesized = synthesizeTextReply({
-    text: replyText,
-    evidenceRefs: [evidence.evidenceRef],
-    pmsEvidence: [...(options.pmsEvidence ?? []), evidence],
-    currentPmsFact: true,
-    context
-  });
-  if (!synthesized.ok) return undefined;
-  return { result: synthesized.result, evidenceRefs: [evidence.evidenceRef] };
-}
-
-function fallbackEvidenceTextReply(evidence: PmsEvidence<unknown>, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): PlannedAgentResult {
-  const result = synthesizeTextReply({
-    text: `PMS evidence is available: ${evidence.summary}. evidenceRefs=${evidence.evidenceRef}`,
-    evidenceRefs: [evidence.evidenceRef],
-    pmsEvidence: [...(options.pmsEvidence ?? []), evidence],
-    currentPmsFact: true,
-    context
-  }).result;
-  return { result, evidenceRefs: [evidence.evidenceRef] };
-}
-
-function synthesizePrepareConfirmApproval(evidence: PmsEvidence<unknown>): PlannedAgentResult | undefined {
-  if ((evidence.source.method !== "prepareReservationConfirm" && evidence.source.method !== "prepareReservationGroupConfirm") || !isReservationConfirmPreparation(evidence.data)) return undefined;
-  return {
-    result: { type: "approval_card", card: approvalCard(evidence.scope.tenantId, evidence.data) },
-    evidenceRefs: [evidence.evidenceRef],
-    pendingActionRefs: [evidence.data.pendingActionId]
-  };
-}
-
-function isReservationConfirmPreparation(value: unknown): value is ReservationConfirmPreparation {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.pendingActionId === "string"
-    && record.pendingActionId.trim().length > 0
-    && record.confirmationMode === "typedCardOnly"
-    && record.mutationStatus === "none"
-    && (record.pendingActionRef === undefined || typeof record.pendingActionRef === "string")
-    && (record.cardPayloadRef === undefined || typeof record.cardPayloadRef === "string")
-    && (record.quoteRef === undefined || typeof record.quoteRef === "string")
-    && (record.selectionCount === undefined || typeof record.selectionCount === "number")
-    && (record.expiresAt === undefined || typeof record.expiresAt === "string");
-}
-
-function approvalCard(tenantId: string, preparation: ReservationConfirmPreparation): PmsApprovalCard {
-  return {
-    type: "pms_pending_action_card",
-    ref: {
-      type: "pms_pending_action",
-      tenantId,
-      pendingActionId: preparation.pendingActionId,
-      ...(preparation.pendingActionRef ? { pendingActionRef: preparation.pendingActionRef } : {}),
-      ...(preparation.cardPayloadRef ? { cardPayloadRef: preparation.cardPayloadRef } : {}),
-      ...(preparation.quoteRef ? { quoteRef: preparation.quoteRef } : {}),
-      ...(preparation.selectionCount ? { selectionCount: preparation.selectionCount } : {}),
-      action: "reservation_confirm",
-      ...(preparation.expiresAt ? { expiresAt: preparation.expiresAt } : {})
-    },
-    title: "确认预订草稿",
-    summary: "PMS 已准备预订草稿待审批操作；点击确认只会确认草稿 pending-action，不代表最终预订已创建。",
-    confirmLabel: "确认",
-    cancelLabel: "取消"
-  };
-}
-
-function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const evidence = value as Record<string, unknown>;
-  const source = evidence.source as Record<string, unknown> | undefined;
-  return typeof evidence.evidenceRef === "string"
-    && source?.system === "pms-platform"
-    && typeof source?.method === "string"
-    && typeof evidence.summary === "string"
-    && typeof evidence.fetchedAt === "string"
-    && evidence.scope !== undefined
-    && "data" in evidence;
-}
-
-function isAvailabilityEvidence(value: PmsEvidence<unknown> | undefined): value is PmsEvidence<AvailabilitySearchResult> {
-  if (!value || value.source.method !== "searchAvailability") return false;
-  const data = value.data as Record<string, unknown> | undefined;
-  return Boolean(data && Array.isArray(data.rooms));
-}
-
 function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): UnifiedAgentTurnEvent {
   if (plan.type !== "call_tool") {
     return { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "structured_tool_plan", toolPlanType: plan.type };
@@ -360,7 +225,7 @@ function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): Unif
   };
 }
 
-function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, toolName: string, toolResult: PiToolResult, result: AgentResult): void {
+function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, toolName: string, toolResult: import("./pi-session.js").AgentToolResult<GatedToolResult<unknown>>, result: AgentResult): void {
   const details = toolResult.details as Record<string, unknown>;
   const value = "value" in details ? details.value : undefined;
   emitEvent(options, {
@@ -395,60 +260,4 @@ function turnContext(session: UnifiedAgentSession, turn: FeishuTurnInput, option
     pmsEvidence: options.pmsEvidence,
     modelPriorSummary: options.modelPriorSummary
   });
-}
-
-function evidenceReplyPrompt(turn: FeishuTurnInput, evidence: PmsEvidence<unknown>): string {
-  return [
-    "Final response synthesis after a gated PMS tool call.",
-    "Reply naturally in the user's language, using only the PMS evidence summary below for current PMS facts.",
-    "Include the exact evidenceRefs value in the final answer.",
-    "If the user also requested a booking or other high-risk PMS change, explain that natural language cannot complete the mutation; ask only for the smallest missing confirmation or say an approval card/workflow is required.",
-    "Do not invent room IDs, prices, pending action IDs, or completed mutation claims.",
-    `PMS evidence method=${evidence.source.method}`,
-    `PMS evidence summary=${evidence.summary}`,
-    `evidenceRefs=${evidence.evidenceRef}`,
-    "User message:",
-    turn.message.text
-  ].join("\n");
-}
-
-function fallbackNaturalReply(turn: FeishuTurnInput): string {
-  if (/^\s*(你好|您好|hello|hi|hey)\s*[！!。.]?\s*$/i.test(turn.message.text)) {
-    return "你好，我是 PMS 智能助手。可以帮你查询房态、整理预订信息，或生成需要审批的预订确认卡片；如果要查房，请告诉我入住/离店日期和房型。";
-  }
-  return "我在。可以帮你查询 PMS 房态、整理预订信息，或生成需要审批的操作卡片。涉及实时房态、价格或订单状态时，我会以 PMS 平台证据为准。";
-}
-
-function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions): string {
-  return [
-    ...(session.systemPromptInjected ? [] : [session.systemPrompt]),
-    "Continuity refs:",
-    continuityPrompt(session.state),
-    contextBundlePrompt(buildContextBundle({
-      state: session.state,
-      userMessage: turn.message.text,
-      workspaceAdvisory: options.workspaceAdvisory,
-      pmsEvidence: options.pmsEvidence,
-      modelPriorSummary: options.modelPriorSummary
-    })),
-    "Visible gated tool manifest:",
-    JSON.stringify(buildVisibleGatedToolManifest(session.profile, session.tools), null, 2),
-    "ToolPlanAction JSON-only output contract:",
-    "Return exactly one JSON object and no markdown or extra prose for actionable turns.",
-    "Allowed shapes:",
-    JSON.stringify([
-      { type: "call_tool", toolName: "one visible gated tool name", params: {} },
-      {
-        type: "bounded_read_then_workflow",
-        read: { toolName: "gated_pms_read", params: { target: "availability" } },
-        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm" } }
-      },
-      { type: "ask_clarification", message: "focused clarification question" },
-      { type: "refuse", reason: "policy|unsupported|invalid_request", message: "safe refusal text" },
-      { type: "require_approval", message: "approval-card/proposal required text" }
-    ], null, 2),
-    "Never call or name raw tools such as bash, read, write, edit, http, or http_request. Choose only from the visible gated tool manifest; runtime validation and Safety Gateway remain authoritative.",
-    "User message:",
-    turn.message.text
-  ].join("\n");
 }
