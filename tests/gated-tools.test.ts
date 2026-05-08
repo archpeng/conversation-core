@@ -11,6 +11,7 @@ import {
   gatedHttp,
   gatedPmsConfirm,
   gatedPmsRead,
+  gatedPmsSafeRead,
   gatedPmsWorkflow,
   gatedRead,
   gatedWrite,
@@ -146,6 +147,89 @@ describe("gated tool runner", () => {
       "decide:sandbox_bash",
       "audit:deny"
     ]);
+  });
+
+  it("gatedPmsSafeRead routes through the specific safe-read capability, not generic pms_read", async () => {
+    const order: string[] = [];
+    const result = await gatedPmsSafeRead({
+      gateway: safetyGateway(order),
+      actor: customer,
+      tenantId: "tenant_1",
+      capabilityId: "pms_availability_search",
+      executor: () => {
+        order.push("executor");
+        return "available-rooms";
+      }
+    });
+
+    expect(order).toEqual(["decide:pms_availability_search", "audit:allow", "executor"]);
+    expect(result).toMatchObject({ outcome: "allow", auditId: "audit_pms_availability_search_allow" });
+    if (result.outcome === "allow") expect(result.value).toBe("available-rooms");
+  });
+
+  it("gatedPmsSafeRead follows decide-then-audit-then-execute ordering", async () => {
+    const order: string[] = [];
+    const result = await gatedPmsSafeRead({
+      gateway: safetyGateway(order),
+      actor: customer,
+      tenantId: "tenant_1",
+      capabilityId: "pms_reservation_lookup",
+      executor: () => {
+        order.push("executor");
+        return { reservation: "r1" };
+      }
+    });
+
+    expect(order).toEqual(["decide:pms_reservation_lookup", "audit:allow", "executor"]);
+    expect(result).toMatchObject({ outcome: "allow", auditId: "audit_pms_reservation_lookup_allow" });
+    if (result.outcome === "allow") expect(result.value).toEqual({ reservation: "r1" });
+  });
+
+  it("gatedPmsSafeRead denies without executor side effects", async () => {
+    const order: string[] = [];
+    const gateway = safetyGateway(order);
+
+    // Use pms_confirm capability with no pendingActionId to trigger deny
+    const result = await gatedPmsSafeRead({
+      gateway,
+      actor: customer,
+      tenantId: "tenant_1",
+      capabilityId: "pms_confirm",
+      executor: () => {
+        order.push("executor");
+        return "should-not-execute";
+      }
+    });
+
+    expect(result).toMatchObject({ outcome: "deny", auditId: "audit_pms_confirm_deny" });
+    expect(order).toEqual(["decide:pms_confirm", "audit:deny"]);
+  });
+
+  it("gatedPmsSafeRead works with different safe-read capability IDs", async () => {
+    const safeReadIds = [
+      "pms_availability_search",
+      "pms_inventory_summary",
+      "pms_today_arrivals",
+      "pms_today_departures",
+      "pms_pending_action_status"
+    ];
+
+    for (const capId of safeReadIds) {
+      const order: string[] = [];
+      const result = await gatedPmsSafeRead({
+        gateway: safetyGateway(order),
+        actor: customer,
+        tenantId: "tenant_1",
+        capabilityId: capId,
+        executor: () => {
+          order.push("executor");
+          return capId;
+        }
+      });
+
+      expect(order).toEqual([`decide:${capId}`, "audit:allow", "executor"]);
+      expect(result).toMatchObject({ outcome: "allow", auditId: `audit_${capId}_allow` });
+    }
   });
 });
 

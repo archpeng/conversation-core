@@ -73,7 +73,7 @@ export function decideToolRequest(request: ToolRequest): SafetyDecision {
     return buildDecision("allow", request, [allowReason("sandbox_workspace_allowed", capability.id, capability.risk.level)], capability);
   }
 
-  if (request.actor.profile === "customer" && capability.id !== "pms_read" && capability.id !== "pms_workflow" && capability.id !== "pms_confirm") {
+  if (request.actor.profile === "customer" && capability.kind !== "pms") {
     return buildDecision("deny", request, [constraintReason("customer_read_only", capability.id, capability.risk.level)], capability);
   }
 
