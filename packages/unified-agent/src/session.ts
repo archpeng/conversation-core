@@ -85,7 +85,14 @@ export async function createUnifiedAgentSession(input: CreateUnifiedAgentSession
 
 export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions = {}): Promise<AgentResult> {
   rememberTurn(session.state, turn, options);
-  const assistantText = await promptAssistantText(session.piSession, turnPrompt(session, turn, options));
+  let assistantText: string;
+  let llmFailed = false;
+  try {
+    assistantText = await promptAssistantText(session.piSession, turnPrompt(session, turn, options));
+  } catch {
+    assistantText = "";
+    llmFailed = true;
+  }
   const plannerOutcome = await runAssistantToolPlan(session, assistantText, turn, options);
   if (plannerOutcome.kind === "handled") {
     rememberRefs(session.state, plannerOutcome);
@@ -93,11 +100,17 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
     return plannerOutcome.result;
   }
 
-  const fallbackResult = await runPostLlmSafetyScaffoldFallback({ session, turn, reason: plannerOutcome.reason });
-  if (fallbackResult) {
-    rememberRefs(session.state, fallbackResult);
-    emitFinalResultEvent(session, options, fallbackResult);
-    return fallbackResult.result;
+  // Only run the deterministic safety scaffold when the LLM is genuinely unavailable.
+  // An available LLM that returns natural language without a JSON plan means the
+  // LLM decided not to call tools -- we synthesize its text directly.
+  const llmUnavailable = llmFailed || !assistantText.trim();
+  if (llmUnavailable) {
+    const fallbackResult = await runPostLlmSafetyScaffoldFallback({ session, turn, reason: "llm_unavailable" });
+    if (fallbackResult) {
+      rememberRefs(session.state, fallbackResult);
+      emitFinalResultEvent(session, options, fallbackResult);
+      return fallbackResult.result;
+    }
   }
 
   const text = assistantText.trim() || fallbackNaturalReply(turn);
@@ -118,7 +131,7 @@ type PlannerPathOutcome =
 type PostLlmSafetyScaffoldInput = {
   session: UnifiedAgentSession;
   turn: FeishuTurnInput;
-  reason: "assistant_output_not_json";
+  reason: "llm_unavailable";
 };
 
 type AssistantToolPlanJson =
@@ -196,8 +209,11 @@ async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, 
 
 async function runPostLlmSafetyScaffoldFallback(input: PostLlmSafetyScaffoldInput): Promise<PlannedAgentResult | undefined> {
   void input.reason;
-  // This bounded scaffold runs only after the LLM observed the turn and produced no
-  // structured ToolPlanAction JSON; it is not planner success and must not expand into the primary business brain.
+  // This bounded scaffold runs only when the LLM is genuinely unavailable (stub mode,
+  // error, or empty output). It is not planner success and must not expand into the
+  // primary business brain. When the LLM is available but produced no structured
+  // ToolPlanAction JSON, the LLM's text is synthesized directly -- the regex-based
+  // fallback must not override an available model's natural-language decision.
   if (input.session.profile.id === "customer_pms") {
     return runCustomerPmsLoop({ turn: input.turn, tools: input.session.tools, state: input.session.state });
   }

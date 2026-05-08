@@ -984,7 +984,7 @@ describe("unified Agent runtime", () => {
     expect(session.state.evidenceRefs).toEqual([]);
   });
 
-  it("uses legacy safety scaffold only after LLM observation when no structured plan is returned", async () => {
+  it("uses deterministic safety scaffold only when LLM is unavailable", async () => {
     const order: string[] = [];
     const prompts: string[] = [];
     const session = await createUnifiedAgentSession({
