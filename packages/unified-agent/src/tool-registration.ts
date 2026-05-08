@@ -11,6 +11,7 @@ import {
   type SafetyGatewayPort
 } from "@pms-agent-v2/gated-tools";
 import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import { generatePmsSafeReadTools } from "./pms-capability-tools.js";
 import type { UnifiedAgentProfile } from "./profile.js";
 import type { PiToolDefinition, PiToolResult } from "./pi-session.js";
 
@@ -93,6 +94,9 @@ const pmsWorkflowParameters = {
 
 export function registerGatedTools(input: RegisterGatedToolsInput): PiToolDefinition[] {
   if (input.profile.id === "customer_pms") {
+    if (input.profile.useGeneratedTools) {
+      return [...generatePmsSafeReadTools(input), pmsWorkflowTool(input), pmsConfirmTool(input)];
+    }
     return [pmsReadTool(input), pmsWorkflowTool(input), pmsConfirmTool(input)];
   }
   return [proposalReadTool(input), proposalWriteTool(input), proposalEditTool(input)];
@@ -193,7 +197,7 @@ function proposalEditTool(input: RegisterGatedToolsInput): PiToolDefinition<Targ
   });
 }
 
-function defineGatedTool<Params extends TargetParams>(name: string, label: string, description: string, parameters: unknown, run: (params: Params) => Promise<GatedToolResult<unknown>>): PiToolDefinition<Params> {
+export function defineGatedTool<Params extends TargetParams>(name: string, label: string, description: string, parameters: unknown, run: (params: Params) => Promise<GatedToolResult<unknown>>): PiToolDefinition<Params> {
   return {
     name,
     label,
