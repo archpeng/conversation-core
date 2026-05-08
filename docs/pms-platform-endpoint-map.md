@@ -14,6 +14,11 @@ This MVP client must call only typed `pms-platform` routes and wrap returned PMS
 | `quoteReservationDraft(input)` | `POST /v1/pms/reservation-drafts/quote` | quote facts come from response evidence |
 | `prepareReservationConfirm(input)` | `POST /v1/pms/reservation-drafts/prepare-confirm` | produces `pms_pending_action` refs for approval cards |
 | `pendingActionStatus(input)` | `POST /v1/pms/pending-actions/status` | status facts come from response evidence; readback only |
+| `inventorySummary(input)` | `POST /v1/pms/inventory/summary` | inventory facts come from response evidence |
+| `roomReservationContext(input)` | `POST /v1/pms/room/reservation-context` | room context facts come from response evidence |
+| `todayArrivals(input)` | `POST /v1/pms/arrivals/today` | arrival facts come from response evidence |
+| `todayDepartures(input)` | `POST /v1/pms/departures/today` | departure facts come from response evidence |
+| `reservationLookup(input)` | `POST /v1/pms/reservations/get` | reservation facts by reservationCode from response evidence |
 
 The `pms-agent-v2` natural-language client does not expose `confirmPendingAction(...)` or `cancelPendingAction(...)`.
 Confirm/cancel routes are future adapter-callback-only surfaces for typed Feishu card actions:

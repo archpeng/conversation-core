@@ -16,7 +16,12 @@ export type PmsEvidenceMethod =
   | "updateReservationGroupDraft"
   | "quoteReservationGroupDraft"
   | "prepareReservationGroupConfirm"
-  | "pendingActionStatus";
+  | "pendingActionStatus"
+  | "inventorySummary"
+  | "roomReservationContext"
+  | "todayArrivals"
+  | "todayDepartures"
+  | "reservationLookup";
 
 export type PmsEvidenceScope = {
   tenantId: string;

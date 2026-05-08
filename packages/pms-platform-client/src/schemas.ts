@@ -35,7 +35,8 @@ export type RoomFact = {
 
 export type GetReservationInput = {
   tenantId: string;
-  reservationId: string;
+  reservationId?: string;
+  reservationCode?: string;
 };
 
 export type ReservationFact = {
@@ -187,7 +188,15 @@ export function validateGetRoomInput(input: GetRoomInput): void {
 
 export function validateGetReservationInput(input: GetReservationInput): void {
   validateTenantScopedInput(input);
-  assertText(input.reservationId, "reservationId");
+  const id = input.reservationId;
+  const code = input.reservationCode;
+  if (!id && !code) throw new Error("reservationId or reservationCode is required");
+  if (id !== undefined && id !== null) {
+    assertText(id, "reservationId");
+  }
+  if (code !== undefined && code !== null) {
+    assertText(code, "reservationCode");
+  }
 }
 
 export function validateCreateReservationDraftInput(input: CreateReservationDraftInput): void {
@@ -311,8 +320,9 @@ export function parseRoomFact(value: unknown): RoomFact {
 
 export function parseReservationFact(value: unknown): ReservationFact {
   const object = assertRecord(value, "reservation response");
+  const idField = (typeof object.reservationId === "string" && object.reservationId.trim()) ? object.reservationId : object.reservationCode;
   const result: ReservationFact = {
-    reservationId: assertText(object.reservationId, "reservationId"),
+    reservationId: assertText(idField, "reservationId"),
     status: assertText(object.status, "status")
   };
   if (typeof object.roomId === "string" && object.roomId.length > 0) result.roomId = object.roomId;
@@ -441,12 +451,12 @@ function assertArray(value: unknown, field: string): unknown[] {
   return value;
 }
 
-function assertRecord(value: unknown, field: string): Record<string, unknown> {
+export function assertRecord(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${field} must be an object`);
   return value as Record<string, unknown>;
 }
 
-function assertText(value: unknown, field: string): string {
+export function assertText(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`${field} must be a non-empty string`);
   return value;
 }

@@ -1,6 +1,23 @@
 import { createHash } from "node:crypto";
 import { createPmsEvidence, type PmsEvidence, type PmsEvidenceMethod } from "./evidence.js";
 import {
+  inventorySummaryMethod,
+  reservationLookupMethod,
+  roomReservationContextMethod,
+  todayArrivalsMethod,
+  todayDeparturesMethod
+} from "./inventory-client.js";
+import {
+  type InventorySummaryInput,
+  type InventorySummaryResult,
+  type RoomReservationContextInput,
+  type RoomReservationContextResult,
+  type TodayArrivalsInput,
+  type TodayArrivalsResult,
+  type TodayDeparturesInput,
+  type TodayDeparturesResult
+} from "./inventory-schemas.js";
+import {
   parseAvailabilitySearchResult,
   parseCapabilityManifest,
   parseHealthResult,
@@ -66,7 +83,11 @@ type PmsRoute =
   | "/v1/pms/reservation-group-drafts/update"
   | "/v1/pms/reservation-group-drafts/quote"
   | "/v1/pms/reservation-group-drafts/prepare-confirm"
-  | "/v1/pms/pending-actions/status";
+  | "/v1/pms/pending-actions/status"
+  | "/v1/pms/inventory/summary"
+  | "/v1/pms/room/reservation-context"
+  | "/v1/pms/arrivals/today"
+  | "/v1/pms/departures/today";
 
 type RequestPlan = {
   method: HttpMethod;
@@ -105,6 +126,11 @@ export type PmsPlatformClient = {
   quoteReservationGroupDraft(input: QuoteReservationGroupDraftInput): Promise<PmsEvidence<ReservationGroupQuoteFact>>;
   prepareReservationGroupConfirm(input: PrepareReservationGroupConfirmInput): Promise<PmsEvidence<ReservationConfirmPreparation>>;
   pendingActionStatus(input: PendingActionStatusInput): Promise<PmsEvidence<PendingActionStatusFact>>;
+  inventorySummary(input: InventorySummaryInput): Promise<PmsEvidence<InventorySummaryResult>>;
+  roomReservationContext(input: RoomReservationContextInput): Promise<PmsEvidence<RoomReservationContextResult>>;
+  todayArrivals(input: TodayArrivalsInput): Promise<PmsEvidence<TodayArrivalsResult>>;
+  todayDepartures(input: TodayDeparturesInput): Promise<PmsEvidence<TodayDeparturesResult>>;
+  reservationLookup(input: GetReservationInput): Promise<PmsEvidence<ReservationFact>>;
 };
 
 export class PmsPlatformClientError extends Error {
@@ -177,7 +203,12 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
     pendingActionStatus: (input) => {
       validateInput("pendingActionStatus", () => validatePendingActionStatusInput(input));
       return requestEvidence(options, now, "pendingActionStatus", input.tenantId, { method: "POST", route: "/v1/pms/pending-actions/status", body: pendingActionStatusRequestBody(input, now) }, parsePendingActionStatusFact, () => "Pending action status facts returned from PMS Platform.");
-    }
+    },
+    inventorySummary: (input) => inventorySummaryMethod({ baseUrl: options.baseUrl, fetch: options.fetch, now, authToken: options.authToken }, input),
+    roomReservationContext: (input) => roomReservationContextMethod({ baseUrl: options.baseUrl, fetch: options.fetch, now, authToken: options.authToken }, input),
+    todayArrivals: (input) => todayArrivalsMethod({ baseUrl: options.baseUrl, fetch: options.fetch, now, authToken: options.authToken }, input),
+    todayDepartures: (input) => todayDeparturesMethod({ baseUrl: options.baseUrl, fetch: options.fetch, now, authToken: options.authToken }, input),
+    reservationLookup: (input) => reservationLookupMethod({ baseUrl: options.baseUrl, fetch: options.fetch, now, authToken: options.authToken }, input)
   };
 }
 

@@ -35,3 +35,30 @@ export type {
   UpdateReservationDraftInput,
   UpdateReservationGroupDraftInput
 } from "./schemas.js";
+
+export type {
+  InventorySummaryInput,
+  InventorySummaryResult,
+  RoomReservationContextInput,
+  RoomReservationContextResult,
+  TodayArrivalsInput,
+  TodayArrivalsResult,
+  TodayDeparturesInput,
+  TodayDeparturesResult
+} from "./inventory-schemas.js";
+
+export {
+  inventorySummary,
+  roomReservationContextSummary,
+  todayArrivalsSummary,
+  todayDeparturesSummary,
+  parseInventorySummaryResult,
+  parseRoomReservationContextResult,
+  parseTodayArrivalsResult,
+  parseTodayDeparturesResult,
+  validateInventorySummaryInput,
+  validateRoomReservationContextInput,
+  validateTodayArrivalsInput,
+  validateTodayDeparturesInput
+} from "./inventory-schemas.js";
+

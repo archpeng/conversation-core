@@ -203,12 +203,17 @@ describe("PMS Platform client evidence", () => {
       "getReservation",
       "getRoom",
       "health",
+      "inventorySummary",
       "pendingActionStatus",
       "prepareReservationConfirm",
       "prepareReservationGroupConfirm",
       "quoteReservationDraft",
       "quoteReservationGroupDraft",
+      "reservationLookup",
+      "roomReservationContext",
       "searchAvailability",
+      "todayArrivals",
+      "todayDepartures",
       "updateReservationDraft",
       "updateReservationGroupDraft"
     ]);
@@ -259,6 +264,224 @@ describe("PMS Platform client evidence", () => {
       }
     }
   });
+
+  it("wraps inventorySummary in evidence with parsed result", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: fakeFetch([]),
+      now: () => new Date("2026-05-09T08:00:00.000Z")
+    });
+
+    const evidence = await client.inventorySummary({
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
+      startDate: "2026-05-09",
+      endDate: "2026-05-10"
+    });
+
+    expect(evidence.source.method).toBe("inventorySummary");
+    expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
+    expect(evidence.summary).toContain("Inventory for");
+    expect(evidence.summary).toContain("10 total rooms across 2 dates");    expect(evidence.data.dates).toHaveLength(2);
+    expect(evidence.data.dates[0]).toEqual({
+      date: "2026-05-09",
+      total: 10,
+      available: 5,
+      reserved: 3,
+      blocked: 1,
+      occupied: 1
+    });
+  });
+
+  it("wraps roomReservationContext in evidence with parsed result", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: fakeFetch([]),
+      now: () => new Date("2026-05-09T08:00:00.000Z")
+    });
+
+    const evidence = await client.roomReservationContext({
+      tenantId: "tenant_1",
+      roomId: "room_1"
+    });
+
+    expect(evidence.source.method).toBe("roomReservationContext");
+    expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
+    expect(evidence.summary).toContain("Room room_1: current status occupied, associated with 3 reservation(s)/block(s).");
+    expect(evidence.data).toEqual({
+      roomId: "room_1",
+      currentStatus: "occupied",
+      reservationRefs: ["res_ref_1", "res_ref_2"],
+      blockRefs: ["block_ref_1"]
+    });
+  });
+
+  it("wraps todayArrivals in evidence with parsed result", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: fakeFetch([]),
+      now: () => new Date("2026-05-09T08:00:00.000Z")
+    });
+
+    const evidence = await client.todayArrivals({
+      tenantId: "tenant_1",
+      businessDate: "2026-05-09"
+    });
+
+    expect(evidence.source.method).toBe("todayArrivals");
+    expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
+    expect(evidence.summary).toContain("RES-001, RES-002");
+    expect(evidence.data.arrivals).toHaveLength(2);
+    expect(evidence.data.arrivals[0]).toEqual({
+      reservationCode: "RES-001",
+      roomId: "room_1",
+      guestName: "Alice",
+      status: "checkedIn"
+    });
+  });
+
+  it("wraps todayDepartures in evidence with parsed result", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: fakeFetch([]),
+      now: () => new Date("2026-05-09T08:00:00.000Z")
+    });
+
+    const evidence = await client.todayDepartures({
+      tenantId: "tenant_1",
+      businessDate: "2026-05-09"
+    });
+
+    expect(evidence.source.method).toBe("todayDepartures");
+    expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
+    expect(evidence.summary).toContain("RES-003");
+    expect(evidence.data.departures).toHaveLength(1);
+    expect(evidence.data.departures[0]).toEqual({
+      reservationCode: "RES-003",
+      roomId: "room_3",
+      guestName: "Charlie",
+      status: "checkedOut"
+    });
+  });
+
+  it("supports reservationLookup by reservationCode", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: fakeFetch(calls),
+      now: () => new Date("2026-05-09T08:00:00.000Z")
+    });
+
+    const evidence = await client.reservationLookup({
+      tenantId: "tenant_1",
+      reservationCode: "RES-001"
+    });
+
+    expect(evidence.source.method).toBe("reservationLookup");
+    expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
+    expect(evidence.data).toMatchObject({ reservationId: "res_1" });
+    expect(calls[calls.length - 1].body).toMatchObject({ tenantId: "tenant_1", reservationCode: "RES-001" });
+  });
+
+  it("rejects invalid inventorySummary input", async () => {
+    const client = createPmsPlatformClient({ baseUrl: "https://pms.local", fetch: fakeFetch([]) });
+
+    const invalidInputs = [
+      { tenantId: "t", propertyId: "p", startDate: "invalid", endDate: "2026-05-10" },
+      {} satisfies Partial<Record<string, unknown>>
+    ];
+
+    for (const invalid of invalidInputs) {
+      try {
+        await client.inventorySummary(invalid as never);
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        expect(error).toMatchObject({
+          name: "PmsPlatformClientError",
+          operation: "inventorySummary",
+          causeCode: "invalid_input"
+        });
+      }
+    }
+  });
+
+  it("rejects invalid roomReservationContext input", async () => {
+    const client = createPmsPlatformClient({ baseUrl: "https://pms.local", fetch: fakeFetch([]) });
+
+    try {
+      await client.roomReservationContext({} as never);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "PmsPlatformClientError",
+        operation: "roomReservationContext",
+        causeCode: "invalid_input"
+      });
+    }
+  });
+
+  it("rejects invalid todayArrivals and todayDepartures input", async () => {
+    const client = createPmsPlatformClient({ baseUrl: "https://pms.local", fetch: fakeFetch([]) });
+
+    try {
+      await client.todayArrivals({} as never);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "PmsPlatformClientError",
+        operation: "todayArrivals",
+        causeCode: "invalid_input"
+      });
+    }
+    try {
+      await client.todayDepartures({} as never);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "PmsPlatformClientError",
+        operation: "todayDepartures",
+        causeCode: "invalid_input"
+      });
+    }
+  });
+
+  it("returns HTTP error for new inventory endpoints", async () => {
+    const errorClient = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async () => ({ ok: false, status: 503, json: async () => ({}) })
+    });
+
+    try {
+      await errorClient.inventorySummary({
+        tenantId: "tenant_1",
+        propertyId: "property_small_hotel",
+        startDate: "2026-05-09",
+        endDate: "2026-05-10"
+      });
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "PmsPlatformClientError",
+        operation: "inventorySummary",
+        causeCode: "http_error",
+        status: 503
+      });
+    }
+    try {
+      await errorClient.todayArrivals({
+        tenantId: "tenant_1",
+        businessDate: "2026-05-09"
+      });
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "PmsPlatformClientError",
+        operation: "todayArrivals",
+        causeCode: "http_error",
+        status: 503
+      });
+    }
+  });
 });
 
 function fakeFetch(calls: Array<{ url: string; method: string; body?: unknown }>): PmsFetch {
@@ -280,5 +503,28 @@ function responseFor(url: string): unknown {
   if (url.endsWith("/v1/pms/reservation-drafts/quote")) return { quoteId: "quote_1", totalCents: 12800, currency: "CNY" };
   if (url.endsWith("/v1/pms/reservation-drafts/prepare-confirm")) return { pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" };
   if (url.endsWith("/v1/pms/pending-actions/status")) return { pendingActionId: "pending_1", status: "pending" };
+  if (url.endsWith("/v1/pms/inventory/summary")) return {
+    dates: [
+      { date: "2026-05-09", total: 10, available: 5, reserved: 3, blocked: 1, occupied: 1 },
+      { date: "2026-05-10", total: 10, available: 4, reserved: 4, blocked: 1, occupied: 1 }
+    ]
+  };
+  if (url.endsWith("/v1/pms/room/reservation-context")) return {
+    roomId: "room_1",
+    currentStatus: "occupied",
+    reservationRefs: ["res_ref_1", "res_ref_2"],
+    blockRefs: ["block_ref_1"]
+  };
+  if (url.endsWith("/v1/pms/arrivals/today")) return {
+    arrivals: [
+      { reservationCode: "RES-001", roomId: "room_1", guestName: "Alice", status: "checkedIn" },
+      { reservationCode: "RES-002", roomId: "room_2", guestName: "Bob", status: "pending" }
+    ]
+  };
+  if (url.endsWith("/v1/pms/departures/today")) return {
+    departures: [
+      { reservationCode: "RES-003", roomId: "room_3", guestName: "Charlie", status: "checkedOut" }
+    ]
+  };
   throw new Error(`unexpected PMS route ${url}`);
 }
