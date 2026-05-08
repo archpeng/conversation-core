@@ -2,8 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
-import { createRuntimeExecutors, createRuntimePiSessionFactory, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
+import { createRuntimeExecutors, createRuntimePiSessionFactory, dispatchPmsRead, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
 import type { PiCreateAgentSessionOptions } from "../packages/unified-agent/src/index.js";
+import type { GatedToolRequest } from "../packages/gated-tools/src/index.js";
 
 describe("agent service runtime wiring", () => {
   it("loads turn-event logging as explicit opt-in only", () => {
@@ -411,6 +412,232 @@ describe("agent service runtime wiring", () => {
 
     await expect(factory({ cwd: config.cwd, tools: [], customTools: [] } as PiCreateAgentSessionOptions))
       .rejects.toThrow("model_not_resolved: Pi ModelRegistry could not resolve openai/missing-model-for-test");
+  });
+
+  it("builds per-capability executors that route pms_availability_search through the correct client method", async () => {
+    const bodies: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ rooms: [] }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791",
+        PMS_AGENT_DEFAULT_CHECK_IN_DATE: "2026-05-06",
+        PMS_AGENT_DEFAULT_CHECK_OUT_DATE: "2026-05-07"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      const evidence = await executors.pmsReadExecutors?.pms_availability_search({
+        auditId: "audit_1",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
+        request: {
+          capabilityId: "pms_availability_search",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          checkInDate: "2026-05-09",
+          checkOutDate: "2026-05-10",
+          quantity: 2
+        }
+      });
+
+      expect(evidence).toMatchObject({
+        source: { system: "pms-platform", method: "searchAvailability" },
+        data: { rooms: [] }
+      });
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({
+        tenantId: "tenant_1",
+        hotelId: "property-small-hotel",
+        checkInDate: "2026-05-09",
+        checkOutDate: "2026-05-10",
+        count: 2
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("builds per-capability executors that route pms_get_room through the correct client method", async () => {
+    const bodies: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ roomId: "room-A1", roomType: "大床房", status: "available" }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      const evidence = await executors.pmsReadExecutors?.pms_get_room({
+        auditId: "audit_1",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_get_room" } },
+        request: {
+          capabilityId: "pms_get_room",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          roomId: "room-A1"
+        }
+      });
+
+      expect(evidence).toMatchObject({
+        source: { system: "pms-platform", method: "getRoom" },
+        data: { roomId: "room-A1", roomType: "大床房", status: "available" }
+      });
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({
+        tenantId: "tenant_1",
+        roomId: "room-A1"
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("builds per-capability executors that route pms_pending_action_status through the correct client method", async () => {
+    const bodies: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ pendingActionId: "pending_1", status: "awaitingConfirmation" }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      const evidence = await executors.pmsReadExecutors?.pms_pending_action_status({
+        auditId: "audit_1",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_pending_action_status" } },
+        request: {
+          capabilityId: "pms_pending_action_status",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          pendingActionId: "pending_1"
+        }
+      });
+
+      expect(evidence).toMatchObject({
+        source: { system: "pms-platform", method: "pendingActionStatus" },
+        data: { pendingActionId: "pending_1", status: "awaitingConfirmation" }
+      });
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({
+        pendingActionRef: "pending_1"
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("dispatchPmsRead routes to the correct per-capability executor by capabilityId", async () => {
+    const bodies: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ rooms: [{ roomId: "room-B1", roomType: "双人床房", available: true }] }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791",
+        PMS_AGENT_DEFAULT_CHECK_IN_DATE: "2026-05-06",
+        PMS_AGENT_DEFAULT_CHECK_OUT_DATE: "2026-05-07"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      const result = await dispatchPmsRead({
+        capabilityId: "pms_availability_search",
+        actor: { profile: "customer" },
+        tenantId: "tenant_1",
+        checkInDate: "2026-05-09",
+        checkOutDate: "2026-05-10"
+      }, executors.pmsReadExecutors!);
+
+      const evidence = result as { source: { system: string; method: string }; data: { rooms: unknown[] } };
+      expect(evidence.source).toEqual({ system: "pms-platform", method: "searchAvailability" });
+      expect(evidence.data.rooms).toEqual([{ roomId: "room-B1", roomType: "双人床房", available: true }]);
+      expect(bodies[0]).toMatchObject({
+        tenantId: "tenant_1",
+        hotelId: "property-small-hotel",
+        checkInDate: "2026-05-09",
+        checkOutDate: "2026-05-10"
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("dispatchPmsRead throws for unknown capability IDs", async () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const executors = createRuntimeExecutors(config);
+
+    await expect(dispatchPmsRead({
+      capabilityId: "unknown_capability",
+      actor: { profile: "customer" },
+      tenantId: "tenant_1"
+    }, executors.pmsReadExecutors!)).rejects.toThrow("Unknown PMS read capability: unknown_capability");
+  });
+
+  it("dispatchPmsRead throws for legacy pms_read capabilityId", async () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const executors = createRuntimeExecutors(config);
+
+    await expect(dispatchPmsRead({
+      capabilityId: "pms_read",
+      actor: { profile: "customer" },
+      tenantId: "tenant_1"
+    }, executors.pmsReadExecutors!)).rejects.toThrow(
+      "dispatchPmsRead received legacy pms_read capabilityId; use the coarse pmsRead executor instead"
+    );
+  });
+
+  it("coarse pmsRead executor remains unchanged and still uses target-based routing", async () => {
+    const bodies: unknown[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ rooms: [] }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791",
+        PMS_AGENT_DEFAULT_CHECK_IN_DATE: "2026-05-06",
+        PMS_AGENT_DEFAULT_CHECK_OUT_DATE: "2026-05-07"
+      });
+      const executors = createRuntimeExecutors(config);
+
+      // target: "availability" routes to searchAvailability
+      await executors.pmsRead?.({
+        auditId: "audit_1",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_read" } },
+        request: {
+          capabilityId: "pms_read",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          target: "availability"
+        }
+      });
+
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({ hotelId: "property-small-hotel" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

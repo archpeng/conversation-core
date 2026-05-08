@@ -2,7 +2,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { GatedToolExecutor, GatedToolRequest } from "@pms-agent-v2/gated-tools";
 import { createPmsPlatformClient } from "@pms-agent-v2/pms-platform-client";
-import type { UnifiedAgentToolExecutors } from "@pms-agent-v2/unified-agent";
+import type {
+  PmsReadExecutorMap,
+  UnifiedAgentToolExecutors
+} from "@pms-agent-v2/unified-agent";
 
 export type RuntimeExecutorConfig = {
   pmsPlatformBaseUrl: string;
@@ -17,6 +20,33 @@ export type RuntimeExecutorConfig = {
   proposalWorkspacePath: string;
 };
 
+export function dispatchPmsRead(
+  request: GatedToolRequest,
+  executors: PmsReadExecutorMap
+): Promise<unknown> {
+  const capabilityId = request.capabilityId;
+
+  // Backward compat: the coarse gated_pms_read tool still sends capabilityId "pms_read"
+  // with a target field. Route to the legacy pmsRead caller via this dispatch function
+  // only for fine-grained capability IDs.
+  if (capabilityId === "pms_read") {
+    throw new Error(
+      "dispatchPmsRead received legacy pms_read capabilityId; use the coarse pmsRead executor instead"
+    );
+  }
+
+  const executor = executors[capabilityId as keyof PmsReadExecutorMap];
+  if (!executor) {
+    throw new Error(`Unknown PMS read capability: ${capabilityId}`);
+  }
+
+  return executor({
+    request,
+    decision: { outcome: "allow", reasons: [], audit: { capabilityId } },
+    auditId: `dispatch_${capabilityId}`
+  });
+}
+
 export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAgentToolExecutors {
   const client = createPmsPlatformClient({
     baseUrl: config.pmsPlatformBaseUrl,
@@ -24,7 +54,75 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
     fetch
   });
 
+  // Per-capability dispatch map: each fine-grained read capability routes to a
+  // specific pms-platform-client method. Unit 4 registers these capability IDs
+  // through the Safety Gateway.
+  const pmsReadExecutors: PmsReadExecutorMap = {
+    pms_availability_search: async ({ request }) =>
+      client.searchAvailability({
+        tenantId: tenantId(request),
+        hotelId: config.defaultHotelId,
+        checkInDate: request.checkInDate ?? config.defaultCheckInDate,
+        checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
+        ...(request.quantity ? { quantity: request.quantity } : {}),
+        ...(request.roomType ?? config.defaultRoomType
+          ? { roomType: request.roomType ?? config.defaultRoomType }
+          : {})
+      }),
+
+    pms_inventory_summary: async ({ request }) =>
+      // Unit 2 merged client method — use type assertion if the method is not yet
+      // reflected in the current worktree's PmsPlatformClient type definition.
+      (client as unknown as Record<string, Function>)["inventorySummary"]({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId,
+        startDate: request.checkInDate ?? config.defaultCheckInDate,
+        endDate: request.checkOutDate ?? config.defaultCheckOutDate
+      }),
+
+    pms_room_reservation_context: async ({ request }) =>
+      (client as unknown as Record<string, Function>)["roomReservationContext"]({
+        tenantId: tenantId(request),
+        roomId: requiredWorkflowText(request.roomId, "roomId required for reservation context")
+      }),
+
+    pms_reservation_lookup: async ({ request }) =>
+      client.getReservation({
+        tenantId: tenantId(request),
+        reservationId: requiredWorkflowText(request.target, "reservationId required for reservation lookup")
+      }),
+
+    pms_get_room: async ({ request }) =>
+      client.getRoom({
+        tenantId: tenantId(request),
+        roomId: requiredWorkflowText(request.roomId ?? request.target, "roomId required for get room")
+      }),
+
+    pms_today_arrivals: async ({ request }) =>
+      (client as unknown as Record<string, Function>)["todayArrivals"]({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId,
+        date: request.checkInDate ?? config.defaultCheckInDate
+      }),
+
+    pms_today_departures: async ({ request }) =>
+      (client as unknown as Record<string, Function>)["todayDepartures"]({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId,
+        date: request.checkInDate ?? config.defaultCheckInDate
+      }),
+
+    pms_pending_action_status: async ({ request }) =>
+      client.pendingActionStatus({
+        tenantId: tenantId(request),
+        pendingActionRef:
+          request.pendingActionId ?? request.target ?? "missing-pending-action"
+      })
+  };
+
   return {
+    // Coarse pmsRead executor — preserved for backward compatibility with the
+    // gated_pms_read tool. Unit 4 fine-grained tools use pmsReadExecutors instead.
     pmsRead: async ({ request }) => {
       if (request.target === "availability" || request.target === undefined) {
         return client.searchAvailability({
@@ -33,11 +131,16 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
           checkInDate: request.checkInDate ?? config.defaultCheckInDate,
           checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
           ...(request.quantity ? { quantity: request.quantity } : {}),
-          ...(request.roomType ?? config.defaultRoomType ? { roomType: request.roomType ?? config.defaultRoomType } : {})
+          ...(request.roomType ?? config.defaultRoomType
+            ? { roomType: request.roomType ?? config.defaultRoomType }
+            : {})
         });
       }
       return client.capabilitiesManifest({ tenantId: tenantId(request) });
     },
+
+    pmsReadExecutors,
+
     pmsWorkflow: async ({ request }) => {
       const tenant = tenantId(request);
       const quantity = request.quantity ?? 1;

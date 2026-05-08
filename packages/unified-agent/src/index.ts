@@ -9,4 +9,4 @@ export { loadAgentProfile, type UnifiedAgentProfile, type UnifiedAgentProfileId 
 export { runCustomerPmsLoop, type CustomerLoopResult } from "./customer-loop.js";
 export { runAdminProposalLoop, type ProposalLoopResult } from "./proposal-loop.js";
 export { createUnifiedAgentSession, runAgentTurn, type CreateUnifiedAgentSessionInput, type RunAgentTurnOptions, type UnifiedAgentSession, type UnifiedAgentTurnEvent } from "./session.js";
-export { registerGatedTools, type RegisterGatedToolsInput, type UnifiedAgentToolExecutors } from "./tool-registration.js";
+export { registerGatedTools, type InventorySummaryResult, type PmsReadExecutorMap, type RegisterGatedToolsInput, type RoomReservationContextResult, type TodayArrivalsResult, type TodayDeparturesResult, type UnifiedAgentToolExecutors } from "./tool-registration.js";
