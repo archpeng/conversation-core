@@ -4,7 +4,7 @@ import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type To
 import type { AgentResult, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
-import type { PiCreateAgentSession, PiCreateAgentSessionOptions } from "../packages/unified-agent/src/index.js";
+import type { PiCreateAgentSession, PiCreateAgentSessionOptions, UnifiedAgentTurnEvent } from "../packages/unified-agent/src/index.js";
 
 const validTurn: FeishuTurnInput = {
   channel: "feishu",
@@ -193,19 +193,35 @@ describe("agent service API", () => {
   });
 
   it("normalizes runtime failures to a redacted refusal AgentResult", async () => {
+    const events: UnifiedAgentTurnEvent[] = [];
     const service = createAgentService({ gateway: safetyGateway(), createAgentSession: async () => {
       throw new Error("tenant_secret_1 session_secret_1 actor_secret_1 raw secret general question");
-    } });
+    }, eventSink: (event) => events.push(event) });
 
     const response = await service.handle({ method: "POST", path: "/v1/feishu-turn", body: validTurn });
 
     expect(response.status).toBe(502);
     expectAgentResultBody(response);
-    expect(response.body).toEqual({ type: "refusal", reason: "unsupported", message: "Agent turn failed." });
+    expect(response.body).toEqual({
+      type: "refusal",
+      reason: "unsupported",
+      message: "助手暂时无法完成本轮处理，请稍后重试；如果你正在处理 PMS 操作，请重新发送上一条需求。"
+    });
     expect(JSON.stringify(response.body)).not.toContain("tenant_secret_1");
     expect(JSON.stringify(response.body)).not.toContain("session_secret_1");
     expect(JSON.stringify(response.body)).not.toContain("actor_secret_1");
     expect(JSON.stringify(response.body)).not.toContain("raw secret general question");
+    expect(events).toEqual([{
+      event: "pms_agent_turn_failed",
+      stage: "create_or_run_turn",
+      status: 502,
+      errorName: "Error",
+      errorMessageHash: expect.stringMatching(/^[a-f0-9]{16}$/)
+    }]);
+    expect(JSON.stringify(events)).not.toContain("tenant_secret_1");
+    expect(JSON.stringify(events)).not.toContain("session_secret_1");
+    expect(JSON.stringify(events)).not.toContain("actor_secret_1");
+    expect(JSON.stringify(events)).not.toContain("raw secret general question");
   });
 });
 

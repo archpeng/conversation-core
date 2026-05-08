@@ -48,6 +48,7 @@ export type CreateAgentServiceInput = {
 };
 
 const jsonHeaders = { "content-type": "application/json" } as const;
+const runtimeFailureMessage = "助手暂时无法完成本轮处理，请稍后重试；如果你正在处理 PMS 操作，请重新发送上一条需求。";
 
 type CachedUnifiedAgentSession = {
   session: UnifiedAgentSession;
@@ -96,9 +97,20 @@ async function handleTurn(input: CreateAgentServiceInput, body: unknown, session
     }
 
     return json(200, result);
-  } catch {
-    return json(502, refusal("unsupported", "Agent turn failed."));
+  } catch (error) {
+    emitRuntimeFailure(input, error);
+    return json(502, refusal("unsupported", runtimeFailureMessage));
   }
+}
+
+function emitRuntimeFailure(input: CreateAgentServiceInput, error: unknown): void {
+  input.eventSink?.({
+    event: "pms_agent_turn_failed",
+    stage: "create_or_run_turn",
+    status: 502,
+    errorName: errorName(error),
+    errorMessageHash: hashRedacted(errorMessage(error))
+  });
 }
 
 async function getOrCreateUnifiedSession(input: CreateAgentServiceInput, sessions: Map<string, CachedUnifiedAgentSession>, turn: FeishuTurnInput): Promise<UnifiedAgentSession> {
@@ -159,6 +171,18 @@ function sessionFileForConversation(sessionDir: string, key: string, channel: st
   const channelPrefix = channel.replace(/[^a-zA-Z0-9_-]/g, "_") || "conversation";
   const digest = createHash("sha256").update(key).digest("hex").slice(0, 32);
   return join(sessionDir, `${channelPrefix}-${digest}.jsonl`);
+}
+
+function hashRedacted(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error && error.name.trim() ? error.name : "UnknownError";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function healthBody(): { status: "ok"; service: "pms-agent-v2-agent-service" } {
