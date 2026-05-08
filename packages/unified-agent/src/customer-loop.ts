@@ -148,10 +148,11 @@ function hasRoomTypeCue(message: string): boolean {
 
 function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const evidence = value as Partial<PmsEvidence<unknown>>;
+  const evidence = value as Record<string, unknown>;
+  const source = evidence.source as Record<string, unknown> | undefined;
   return typeof evidence.evidenceRef === "string"
-    && evidence.source?.system === "pms-platform"
-    && typeof evidence.source.method === "string"
+    && source?.system === "pms-platform"
+    && typeof source?.method === "string"
     && typeof evidence.summary === "string"
     && typeof evidence.fetchedAt === "string"
     && evidence.scope !== undefined

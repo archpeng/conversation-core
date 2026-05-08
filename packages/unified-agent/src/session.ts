@@ -1,14 +1,16 @@
 import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolRequest, GatedToolResult, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
+import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle, contextBundlePrompt, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
 import { continuityPrompt, createRedactedSessionState, rememberRefs, rememberTurn, type RedactedSessionState } from "./continuity.js";
 import type { PiAgentSession, PiAssistantEvent, PiCreateAgentSession, PiResourceLoaderFactory, PiToolDefinition, PiToolResult } from "./pi-session.js";
+import { parseAssistantToolPlanJson, promptAssistantText } from "./pi-io.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { loadAgentProfile, type UnifiedAgentProfile } from "./profile.js";
 import { runCustomerPmsLoop } from "./customer-loop.js";
 import { runAdminProposalLoop } from "./proposal-loop.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
+import { omitParam, requestedRoomTypeText, roomSelection, selectRoomCandidates, type RoomCandidateSelection } from "./room-selection.js";
 import { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan, type ToolPlanAction } from "./tool-plan.js";
 import { registerGatedTools, type UnifiedAgentToolExecutors } from "./tool-registration.js";
 
@@ -179,7 +181,7 @@ async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, 
   const readParams = roomTypeText ? omitParam(plan.read.params, "roomType") : plan.read.params;
   const readResult = await executeToolPlan({ type: "call_tool", toolName: plan.read.toolName, params: readParams }, session.tools);
   if (!readResult.ok) return { kind: "handled", result: readResult.result };
-  const readDetails = readResult.toolResult.details as Partial<GatedToolResult<unknown>>;
+  const readDetails = readResult.toolResult.details as Record<string, unknown>;
   const readValue = "value" in readDetails ? readDetails.value : undefined;
   const readEvidence = readDetails.outcome === "allow" && isPmsEvidence(readValue) ? readValue : undefined;
   if (!isAvailabilityEvidence(readEvidence)) {
@@ -187,7 +189,14 @@ async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, 
   }
   emitToolResultEvent(session, options, plan.read.toolName, readResult.toolResult, { type: "text", text: "PMS read evidence captured.", evidenceRefs: [readEvidence.evidenceRef] });
 
-  const selection = await selectRoomCandidates(session, turn, readEvidence, plan.workflow.params, roomTypeText, options);
+  const selection = await selectRoomCandidates(
+    session.piSession,
+    turn,
+    readEvidence,
+    plan.workflow.params,
+    roomTypeText,
+    turnContext(session, turn, options)
+  );
   if (!selection.ok) {
     return { kind: "handled", result: selection.planned.result, evidenceRefs: [readEvidence.evidenceRef] };
   }
@@ -225,16 +234,6 @@ async function runPostLlmSafetyScaffoldFallback(input: PostLlmSafetyScaffoldInpu
   return undefined;
 }
 
-function parseAssistantToolPlanJson(text: string): AssistantToolPlanJson {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) return { ok: true, hasPlan: false };
-  try {
-    return { ok: true, hasPlan: true, value: JSON.parse(trimmed) };
-  } catch {
-    return { ok: false, hasPlan: true };
-  }
-}
-
 function toolPlanRefusalReason(reason: string): "policy" | "unsupported" | "invalid_request" {
   if (reason === "raw_tool_not_visible") return "policy";
   if (reason === "tool_not_visible") return "unsupported";
@@ -242,7 +241,7 @@ function toolPlanRefusalReason(reason: string): "policy" | "unsupported" | "inva
 }
 
 async function synthesizeToolResult(session: UnifiedAgentSession, turn: FeishuTurnInput, toolResult: PiToolResult, context: ReturnType<typeof turnContext>, options: RunAgentTurnOptions): Promise<PlannedAgentResult> {
-  const details = toolResult.details as Partial<GatedToolResult<unknown>>;
+  const details = toolResult.details as Record<string, unknown>;
   if (details.outcome === "allow" && isPmsEvidence(details.value)) {
     const evidence = details.value;
     const approval = synthesizePrepareConfirmApproval(evidence);
@@ -294,7 +293,7 @@ function synthesizePrepareConfirmApproval(evidence: PmsEvidence<unknown>): Plann
 
 function isReservationConfirmPreparation(value: unknown): value is ReservationConfirmPreparation {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Partial<ReservationConfirmPreparation>;
+  const record = value as Record<string, unknown>;
   return typeof record.pendingActionId === "string"
     && record.pendingActionId.trim().length > 0
     && record.confirmationMode === "typedCardOnly"
@@ -329,10 +328,11 @@ function approvalCard(tenantId: string, preparation: ReservationConfirmPreparati
 
 function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const evidence = value as Partial<PmsEvidence<unknown>>;
+  const evidence = value as Record<string, unknown>;
+  const source = evidence.source as Record<string, unknown> | undefined;
   return typeof evidence.evidenceRef === "string"
-    && evidence.source?.system === "pms-platform"
-    && typeof evidence.source.method === "string"
+    && source?.system === "pms-platform"
+    && typeof source?.method === "string"
     && typeof evidence.summary === "string"
     && typeof evidence.fetchedAt === "string"
     && evidence.scope !== undefined
@@ -341,179 +341,8 @@ function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
 
 function isAvailabilityEvidence(value: PmsEvidence<unknown> | undefined): value is PmsEvidence<AvailabilitySearchResult> {
   if (!value || value.source.method !== "searchAvailability") return false;
-  const data = value.data as Partial<AvailabilitySearchResult> | undefined;
+  const data = value.data as Record<string, unknown> | undefined;
   return Boolean(data && Array.isArray(data.rooms));
-}
-
-type RoomCandidateSelection =
-  | { ok: true; candidates: RoomAvailability[] }
-  | { ok: false; planned: PlannedAgentResult };
-
-type RoomTypeResolution =
-  | { ok: true; roomIds: string[]; roomType?: string }
-  | { ok: false; message?: string };
-
-async function selectRoomCandidates(
-  session: UnifiedAgentSession,
-  turn: FeishuTurnInput,
-  evidence: PmsEvidence<AvailabilitySearchResult>,
-  workflowParams: Record<string, unknown>,
-  roomTypeText: string | undefined,
-  options: RunAgentTurnOptions
-): Promise<RoomCandidateSelection> {
-  const requestedQuantity = requestedWorkflowQuantity(workflowParams);
-  const availableRooms = evidence.data.rooms.filter((room) => room.available === true && typeof room.roomId === "string" && room.roomId.trim().length > 0);
-  if (availableRooms.length === 0) return { ok: false, planned: noAvailableRoomsReply(evidence, turnContext(session, turn, options)) };
-  if (!roomTypeText) {
-    if (availableRooms.length < requestedQuantity) return { ok: false, planned: insufficientCandidateReply(evidence, availableRooms.length, requestedQuantity, undefined, turnContext(session, turn, options)) };
-    return { ok: true, candidates: availableRooms.slice(0, requestedQuantity) };
-  }
-
-  const resolution = await resolveRoomTypeFromEvidence(session, turn, evidence, availableRooms, requestedQuantity, roomTypeText);
-  if (!resolution.ok) return { ok: false, planned: roomTypeClarificationReply(evidence, availableRooms, resolution.message, turnContext(session, turn, options)) };
-  const selected = validatedResolvedRooms(availableRooms, resolution.roomIds, resolution.roomType);
-  if (!selected) return { ok: false, planned: roomTypeClarificationReply(evidence, availableRooms, undefined, turnContext(session, turn, options)) };
-  if (selected.length < requestedQuantity) return { ok: false, planned: insufficientCandidateReply(evidence, selected.length, requestedQuantity, resolution.roomType, turnContext(session, turn, options)) };
-  return { ok: true, candidates: selected.slice(0, requestedQuantity) };
-}
-
-function requestedWorkflowQuantity(workflowParams: Record<string, unknown>): number {
-  return typeof workflowParams.quantity === "number" && Number.isInteger(workflowParams.quantity) && workflowParams.quantity > 0 ? workflowParams.quantity : 1;
-}
-
-function roomSelection(room: RoomAvailability, evidenceRef: string): NonNullable<GatedToolRequest["selections"]>[number] {
-  return {
-    roomId: room.roomId,
-    selectedCandidateRef: `${evidenceRef}:${room.roomId}`,
-    roomType: room.roomType
-  };
-}
-
-async function resolveRoomTypeFromEvidence(
-  session: UnifiedAgentSession,
-  turn: FeishuTurnInput,
-  evidence: PmsEvidence<AvailabilitySearchResult>,
-  availableRooms: readonly RoomAvailability[],
-  requestedQuantity: number,
-  roomTypeText: string
-): Promise<RoomTypeResolution> {
-  const reply = await promptAssistantText(session.piSession, roomTypeResolutionPrompt(turn, evidence, availableRooms, requestedQuantity, roomTypeText));
-  const parsed = parseRoomTypeResolution(reply);
-  return parsed ?? { ok: false };
-}
-
-function parseRoomTypeResolution(text: string): RoomTypeResolution | undefined {
-  const trimmed = text.trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start < 0 || end < start) return undefined;
-  try {
-    const value = JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
-    if (value.ok === true && Array.isArray(value.roomIds)) {
-      const roomIds = value.roomIds.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-      if (roomIds.length === 0) return undefined;
-      return {
-        ok: true,
-        roomIds,
-        ...(typeof value.roomType === "string" && value.roomType.trim().length > 0 ? { roomType: value.roomType } : {})
-      };
-    }
-    if (value.ok === false) {
-      return { ok: false, ...(typeof value.message === "string" && value.message.trim().length > 0 ? { message: value.message } : {}) };
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
-function validatedResolvedRooms(availableRooms: readonly RoomAvailability[], roomIds: readonly string[], roomType: string | undefined): RoomAvailability[] | undefined {
-  const byId = new Map(availableRooms.map((room) => [room.roomId, room]));
-  const selected = roomIds.map((roomId) => byId.get(roomId)).filter((room): room is RoomAvailability => Boolean(room));
-  if (selected.length !== roomIds.length) return undefined;
-  if (roomType && selected.some((room) => room.roomType !== roomType)) return undefined;
-  const uniqueIds = new Set(selected.map((room) => room.roomId));
-  return selected.filter((room, index) => selected.findIndex((candidate) => candidate.roomId === room.roomId) === index && uniqueIds.has(room.roomId));
-}
-
-function noAvailableRoomsReply(evidence: PmsEvidence<AvailabilitySearchResult>, context: ReturnType<typeof turnContext>): PlannedAgentResult {
-  const result = synthesizeTextReply({
-    text: `PMS 证据显示该入住区间没有可订房间，无法准备预订审批卡。请调整日期或房型后再试。evidenceRefs=${evidence.evidenceRef}`,
-    evidenceRefs: [evidence.evidenceRef],
-    pmsEvidence: [evidence],
-    currentPmsFact: true,
-    context
-  }).result;
-  return { result, evidenceRefs: [evidence.evidenceRef] };
-}
-
-function insufficientCandidateReply(evidence: PmsEvidence<AvailabilitySearchResult>, availableCount: number, requestedQuantity: number, roomType: string | undefined, context: ReturnType<typeof turnContext>): PlannedAgentResult {
-  const roomTypeText = roomType ? `“${roomType}”` : "匹配条件";
-  const result = synthesizeTextReply({
-    text: `PMS 证据显示${roomTypeText}当前可订 ${availableCount} 间，不足 ${requestedQuantity} 间，无法准备预订审批卡。是否调整间数或更换房型？evidenceRefs=${evidence.evidenceRef}`,
-    evidenceRefs: [evidence.evidenceRef],
-    pmsEvidence: [evidence],
-    currentPmsFact: true,
-    context
-  }).result;
-  return { result, evidenceRefs: [evidence.evidenceRef] };
-}
-
-function roomTypeClarificationReply(evidence: PmsEvidence<AvailabilitySearchResult>, availableRooms: readonly RoomAvailability[], message: string | undefined, context: ReturnType<typeof turnContext>): PlannedAgentResult {
-  const safeMessage = message ? redactRoomIds(message, availableRooms).trim() : "";
-  const options = roomTypeOptions(availableRooms).join("、");
-  const text = safeMessage || `我查到该日期有这些可订房型：${options}。请确认你想订哪一种。`;
-  const result = synthesizeTextReply({
-    text: `${text} evidenceRefs=${evidence.evidenceRef}`,
-    evidenceRefs: [evidence.evidenceRef],
-    pmsEvidence: [evidence],
-    currentPmsFact: true,
-    context
-  }).result;
-  return { result, evidenceRefs: [evidence.evidenceRef] };
-}
-
-function roomTypeOptions(availableRooms: readonly RoomAvailability[]): string[] {
-  const counts = new Map<string, number>();
-  for (const room of availableRooms) {
-    counts.set(room.roomType, (counts.get(room.roomType) ?? 0) + 1);
-  }
-  return Array.from(counts.entries()).map(([roomType, count]) => `${roomType}（${count} 间）`);
-}
-
-function redactRoomIds(text: string, rooms: readonly RoomAvailability[]): string {
-  return rooms.reduce((current, room) => current.split(room.roomId).join("[房间ID已隐藏]"), text);
-}
-
-function requestedRoomTypeText(readParams: Record<string, unknown>, workflowParams: Record<string, unknown>): string | undefined {
-  return nonEmptyText(workflowParams.roomTypeText) ?? nonEmptyText(workflowParams.roomType) ?? nonEmptyText(readParams.roomType);
-}
-
-function nonEmptyText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function omitParam(params: Record<string, unknown>, key: string): Record<string, unknown> {
-  const copy = { ...params };
-  delete copy[key];
-  return copy;
-}
-
-function roomTypeResolutionPrompt(turn: FeishuTurnInput, evidence: PmsEvidence<AvailabilitySearchResult>, availableRooms: readonly RoomAvailability[], requestedQuantity: number, roomTypeText: string): string {
-  return [
-    "Resolve a spoken room type preference using only PMS availability evidence candidates.",
-    "Return exactly one JSON object and no markdown.",
-    "Allowed successful shape: {\"ok\":true,\"roomType\":\"exact candidate roomType\",\"roomIds\":[\"room id from candidates\"]}.",
-    "Allowed clarification shape: {\"ok\":false,\"message\":\"short clarification in the user's language; do not mention raw room IDs\"}.",
-    "Choose roomIds only from candidates below. If the wording is ambiguous, no match, or not enough rooms are available, return ok=false with a clarification question.",
-    `requestedRoomTypeText=${roomTypeText}`,
-    `requestedQuantity=${requestedQuantity}`,
-    `evidenceRefs=${evidence.evidenceRef}`,
-    "Available candidates:",
-    JSON.stringify(availableRooms.map((room) => ({ roomId: room.roomId, roomType: room.roomType, available: room.available })), null, 2),
-    "User message:",
-    turn.message.text
-  ].join("\n");
 }
 
 function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): UnifiedAgentTurnEvent {
@@ -531,13 +360,13 @@ function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): Unif
 }
 
 function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, toolName: string, toolResult: PiToolResult, result: AgentResult): void {
-  const details = toolResult.details as Partial<GatedToolResult<unknown>>;
+  const details = toolResult.details as Record<string, unknown>;
   const value = "value" in details ? details.value : undefined;
   emitEvent(options, {
     event: "pms_agent_tool_result",
     profile: session.profile.id,
     toolName,
-    outcome: details.outcome ?? "unknown",
+    outcome: typeof details.outcome === "string" ? details.outcome : "unknown",
     ...(isPmsEvidence(value) ? { evidenceMethod: value.source.method } : {}),
     resultType: result.type
   });
@@ -565,63 +394,6 @@ function turnContext(session: UnifiedAgentSession, turn: FeishuTurnInput, option
     pmsEvidence: options.pmsEvidence,
     modelPriorSummary: options.modelPriorSummary
   });
-}
-
-async function promptAssistantText(piSession: PiAgentSession, prompt: string): Promise<string> {
-  const assistantText: string[] = [];
-  let unsubscribe: (() => void) | undefined;
-  if (piSession.subscribe) {
-    unsubscribe = piSession.subscribe((event) => collectAssistantText(event, assistantText));
-  }
-  try {
-    await piSession.prompt(prompt, { source: "pms-agent-v2" });
-  } finally {
-    unsubscribe?.();
-  }
-  if (assistantText.length > 0) return assistantText.join("");
-  return extractVisibleText(latestAssistantMessage(piSession.messages));
-}
-
-function collectAssistantText(event: PiAssistantEvent, assistantText: string[]): void {
-  if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta" && typeof event.assistantMessageEvent.delta === "string") {
-    assistantText.push(event.assistantMessageEvent.delta);
-    return;
-  }
-  if (event.type === "turn_end") {
-    const text = extractVisibleText(event.message);
-    if (text && assistantText.length === 0) assistantText.push(text);
-  }
-}
-
-function latestAssistantMessage(messages: unknown[] | undefined): unknown {
-  if (!messages) return undefined;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index] as { role?: unknown } | undefined;
-    if (message?.role === "assistant") return message;
-  }
-  return undefined;
-}
-
-function extractVisibleText(message: unknown): string {
-  if (!message || typeof message !== "object") return "";
-  const record = message as Record<string, unknown>;
-  const content = record.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map(extractContentPartText).filter(Boolean).join("\n");
-  }
-  const text = record.text;
-  return typeof text === "string" ? text : "";
-}
-
-function extractContentPartText(part: unknown): string {
-  if (typeof part === "string") return part;
-  if (!part || typeof part !== "object") return "";
-  const record = part as Record<string, unknown>;
-  const text = record.text;
-  if (typeof text === "string") return text;
-  if (record.type === "text" && typeof record.content === "string") return record.content;
-  return "";
 }
 
 function evidenceReplyPrompt(turn: FeishuTurnInput, evidence: PmsEvidence<unknown>): string {

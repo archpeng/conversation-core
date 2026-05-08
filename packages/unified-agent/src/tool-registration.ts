@@ -228,11 +228,12 @@ function publicToolResult(result: GatedToolResult<unknown>): unknown {
 
 function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Partial<PmsEvidence<unknown>>;
+  const record = value as Record<string, unknown>;
+  const source = record.source as Record<string, unknown> | undefined;
   return typeof record.evidenceRef === "string"
     && typeof record.summary === "string"
-    && record.source?.system === "pms-platform"
-    && typeof record.source.method === "string";
+    && source?.system === "pms-platform"
+    && typeof source?.method === "string";
 }
 
 function notConfiguredExecutor<T = unknown>(name: string): GatedToolExecutor<T> {

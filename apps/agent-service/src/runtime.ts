@@ -1,14 +1,15 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuthStorage, createAgentSession, DefaultResourceLoader, ModelRegistry, SessionManager, type ResourceLoader } from "@mariozechner/pi-coding-agent";
 import { createAgentService, type AgentService } from "./index.js";
-import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import { createPmsPlatformClient, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
-import type { PiCreateAgentSession, PiResourceLoaderFactory, UnifiedAgentToolExecutors } from "@pms-agent-v2/unified-agent";
+import type { PiCreateAgentSession, PiResourceLoaderFactory } from "@pms-agent-v2/unified-agent";
+import { createRuntimeExecutors, type RuntimeExecutorConfig } from "./executors.js";
+export { createRuntimeExecutors, type RuntimeExecutorConfig };
 
 export type AgentServiceRuntimeConfig = {
   host: string;
@@ -176,143 +177,6 @@ function runtimeSessionManager(config: AgentServiceRuntimeConfig, sessionFile?: 
   return SessionManager.create(config.cwd, config.piSessionDir);
 }
 
-export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): UnifiedAgentToolExecutors {
-  const client = createPmsPlatformClient({
-    baseUrl: config.pmsPlatformBaseUrl,
-    authToken: config.pmsPlatformAuthToken,
-    fetch
-  });
-
-  return {
-    pmsRead: async ({ request }) => {
-      if (request.target === "availability" || request.target === undefined) {
-        return client.searchAvailability({
-          tenantId: tenantId(request),
-          hotelId: config.defaultHotelId,
-          checkInDate: request.checkInDate ?? config.defaultCheckInDate,
-          checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
-          ...(request.quantity ? { quantity: request.quantity } : {}),
-          ...(request.roomType ?? config.defaultRoomType ? { roomType: request.roomType ?? config.defaultRoomType } : {})
-        });
-      }
-      return client.capabilitiesManifest({ tenantId: tenantId(request) });
-    },
-    pmsWorkflow: async ({ request }) => {
-      const tenant = tenantId(request);
-      const quantity = request.quantity ?? 1;
-      if (quantity > 1) {
-        const selections = requiredWorkflowSelections(request.selections, quantity);
-        const sourceEvidenceRef = request.sourceEpisodeRefs?.[0];
-        const groupDraft = await client.createReservationGroupDraft({
-          tenantId: tenant,
-          propertyId: config.defaultPropertyId,
-          guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
-          checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
-          checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
-          quantity,
-          ...(request.roomType ? { roomType: request.roomType } : {}),
-          ...(sourceEvidenceRef ? { sourceEvidenceRef } : {})
-        });
-        const groupDraftIdentifier = groupDraft.data.groupDraftRef ?? groupDraft.data.groupDraftId;
-        await client.updateReservationGroupDraft({
-          tenantId: tenant,
-          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required"),
-          selections,
-          ...(sourceEvidenceRef ? { sourceEvidenceRef } : {})
-        });
-        const quote = await client.quoteReservationGroupDraft({
-          tenantId: tenant,
-          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required")
-        });
-        const prepared = await client.prepareReservationGroupConfirm({
-          tenantId: tenant,
-          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required"),
-          quoteRef: requiredWorkflowText(quote.data.quoteRef, "pms_workflow_quote_required")
-        });
-        await client.pendingActionStatus({
-          tenantId: tenant,
-          pendingActionRef: prepared.data.pendingActionRef ?? prepared.data.pendingActionId,
-          ...(prepared.data.cardPayloadRef ? { cardPayloadRef: prepared.data.cardPayloadRef } : {})
-        });
-        return prepared;
-      }
-
-      const draft = request.draftId ? undefined : await client.createReservationDraft({
-        tenantId: tenant,
-        propertyId: config.defaultPropertyId,
-        roomId: requiredWorkflowText(request.roomId, "pms_workflow_room_required"),
-        guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
-        checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
-        checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
-        ...(request.roomType ? { roomType: request.roomType } : {}),
-        ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
-      });
-      const draftIdentifier = request.draftId ?? draft?.data.draftRef ?? draft?.data.draftId;
-      const selectedCandidateRef = request.sourceEpisodeRefs?.[0] ? `${request.sourceEpisodeRefs[0]}:${request.roomId}` : undefined;
-      if (draft?.data.draftRef ?? draft?.data.draftId) {
-        await client.updateReservationDraft({
-          tenantId: tenant,
-          draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
-          patch: {
-            roomId: request.roomId,
-            ...(selectedCandidateRef ? { selectedCandidateRef } : {})
-          },
-          ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
-        });
-      }
-      const quote = await client.quoteReservationDraft({
-        tenantId: tenant,
-        draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required")
-      });
-
-      const prepared = await client.prepareReservationConfirm({
-        tenantId: tenant,
-        draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
-        quoteRef: requiredWorkflowText(quote.data.quoteRef ?? quote.data.quoteId, "pms_workflow_quote_required")
-      });
-      await client.pendingActionStatus({
-        tenantId: tenant,
-        pendingActionRef: prepared.data.pendingActionId,
-        ...(prepared.data.cardPayloadRef ? { cardPayloadRef: prepared.data.cardPayloadRef } : {})
-      });
-      return prepared;
-    },
-    pmsConfirm: async ({ request }) => client.pendingActionStatus({
-      tenantId: tenantId(request),
-      pendingActionId: request.pendingActionId ?? request.target ?? "missing-pending-action"
-    }),
-    proposalRead: proposalReadExecutor(config),
-    proposalWrite: proposalWriteExecutor(config),
-    proposalEdit: proposalWriteExecutor(config)
-  };
-}
-
-function proposalReadExecutor(config: AgentServiceRuntimeConfig): GatedToolExecutor<unknown> {
-  return ({ request }) => {
-    const path = safeProposalPath(config.proposalWorkspacePath, request.target);
-    return { path, content: readFileSync(path, "utf8") };
-  };
-}
-
-function proposalWriteExecutor(config: AgentServiceRuntimeConfig): GatedToolExecutor<unknown> {
-  return ({ request }) => {
-    const path = safeProposalPath(config.proposalWorkspacePath, request.target);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, request.content ?? "", "utf8");
-    return { path };
-  };
-}
-
-function safeProposalPath(root: string, target: string | undefined): string {
-  const relative = (target || "proposal.md").replace(/^\/+/, "");
-  const path = resolve(root, relative);
-  const normalizedRoot = resolve(root);
-  if (path !== normalizedRoot && !path.startsWith(`${normalizedRoot}/`)) {
-    throw new Error("proposal path escapes workspace");
-  }
-  return path;
-}
-
 async function handleHttpRequest(config: AgentServiceRuntimeConfig, service: AgentService, request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   if (!authorized(config, request)) {
@@ -379,20 +243,6 @@ function readBody(request: IncomingMessage, maxBytes: number): Promise<string> {
 function writeJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(`${JSON.stringify(body)}\n`);
-}
-
-function requiredWorkflowSelections(value: GatedToolRequest["selections"], quantity: number): NonNullable<GatedToolRequest["selections"]> {
-  if (!Array.isArray(value) || value.length < quantity) throw new Error("pms_workflow_group_selections_required");
-  return value.slice(0, quantity);
-}
-
-function tenantId(request: GatedToolRequest): string {
-  return request.tenantId ?? "default-tenant";
-}
-
-function requiredWorkflowText(value: string | undefined, message: string): string {
-  if (typeof value === "string" && value.trim().length > 0) return value;
-  throw new Error(message);
 }
 
 function defaultRuntimeCwd(processCwd: string): string {

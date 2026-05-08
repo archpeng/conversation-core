@@ -63,7 +63,7 @@ export async function executeToolPlan(plan: ToolPlanAction, tools: readonly PiTo
   if (!tool) return { ok: false, result: { type: "refusal", reason: "unsupported", message: "Requested gated tool is not available." } };
 
   const toolResult = await tool.execute(`llm_plan_${plan.toolName}`, plan.params);
-  const details = toolResult.details as Partial<GatedToolResult<unknown>>;
+  const details = toolResult.details as Record<string, unknown>;
   if (details.outcome === "deny") return { ok: false, result: { type: "refusal", reason: "policy", message: "Requested action was denied by policy." } };
   if (details.outcome === "require_approval") return { ok: false, result: { type: "refusal", reason: "policy", message: "Requested action requires typed approval." } };
   return { ok: true, toolResult };
