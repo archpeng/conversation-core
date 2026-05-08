@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { createSafetyAuditJsonlWriter, type SafetyAuditEvent, type SafetyAuditJsonlWriter } from "@pms-agent-v2/safety-gateway";
 import {
   adminSkillProposal,
+  availabilityDiscrepancy,
   contextAdvisoryNotTruth,
   focusedClarification,
   groundedAvailability,
@@ -23,6 +24,7 @@ import {
 } from "./eval-cases.js";
 
 export const evalCategories = [
+  "availability-discrepancy",
   "grounding",
   "prepare-confirm",
   "natural-confirm",
@@ -90,6 +92,7 @@ export async function runMvpEvals(): Promise<EvalRunResult> {
 
 function evalCases(writer: SafetyAuditJsonlWriter): readonly { id: string; category: EvalCategory; run: () => Promise<void> }[] {
   return [
+    { id: "availability-discrepancy-12-candidates-not-total", category: "availability-discrepancy", run: () => availabilityDiscrepancy(writer) },
     { id: "grounded-availability", category: "grounding", run: () => groundedAvailability(writer) },
     { id: "prepare-confirm-audit-chain", category: "prepare-confirm", run: () => prepareConfirm(writer) },
     { id: "natural-confirm-no-mutation", category: "natural-confirm", run: () => naturalConfirm(writer) },
