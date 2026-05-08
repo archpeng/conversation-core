@@ -4,6 +4,7 @@ import {
   createSafetyAuditEvent,
   createSafetyAuditJsonlWriter,
   decideToolRequest,
+  getCapabilityDefinition,
   serializeSafetyAuditEvent,
   type ToolRequest
 } from "../packages/safety-gateway/src/index.js";
@@ -121,5 +122,44 @@ describe("Safety Gateway policy kernel", () => {
     expect(writer.events()).toHaveLength(requests.length);
     expect(writer.flush()).not.toContain("private-token");
     expect(writer.flush()).not.toContain("tenant_1");
+  });
+
+  const safeReadCapabilityIds = [
+    "pms_availability_search",
+    "pms_inventory_summary",
+    "pms_room_reservation_context",
+    "pms_reservation_lookup",
+    "pms_get_room",
+    "pms_today_arrivals",
+    "pms_today_departures",
+    "pms_pending_action_status"
+  ] as const;
+
+  it.each(safeReadCapabilityIds)(
+    "registers and allows tenant-scoped customer %s through safe-read capability",
+    (capabilityId) => {
+      const definition = getCapabilityDefinition(capabilityId);
+      expect(definition).toBeDefined();
+      expect(definition?.kind).toBe("pms");
+      expect(definition?.risk.level).toBe("low");
+      expect(definition?.constraints).toEqual(["tenant_scope_required"]);
+
+      const decision = decideToolRequest({ ...customerBase, capabilityId });
+      expect(decision.outcome).toBe("allow");
+      expect(decision.capability?.id).toBe(capabilityId);
+      expect(decision.reasons[0]).toMatchObject({
+        code: "capability_constraints_satisfied",
+        capabilityId,
+        riskLevel: "low"
+      });
+    }
+  );
+
+  it("does not have confirm or cancel capability registrations beyond pms_confirm", () => {
+    const allIds = Object.keys(capabilityRegistry);
+    const confirmOrCancelIds = allIds.filter(
+      (id) => id.includes("confirm") || id.includes("cancel")
+    );
+    expect(confirmOrCancelIds).toEqual(["pms_confirm"]);
   });
 });

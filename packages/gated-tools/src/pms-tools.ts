@@ -22,6 +22,14 @@ export type GatedPmsConfirmInput<T> = GatedPmsInput<T> & {
   pendingActionId?: string;
 };
 
+export type GatedPmsSafeReadInput<T> = {
+  gateway: SafetyGatewayPort;
+  actor: GatedToolRequest["actor"];
+  tenantId: string;
+  capabilityId: string;
+  executor: GatedToolExecutor<T>;
+};
+
 export function gatedPmsRead<T>(input: GatedPmsInput<T>): Promise<GatedToolResult<T>> {
   return runGatedTool({
     gateway: input.gateway,
@@ -42,6 +50,18 @@ export function gatedPmsConfirm<T>(input: GatedPmsConfirmInput<T>): Promise<Gate
   return runGatedTool({
     gateway: input.gateway,
     request: { ...pmsRequest(input, "pms_confirm"), pendingActionId: input.pendingActionId },
+    executor: input.executor
+  });
+}
+
+export function gatedPmsSafeRead<T>(input: GatedPmsSafeReadInput<T>): Promise<GatedToolResult<T>> {
+  return runGatedTool({
+    gateway: input.gateway,
+    request: {
+      capabilityId: input.capabilityId,
+      actor: input.actor,
+      tenantId: input.tenantId
+    },
     executor: input.executor
   });
 }

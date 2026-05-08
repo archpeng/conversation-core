@@ -5,6 +5,14 @@ export const capabilityIds = [
   "pms_read",
   "pms_workflow",
   "pms_confirm",
+  "pms_availability_search",
+  "pms_inventory_summary",
+  "pms_room_reservation_context",
+  "pms_reservation_lookup",
+  "pms_get_room",
+  "pms_today_arrivals",
+  "pms_today_departures",
+  "pms_pending_action_status",
   "proposal_read",
   "proposal_write",
   "proposal_edit",
@@ -49,6 +57,54 @@ export const capabilityRegistry: Record<CapabilityId, CapabilityDefinition> = {
     kind: "pms",
     risk: capabilityRisks.pmsConfirm,
     constraints: ["tenant_scope_required", "pending_action_required", "typed_approval_required"]
+  },
+  pms_availability_search: {
+    id: "pms_availability_search",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_inventory_summary: {
+    id: "pms_inventory_summary",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_room_reservation_context: {
+    id: "pms_room_reservation_context",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_lookup: {
+    id: "pms_reservation_lookup",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_get_room: {
+    id: "pms_get_room",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_today_arrivals: {
+    id: "pms_today_arrivals",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_today_departures: {
+    id: "pms_today_departures",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_pending_action_status: {
+    id: "pms_pending_action_status",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
   },
   proposal_read: {
     id: "proposal_read",
