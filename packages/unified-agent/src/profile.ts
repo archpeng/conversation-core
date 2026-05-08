@@ -5,11 +5,16 @@ export type UnifiedAgentProfileId = "customer_pms" | "admin_customization";
 export type UnifiedAgentProfile = {
   id: UnifiedAgentProfileId;
   visibleToolNames: readonly string[];
+  useGeneratedTools?: boolean;
 };
 
 const customerPmsProfile: UnifiedAgentProfile = {
   id: "customer_pms",
-  visibleToolNames: ["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]
+  visibleToolNames: [
+    "gated_pms_read", "gated_pms_workflow", "gated_pms_confirm",
+    "pms_availability_search", "pms_inventory_summary", "pms_room_reservation_context",
+    "pms_reservation_lookup", "pms_get_room", "pms_today_arrivals", "pms_today_departures"
+  ]
 };
 
 const adminCustomizationProfile: UnifiedAgentProfile = {

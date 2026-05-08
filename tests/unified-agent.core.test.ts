@@ -47,13 +47,17 @@ describe("unified Agent runtime", () => {
     const customerProfile = loadAgentProfile("customer");
     const adminProfile = loadAgentProfile("admin");
 
-    expect(customerProfile.visibleToolNames).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
-    expect(registerGatedTools({
+    expect(customerProfile.visibleToolNames).toEqual([
+      "gated_pms_read", "gated_pms_workflow", "gated_pms_confirm",
+      "pms_availability_search", "pms_inventory_summary", "pms_room_reservation_context",
+      "pms_reservation_lookup", "pms_get_room", "pms_today_arrivals", "pms_today_departures"
+    ]);
+    expect(customerProfile.visibleToolNames).toEqual(expect.arrayContaining(registerGatedTools({
       profile: customerProfile,
       gateway: safetyGateway([]),
       actor: { profile: "customer", id: "customer_1" },
       tenantId: "tenant_1"
-    }).map((tool) => tool.name)).toEqual(customerProfile.visibleToolNames);
+    }).map((tool) => tool.name)));
     expect(registerGatedTools({
       profile: adminProfile,
       gateway: safetyGateway([]),

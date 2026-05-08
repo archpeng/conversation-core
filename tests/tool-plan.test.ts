@@ -3,7 +3,10 @@ import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type To
 import {
   buildVisibleGatedToolManifest,
   executeToolPlan,
+  generatePmsSafeReadTools,
   loadAgentProfile,
+  PMS_SAFE_READ_TOOLS,
+  pmsToolDescription,
   parseToolPlan,
   registerGatedTools,
   type PiToolDefinition
@@ -181,6 +184,86 @@ describe("C1 LLM gated tool planning", () => {
     expect(parsed.ok).toBe(true);
     expect(result).toEqual({ ok: false, result: { type: "refusal", reason: "policy", message: "Requested action requires typed approval." } });
     expect(order).toEqual(["decide:pms_confirm", "audit:require_approval"]);
+  });
+});
+
+describe("P2 capability-derived PMS tool descriptors", () => {
+  it("generatePmsSafeReadTools() returns 7 tools with non-empty descriptions", () => {
+    const tools = generatePmsSafeReadTools({
+      gateway: safetyGateway([]),
+      actor: customer,
+      tenantId: "tenant_1"
+    });
+
+    expect(tools).toHaveLength(7);
+    expect(tools.map((t) => t.name).sort()).toEqual([...PMS_SAFE_READ_TOOLS].sort());
+    for (const tool of tools) {
+      expect(tool.description).toBeTruthy();
+      expect(typeof tool.description).toBe("string");
+      expect(tool.description.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("pmsToolDescription returns the curated description for a known capability", () => {
+    const description = pmsToolDescription("pms_availability_search");
+    expect(description).toContain("Search full-stay available room candidates");
+    expect(description).toContain("pms_inventory_summary");
+  });
+
+  it("pmsToolDescription throws for unknown capability", () => {
+    expect(() => pmsToolDescription("pms_unknown" as any)).toThrow("Unknown PMS safe-read capability");
+  });
+
+  it("generated tool names match PMS_SAFE_READ_TOOLS", () => {
+    const tools = generatePmsSafeReadTools({
+      gateway: safetyGateway([]),
+      actor: customer,
+      tenantId: "tenant_1"
+    });
+    const toolNames = tools.map((t) => t.name);
+    expect(toolNames).toEqual([...PMS_SAFE_READ_TOOLS]);
+  });
+
+  it("generated tools produce visible gated manifest items", () => {
+    const profile = { ...loadAgentProfile("customer"), useGeneratedTools: true };
+    const tools = registerGatedTools({
+      profile,
+      gateway: safetyGateway([]),
+      actor: customer,
+      tenantId: "tenant_1"
+    });
+    const manifest = buildVisibleGatedToolManifest(profile, tools);
+    const manifestNames = manifest.map((m) => m.name);
+    for (const toolName of PMS_SAFE_READ_TOOLS) {
+      expect(manifestNames).toContain(toolName);
+    }
+    expect(manifestNames).toContain("gated_pms_workflow");
+    expect(manifestNames).toContain("gated_pms_confirm");
+  });
+
+  it("generated tools execute through Safety Gateway with correct capability target", async () => {
+    const order: string[] = [];
+    const profile = { ...loadAgentProfile("customer"), useGeneratedTools: true };
+    const tools = registerGatedTools({
+      profile,
+      gateway: safetyGateway(order),
+      actor: customer,
+      tenantId: "tenant_1",
+      executors: {
+        pmsRead: () => {
+          order.push("executor");
+          return { evidenceRef: "pms_ev_1", source: { system: "pms-platform", method: "searchAvailability" }, summary: "found" };
+        }
+      }
+    });
+    const manifest = buildVisibleGatedToolManifest(profile, tools);
+    const parsed = parseToolPlan({ type: "call_tool", toolName: "pms_availability_search", params: { checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } }, manifest);
+
+    expect(parsed.ok).toBe(true);
+    const result = parsed.ok ? await executeToolPlan(parsed.plan, tools) : undefined;
+
+    expect(result?.ok).toBe(true);
+    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor"]);
   });
 });
 
