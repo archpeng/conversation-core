@@ -157,7 +157,7 @@ export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig,
     if (config.piModelProvider && config.piModelId && !model) {
       throw new Error(`model_not_resolved: Pi ModelRegistry could not resolve ${config.piModelProvider}/${config.piModelId}`);
     }
-    return createSession({
+    return piSessionResult(createSession({
       cwd: options.cwd ?? config.cwd,
       agentDir: config.piAgentDir,
       tools: options.tools as string[],
@@ -167,8 +167,13 @@ export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig,
       ...(options.resourceLoader ? { resourceLoader: options.resourceLoader as ResourceLoader } : {}),
       ...(model ? { model } : {}),
       sessionManager: runtimeSessionManager(config, options.sessionFile)
-    }) as unknown as ReturnType<PiCreateAgentSession>;
+    }));
   };
+}
+
+function piSessionResult(value: ReturnType<typeof createAgentSession>): ReturnType<PiCreateAgentSession> {
+  // Pi SDK session factory and the local port expose equivalent runtime shapes but distinct type aliases.
+  return value as unknown as ReturnType<PiCreateAgentSession>;
 }
 
 function runtimeSessionManager(config: AgentServiceRuntimeConfig, sessionFile?: string): ReturnType<typeof SessionManager.inMemory> {
