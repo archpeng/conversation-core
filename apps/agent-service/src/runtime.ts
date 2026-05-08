@@ -8,8 +8,8 @@ import { createAgentService, type AgentService } from "./index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
 import type { PiCreateAgentSession, PiResourceLoaderFactory } from "@pms-agent-v2/unified-agent";
-import { createRuntimeExecutors, type RuntimeExecutorConfig } from "./executors.js";
-export { createRuntimeExecutors, type RuntimeExecutorConfig };
+import { createRuntimeExecutors, dispatchPmsRead, type RuntimeExecutorConfig } from "./executors.js";
+export { createRuntimeExecutors, dispatchPmsRead, type RuntimeExecutorConfig };
 
 export type AgentServiceRuntimeConfig = {
   host: string;

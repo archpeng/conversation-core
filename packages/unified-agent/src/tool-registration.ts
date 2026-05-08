@@ -10,13 +10,42 @@ import {
   type GatedToolResult,
   type SafetyGatewayPort
 } from "@pms-agent-v2/gated-tools";
-import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import type {
+  AvailabilitySearchResult,
+  PendingActionStatusFact,
+  PmsEvidence,
+  ReservationFact,
+  RoomFact
+} from "@pms-agent-v2/pms-platform-client";
 import { generatePmsSafeReadTools } from "./pms-capability-tools.js";
 import type { UnifiedAgentProfile } from "./profile.js";
 import type { PiToolDefinition, PiToolResult } from "./pi-session.js";
 
+/**
+ * Placeholder types for Unit 2 client methods (inventorySummary, roomReservationContext,
+ * todayArrivals, todayDepartures) that have been merged but may not yet be reflected in
+ * the current worktree's client type definitions. Replace with real imports from
+ * @pms-agent-v2/pms-platform-client once the updated schemas are available.
+ */
+export type InventorySummaryResult = { summary: string; items?: unknown[] };
+export type RoomReservationContextResult = { roomId: string; reservations?: unknown[] };
+export type TodayArrivalsResult = { arrivals: unknown[] };
+export type TodayDeparturesResult = { departures: unknown[] };
+
+export type PmsReadExecutorMap = {
+  pms_availability_search: GatedToolExecutor<PmsEvidence<AvailabilitySearchResult>>;
+  pms_inventory_summary: GatedToolExecutor<PmsEvidence<InventorySummaryResult>>;
+  pms_room_reservation_context: GatedToolExecutor<PmsEvidence<RoomReservationContextResult>>;
+  pms_reservation_lookup: GatedToolExecutor<PmsEvidence<ReservationFact>>;
+  pms_get_room: GatedToolExecutor<PmsEvidence<RoomFact>>;
+  pms_today_arrivals: GatedToolExecutor<PmsEvidence<TodayArrivalsResult>>;
+  pms_today_departures: GatedToolExecutor<PmsEvidence<TodayDeparturesResult>>;
+  pms_pending_action_status: GatedToolExecutor<PmsEvidence<PendingActionStatusFact>>;
+};
+
 export type UnifiedAgentToolExecutors = {
   pmsRead?: GatedToolExecutor<PmsEvidence<unknown>>;
+  pmsReadExecutors?: PmsReadExecutorMap;
   pmsWorkflow?: GatedToolExecutor<PmsEvidence<unknown>>;
   pmsConfirm?: GatedToolExecutor<unknown>;
   proposalRead?: GatedToolExecutor<unknown>;
