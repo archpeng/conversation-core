@@ -1,9 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AuthStorage, createAgentSession, DefaultResourceLoader, getAgentDir, ModelRegistry, SessionManager, type ResourceLoader } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, DefaultResourceLoader, ModelRegistry, SessionManager, type ResourceLoader } from "@mariozechner/pi-coding-agent";
 import { createAgentService, type AgentService } from "./index.js";
 import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import { createPmsPlatformClient, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
@@ -20,6 +20,8 @@ export type AgentServiceRuntimeConfig = {
   cwd: string;
   piMode: "real" | "stub";
   piSessionMode: "memory" | "persistent";
+  piAgentDir: string;
+  piSessionDir: string;
   piModelProvider?: string;
   piModelId?: string;
   logTurnEvents: boolean;
@@ -54,7 +56,9 @@ export function loadAgentServiceRuntimeConfig(env: Env = process.env): AgentServ
     proposalWorkspacePath: resolve(cwd, env.PMS_AGENT_PROPOSAL_WORKSPACE?.trim() || ".local/pms-agent-proposals"),
     cwd,
     piMode: env.PMS_AGENT_PI_MODE === "stub" ? "stub" : "real",
-    piSessionMode: env.PMS_AGENT_PI_SESSION_MODE === "persistent" ? "persistent" : "memory",
+    piSessionMode: env.PMS_AGENT_PI_SESSION_MODE === "memory" ? "memory" : "persistent",
+    piAgentDir: resolve(cwd, env.PMS_AGENT_PI_AGENT_DIR?.trim() || ".local/pi-agent"),
+    piSessionDir: resolve(cwd, env.PMS_AGENT_PI_SESSION_DIR?.trim() || ".local/pi-agent/sessions"),
     piModelProvider: env.PMS_AGENT_PI_MODEL_PROVIDER?.trim() || undefined,
     piModelId: env.PMS_AGENT_PI_MODEL_ID?.trim() || undefined,
     logTurnEvents: env.PMS_AGENT_LOG_TURN_EVENTS === "true",
@@ -75,6 +79,7 @@ export function createRuntimeAgentService(config: AgentServiceRuntimeConfig): Ag
     createAgentSession: createRuntimePiSessionFactory(config),
     createResourceLoader: createRuntimeResourceLoaderFactory(config),
     cwd: config.cwd,
+    piSessionDir: config.piSessionDir,
     executors: createRuntimeExecutors(config),
     eventSink: config.logTurnEvents ? (event) => console.log(JSON.stringify(event)) : undefined
   });
@@ -106,9 +111,14 @@ export async function startAgentHttpServer(config: AgentServiceRuntimeConfig, se
 
 function createRuntimeResourceLoaderFactory(config: AgentServiceRuntimeConfig): PiResourceLoaderFactory {
   return async (systemPrompt) => {
+    ensureRuntimePiDirs(config);
     const loader = new DefaultResourceLoader({
       cwd: config.cwd,
-      agentDir: getAgentDir(),
+      agentDir: config.piAgentDir,
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
       systemPromptOverride: () => systemPrompt
     });
     await loader.reload();
@@ -128,29 +138,42 @@ function createRuntimeSafetyGateway(): SafetyGatewayPort {
   };
 }
 
+function ensureRuntimePiDirs(config: AgentServiceRuntimeConfig): void {
+  mkdirSync(config.piAgentDir, { recursive: true });
+  if (config.piSessionMode === "persistent") mkdirSync(config.piSessionDir, { recursive: true });
+}
+
 export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig, createSession: typeof createAgentSession = createAgentSession): PiCreateAgentSession {
   if (config.piMode === "stub") {
     return async () => ({ session: { async prompt() {} } });
   }
 
   return async (options) => {
-    const authStorage = AuthStorage.create();
-    const modelRegistry = ModelRegistry.create(authStorage);
+    ensureRuntimePiDirs(config);
+    const authStorage = AuthStorage.create(join(config.piAgentDir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, join(config.piAgentDir, "models.json"));
     const model = config.piModelProvider && config.piModelId ? modelRegistry.find(config.piModelProvider, config.piModelId) : undefined;
     if (config.piModelProvider && config.piModelId && !model) {
       throw new Error(`model_not_resolved: Pi ModelRegistry could not resolve ${config.piModelProvider}/${config.piModelId}`);
     }
     return createSession({
       cwd: options.cwd ?? config.cwd,
+      agentDir: config.piAgentDir,
       tools: options.tools as string[],
       customTools: options.customTools as never[],
       authStorage,
       modelRegistry,
       ...(options.resourceLoader ? { resourceLoader: options.resourceLoader as ResourceLoader } : {}),
       ...(model ? { model } : {}),
-      sessionManager: config.piSessionMode === "persistent" ? SessionManager.create(config.cwd) : SessionManager.inMemory(config.cwd)
+      sessionManager: runtimeSessionManager(config, options.sessionFile)
     }) as unknown as ReturnType<PiCreateAgentSession>;
   };
+}
+
+function runtimeSessionManager(config: AgentServiceRuntimeConfig, sessionFile?: string): ReturnType<typeof SessionManager.inMemory> {
+  if (config.piSessionMode === "memory") return SessionManager.inMemory(config.cwd);
+  if (sessionFile) return SessionManager.open(sessionFile, config.piSessionDir, config.cwd);
+  return SessionManager.create(config.cwd, config.piSessionDir);
 }
 
 export function createRuntimeExecutors(config: AgentServiceRuntimeConfig): UnifiedAgentToolExecutors {

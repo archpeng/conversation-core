@@ -32,6 +32,8 @@ export type PiAgentSession = {
 
 export type PiCreateAgentSessionOptions = {
   cwd?: string;
+  agentDir?: string;
+  sessionFile?: string;
   tools: readonly string[];
   customTools: readonly PiToolDefinition[];
   resourceLoader?: unknown;

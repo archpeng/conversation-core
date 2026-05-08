@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 import {
   isAgentResult,
   validateFeishuTurnInput,
@@ -37,6 +39,7 @@ export type CreateAgentServiceInput = {
   createAgentSession: PiCreateAgentSession;
   createResourceLoader?: PiResourceLoaderFactory;
   cwd?: string;
+  piSessionDir?: string;
   sessionManager?: unknown;
   authStorage?: unknown;
   modelRegistry?: unknown;
@@ -113,6 +116,7 @@ async function getOrCreateUnifiedSession(input: CreateAgentServiceInput, session
     createAgentSession: input.createAgentSession,
     createResourceLoader: input.createResourceLoader,
     cwd: input.cwd,
+    sessionFile: input.piSessionDir ? sessionFileForConversation(input.piSessionDir, key, turn.channel) : undefined,
     sessionManager: input.sessionManager,
     authStorage: input.authStorage,
     modelRegistry: input.modelRegistry,
@@ -149,6 +153,12 @@ function disposeCachedSession(entry: CachedUnifiedAgentSession): void {
 function sessionCacheKey(turn: FeishuTurnInput): string {
   const profile = loadAgentProfile(turn.actor.role).id;
   return [turn.channel, turn.tenantId, turn.sessionId, profile].join("\u001f");
+}
+
+function sessionFileForConversation(sessionDir: string, key: string, channel: string): string {
+  const channelPrefix = channel.replace(/[^a-zA-Z0-9_-]/g, "_") || "conversation";
+  const digest = createHash("sha256").update(key).digest("hex").slice(0, 32);
+  return join(sessionDir, `${channelPrefix}-${digest}.jsonl`);
 }
 
 function healthBody(): { status: "ok"; service: "pms-agent-v2-agent-service" } {

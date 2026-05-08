@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
 import { createRuntimeExecutors, createRuntimePiSessionFactory, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
@@ -13,6 +15,34 @@ describe("agent service runtime wiring", () => {
   it("loads an explicit inbound body size limit", () => {
     expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test" }).maxInboundBodyBytes).toBe(256 * 1024);
     expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_MAX_BODY_BYTES: "8" }).maxInboundBodyBytes).toBe(8);
+  });
+
+  it("defaults Pi runtime state to a project-private agent dir instead of the global Pi dir", () => {
+    const config = loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test" });
+
+    expect(config.piAgentDir).toBe("/tmp/pms-agent-v2-runtime-test/.local/pi-agent");
+    expect(config.piSessionDir).toBe("/tmp/pms-agent-v2-runtime-test/.local/pi-agent/sessions");
+    expect(config.piSessionMode).toBe("persistent");
+  });
+
+  it("allows explicit in-memory Pi sessions as an opt-out", () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_PI_SESSION_MODE: "memory"
+    });
+
+    expect(config.piSessionMode).toBe("memory");
+  });
+
+  it("allows an explicit project-private Pi agent dir override", () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_PI_AGENT_DIR: ".local/pi-agent-live",
+      PMS_AGENT_PI_SESSION_DIR: ".local/pi-agent-live/sessions"
+    });
+
+    expect(config.piAgentDir).toBe("/tmp/pms-agent-v2-runtime-test/.local/pi-agent-live");
+    expect(config.piSessionDir).toBe("/tmp/pms-agent-v2-runtime-test/.local/pi-agent-live/sessions");
   });
 
   it("rejects oversized HTTP request bodies before service handling", async () => {
@@ -96,10 +126,31 @@ describe("agent service runtime wiring", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       cwd: config.cwd,
+      agentDir: config.piAgentDir,
       tools: [],
       customTools: [],
       resourceLoader
     });
+  });
+
+  it("opens the deterministic Pi session file in persistent runtime mode", async () => {
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+      PMS_AGENT_PI_MODE: "real",
+      PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+    });
+    const sessionFile = join(config.piSessionDir, "feishu-test-session.jsonl");
+    const calls: unknown[] = [];
+    const factory = createRuntimePiSessionFactory(config, (async (options: unknown) => {
+      calls.push(options);
+      return { session: { async prompt() {} } };
+    }) as never);
+
+    await factory({ cwd: config.cwd, sessionFile, tools: [], customTools: [] } as PiCreateAgentSessionOptions);
+
+    const options = calls[0] as { sessionManager?: { getSessionFile?: () => string | undefined; getSessionDir?: () => string } };
+    expect(options.sessionManager?.getSessionFile?.()).toBe(sessionFile);
+    expect(options.sessionManager?.getSessionDir?.()).toBe(config.piSessionDir);
   });
 
   it("passes configured GPT-5.5 model through the real-mode runtime factory", async () => {
@@ -110,6 +161,7 @@ describe("agent service runtime wiring", () => {
       PMS_AGENT_PI_MODEL_ID: "gpt-5.5",
       PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
     });
+    writeMinimalPiModels(config.piAgentDir);
     const calls: unknown[] = [];
     const factory = createRuntimePiSessionFactory(config, (async (options: unknown) => {
       calls.push(options);
@@ -361,3 +413,27 @@ describe("agent service runtime wiring", () => {
       .rejects.toThrow("model_not_resolved: Pi ModelRegistry could not resolve openai/missing-model-for-test");
   });
 });
+
+function writeMinimalPiModels(agentDir: string): void {
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      openai: {
+        baseUrl: "https://example.invalid/v1",
+        api: "openai-completions",
+        apiKey: "OPENAI_API_KEY",
+        models: [
+          {
+            id: "gpt-5.5",
+            name: "GPT-5.5 test model",
+            reasoning: true,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 32768,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+          }
+        ]
+      }
+    }
+  }), "utf8");
+}

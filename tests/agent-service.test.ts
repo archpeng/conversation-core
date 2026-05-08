@@ -49,6 +49,40 @@ describe("agent service API", () => {
     expect(calls[0].customTools.map((tool) => tool.name)).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
   });
 
+  it("uses a deterministic redacted Pi session file for the same Feishu conversation", async () => {
+    const sessionDir = "/tmp/pms-agent-v2-runtime-test/pi-sessions";
+    const firstCalls: PiCreateAgentSessionOptions[] = [];
+    const secondCalls: PiCreateAgentSessionOptions[] = [];
+    const firstService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(firstCalls), piSessionDir: sessionDir });
+    const secondService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(secondCalls), piSessionDir: sessionDir });
+
+    await firstService.handle({ method: "POST", path: "/v1/feishu-turn", body: validTurn });
+    await secondService.handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, messageId: "message_secret_2" } });
+
+    expect(firstCalls).toHaveLength(1);
+    expect(secondCalls).toHaveLength(1);
+    expect(firstCalls[0].sessionFile).toBe(secondCalls[0].sessionFile);
+    expect(firstCalls[0].sessionFile).toMatch(/^\/tmp\/pms-agent-v2-runtime-test\/pi-sessions\/feishu-[a-f0-9]{32}\.jsonl$/);
+    expect(firstCalls[0].sessionFile).not.toContain("tenant_secret_1");
+    expect(firstCalls[0].sessionFile).not.toContain("session_secret_1");
+    expect(firstCalls[0].sessionFile).not.toContain("actor_secret_1");
+  });
+
+  it("uses a different Pi session file for a different Feishu conversation", async () => {
+    const sessionDir = "/tmp/pms-agent-v2-runtime-test/pi-sessions";
+    const firstCalls: PiCreateAgentSessionOptions[] = [];
+    const secondCalls: PiCreateAgentSessionOptions[] = [];
+    const firstService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(firstCalls), piSessionDir: sessionDir });
+    const secondService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(secondCalls), piSessionDir: sessionDir });
+
+    await firstService.handle({ method: "POST", path: "/v1/feishu-turn", body: validTurn });
+    await secondService.handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, sessionId: "session_secret_2", messageId: "message_secret_2" } });
+
+    expect(firstCalls[0].sessionFile).toBeDefined();
+    expect(secondCalls[0].sessionFile).toBeDefined();
+    expect(firstCalls[0].sessionFile).not.toBe(secondCalls[0].sessionFile);
+  });
+
   it("returns a natural greeting fallback instead of an internal completion placeholder", async () => {
     const service = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession([]) });
 

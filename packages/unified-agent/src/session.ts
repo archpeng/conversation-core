@@ -28,6 +28,7 @@ export type CreateUnifiedAgentSessionInput = {
   createAgentSession: PiCreateAgentSession;
   createResourceLoader?: PiResourceLoaderFactory;
   cwd?: string;
+  sessionFile?: string;
   sessionManager?: unknown;
   authStorage?: unknown;
   modelRegistry?: unknown;
@@ -62,6 +63,7 @@ export async function createUnifiedAgentSession(input: CreateUnifiedAgentSession
   const resourceLoader = input.createResourceLoader ? await input.createResourceLoader(systemPrompt) : undefined;
   const { session } = await input.createAgentSession({
     cwd: input.cwd,
+    ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
     tools: [],
     customTools: tools,
     ...(resourceLoader ? { resourceLoader } : {}),
