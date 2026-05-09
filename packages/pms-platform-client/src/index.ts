@@ -1,10 +1,15 @@
 export {
   createPmsPlatformClient,
   PmsPlatformClientError,
+  PmsPlatformRejectedError,
+  isPmsWorkflowRejectedResult,
+  workflowRejectionSummary,
   type PmsFetch,
   type PmsFetchResponse,
+  type PmsPlatformApiError,
   type PmsPlatformClient,
-  type PmsPlatformClientOptions
+  type PmsPlatformClientOptions,
+  type PmsWorkflowRejectedResult
 } from "./client.js";
 
 export { createPmsEvidence, type PmsEvidence, type PmsEvidenceMethod, type PmsEvidenceScope, type PmsEvidenceSource } from "./evidence.js";

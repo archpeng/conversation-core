@@ -159,6 +159,45 @@ export class PmsPlatformClientError extends Error {
   }
 }
 
+export type PmsPlatformApiError = {
+  code: string;
+  message: string;
+  field?: string;
+};
+
+export type PmsWorkflowRejectedResult = {
+  kind: "pms_workflow_rejected";
+  origin: "pms-platform" | "pms-agent-v2";
+  operation: string;
+  status: string;
+  mutationStatus: "none";
+  errors: PmsPlatformApiError[];
+  missingSlots?: string[];
+  summary: string;
+};
+
+export class PmsPlatformRejectedError extends Error {
+  readonly result: PmsWorkflowRejectedResult;
+
+  constructor(result: PmsWorkflowRejectedResult) {
+    super(result.summary);
+    this.name = "PmsPlatformRejectedError";
+    this.result = result;
+  }
+}
+
+export function isPmsWorkflowRejectedResult(value: unknown): value is PmsWorkflowRejectedResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.kind === "pms_workflow_rejected"
+    && (record.origin === "pms-platform" || record.origin === "pms-agent-v2")
+    && typeof record.operation === "string"
+    && typeof record.status === "string"
+    && record.mutationStatus === "none"
+    && Array.isArray(record.errors)
+    && typeof record.summary === "string";
+}
+
 export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsPlatformClient {
   const now = options.now ?? (() => new Date());
 
@@ -268,11 +307,67 @@ async function requestOperational<T>(options: PmsPlatformClientOptions, request:
   }
 
   try {
-    return parse(await response.json());
+    const payload = await response.json();
+    const rejected = parseWorkflowRejection(payload, operation);
+    if (rejected) throw new PmsPlatformRejectedError(rejected);
+    return parse(payload);
   } catch (error) {
+    if (error instanceof PmsPlatformRejectedError) throw error;
     const reason = error instanceof Error ? error.message : "invalid response";
     throw new PmsPlatformClientError({ operation, causeCode: "invalid_response", reason });
   }
+}
+
+function parseWorkflowRejection(value: unknown, fallbackOperation: string): PmsWorkflowRejectedResult | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.ok !== false) return undefined;
+  const rawErrors = Array.isArray(record.errors) ? record.errors : [];
+  const errors = rawErrors.map(parseApiError).filter((error): error is PmsPlatformApiError => Boolean(error));
+  if (errors.length === 0) return undefined;
+  const groupDraft = isRecord(record.groupDraft) ? record.groupDraft : undefined;
+  const draft = isRecord(record.draft) ? record.draft : undefined;
+  const missingSlots = parseStringArray(groupDraft?.missingSlots ?? draft?.missingSlots);
+  return {
+    kind: "pms_workflow_rejected",
+    origin: "pms-platform",
+    operation: typeof record.operation === "string" ? record.operation : fallbackOperation,
+    status: typeof record.status === "string" ? record.status : "rejected",
+    mutationStatus: "none",
+    errors,
+    ...(missingSlots.length > 0 ? { missingSlots } : {}),
+    summary: workflowRejectionSummary(errors, missingSlots)
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseApiError(value: unknown): PmsPlatformApiError | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.code !== "string" || typeof record.message !== "string") return undefined;
+  return {
+    code: record.code,
+    message: record.message,
+    ...(typeof record.field === "string" && record.field.trim() ? { field: record.field } : {})
+  };
+}
+
+function parseStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+export function workflowRejectionSummary(errors: readonly PmsPlatformApiError[], missingSlots: readonly string[] = []): string {
+  if (errors.some((error) => error.code === "RESERVATION_GROUP_DRAFT_MISSING_REQUIRED_SLOTS")) {
+    const missing = missingSlots.length > 0 ? ` 缺失项：${missingSlots.join(", ")}。` : "";
+    return `草稿缺少房间选择，无法报价。${missing}`;
+  }
+  if (errors.some((error) => error.code === "RESERVATION_ROOM_UNAVAILABLE")) {
+    return "所选房间在入住区间已不可订，无法确认预订。";
+  }
+  return errors.map((error) => error.message).join("；") || "PMS workflow rejected the request.";
 }
 
 function validateInput(operation: string, validate: () => void): void {

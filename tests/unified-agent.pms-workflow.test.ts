@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
+import { createPmsEvidence, PmsPlatformRejectedError, type PmsWorkflowRejectedResult } from "../packages/pms-platform-client/src/index.js";
 import { createUnifiedAgentSession, runAgentTurn, type PmsReadExecutorMap, type PmsWorkflowExecutorMap } from "../packages/unified-agent/src/index.js";
 import { baseTurn, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithToolCalls, safetyGateway } from "./unified-agent.helpers.js";
 
@@ -80,6 +80,58 @@ describe("unified Agent Pi-native PMS tools", () => {
     ]);
   });
 
+  it("uses the composite group booking workflow to prepare a multi-room approval card", async () => {
+    const order: string[] = [];
+    const calls: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithToolCalls([{
+        calls: [{
+          toolName: "pms_reservation_group_prepare_booking",
+          params: {
+            guestName: "莉莉",
+            checkInDate: "2026-05-12",
+            checkOutDate: "2026-05-14",
+            roomType: "花园别墅",
+            quantity: 2
+          }
+        }],
+        text: "PMS 已准备多房预订确认卡。"
+      }]),
+      executors: { pmsWorkflowExecutors: workflowExecutors(calls) }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "给莉莉订两间花园别墅" } });
+
+    expect(result).toMatchObject({ type: "approval_card", card: { ref: { pendingActionId: "pending_group_booking_1", selectionCount: 2 } } });
+    expect(calls).toEqual(["pms_reservation_group_prepare_booking"]);
+    expect(order).toEqual(["decide:pms_reservation_group_prepare_booking", "audit:allow"]);
+  });
+
+  it("surfaces structured PMS workflow rejection instead of a generic platform error", async () => {
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithToolCalls([{
+        calls: [{ toolName: "pms_reservation_group_quote", params: { groupDraftRef: "group_missing_selection" } }],
+        text: ""
+      }]),
+      executors: {
+        pmsWorkflowExecutors: {
+          ...workflowExecutors(),
+          pms_reservation_group_quote: () => {
+            throw new PmsPlatformRejectedError(groupQuoteMissingSelectionsRejection());
+          }
+        }
+      }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "重新报价" } });
+
+    expect(result).toEqual({ type: "refusal", reason: "unsupported", message: "草稿缺少房间选择，无法报价。 缺失项：roomSelections。" });
+  });
+
   it("does not run deterministic booking fallback when Pi already called a safe read tool", async () => {
     const calls: string[] = [];
     const evidence = availabilityEvidence("planner chose availability");
@@ -116,6 +168,19 @@ describe("unified Agent Pi-native PMS tools", () => {
     expect(session.state.evidenceRefs).toEqual([]);
   });
 });
+
+function groupQuoteMissingSelectionsRejection(): PmsWorkflowRejectedResult {
+  return {
+    kind: "pms_workflow_rejected",
+    origin: "pms-platform",
+    operation: "pms.reservation.group_quote",
+    status: "rejected",
+    mutationStatus: "none",
+    errors: [{ code: "RESERVATION_GROUP_DRAFT_MISSING_REQUIRED_SLOTS", message: "Reservation group draft is missing required slots.", field: "missingSlots" }],
+    missingSlots: ["roomSelections"],
+    summary: "草稿缺少房间选择，无法报价。 缺失项：roomSelections。"
+  };
+}
 
 function availabilityEvidence(summary: string) {
   return createPmsEvidence({
@@ -177,6 +242,10 @@ function workflowExecutors(calls?: string[]): PmsWorkflowExecutorMap {
     pms_reservation_group_draft_create: () => createPmsEvidence({ method: "createReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "collectingSlots" } }) as never,
     pms_reservation_group_draft_update: () => createPmsEvidence({ method: "updateReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "quoteReady" } }) as never,
     pms_reservation_group_quote: () => createPmsEvidence({ method: "quoteReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group quote", data: { quoteRef: "group_quote_1", status: "pricingUnsupported" } }) as never,
-    pms_reservation_group_prepare_confirm: () => createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group prepare", data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: 2 } }) as never
+    pms_reservation_group_prepare_confirm: () => createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group prepare", data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: 2 } }) as never,
+    pms_reservation_group_prepare_booking: ({ request }) => {
+      calls?.push(request.capabilityId);
+      return createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group booking prepare", data: { pendingActionId: "pending_group_booking_1", pendingActionRef: "pending_group_booking_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: request.quantity } });
+    }
   };
 }

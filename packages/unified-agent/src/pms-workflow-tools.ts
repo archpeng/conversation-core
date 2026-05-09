@@ -4,6 +4,7 @@ import {
   type GatedToolRequest,
 } from "@pms-agent-v2/gated-tools";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
+import { PmsPlatformRejectedError, isPmsWorkflowRejectedResult, type PmsWorkflowRejectedResult } from "@pms-agent-v2/pms-platform-client";
 import type { TSchema } from "typebox";
 import type { AgentToolResult, GatedToolDefinition } from "./pi-session.js";
 import type { UnifiedAgentToolExecutors } from "./tool-registration.js";
@@ -17,6 +18,7 @@ export const PMS_SAFE_WORKFLOW_TOOLS = [
   "pms_reservation_group_draft_update",
   "pms_reservation_group_quote",
   "pms_reservation_group_prepare_confirm",
+  "pms_reservation_group_prepare_booking",
 ] as const;
 
 export type PmsSafeWorkflowToolName = (typeof PMS_SAFE_WORKFLOW_TOOLS)[number];
@@ -38,6 +40,8 @@ const WorkflowDescriptions: Record<PmsSafeWorkflowToolName, string> = {
     "Quote a group reservation draft. Returns quote evidence only and does not confirm the booking.",
   pms_reservation_group_prepare_confirm:
     "Prepare a typed approval card for a quoted group reservation draft. Returns pending-action evidence; final confirm/cancel is never a natural-language tool.",
+  pms_reservation_group_prepare_booking:
+    "Prepare a multi-room booking approval card from PMS availability. Use for customer requests to book multiple rooms after guest, dates, room type, and quantity are known. It searches current availability, selects rooms, creates and updates the group draft, quotes it, then prepares typed approval. It never confirms the booking.",
 };
 
 const WorkflowSchemas: Record<PmsSafeWorkflowToolName, object> = {
@@ -121,6 +125,18 @@ const WorkflowSchemas: Record<PmsSafeWorkflowToolName, object> = {
       quoteId: { type: "string", minLength: 1 },
     },
   },
+  pms_reservation_group_prepare_booking: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      guestName: { type: "string", minLength: 1 },
+      checkInDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      checkOutDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      roomType: { type: "string", minLength: 1 },
+      quantity: { type: "integer", minimum: 2 },
+    },
+    required: ["guestName", "checkInDate", "checkOutDate", "roomType", "quantity"],
+  },
 };
 
 export function generatePmsWorkflowTools(input: {
@@ -160,18 +176,43 @@ function defineWorkflowTool(toolName: PmsSafeWorkflowToolName, input: Parameters
 
 async function runWorkflowTool(toolName: PmsSafeWorkflowToolName, input: Parameters<typeof generatePmsWorkflowTools>[0], params: Record<string, unknown>): Promise<AgentToolResult<GatedToolResult<unknown>>> {
   const executor = input.executors?.pmsWorkflowExecutors?.[toolName] as GatedToolExecutor<unknown> | undefined;
-  const result = await gatedPmsWorkflowStep({
+  const result = await runRejectedAwareWorkflowStep(toolName, input, params, executor);
+  return {
+    content: [{ type: "text", text: JSON.stringify(publicToolResult(result)) }],
+    details: result,
+  };
+}
+
+async function runRejectedAwareWorkflowStep(
+  toolName: PmsSafeWorkflowToolName,
+  input: Parameters<typeof generatePmsWorkflowTools>[0],
+  params: Record<string, unknown>,
+  executor: GatedToolExecutor<unknown> | undefined,
+): Promise<GatedToolResult<unknown>> {
+  const configuredExecutor = executor ?? notConfiguredExecutor(`pmsWorkflowExecutors.${toolName}`);
+  return gatedPmsWorkflowStep({
     gateway: input.gateway,
     actor: input.actor,
     tenantId: input.tenantId,
     capabilityId: toolName,
     ...workflowRequestParams(params),
-    executor: executor ?? notConfiguredExecutor(`pmsWorkflowExecutors.${toolName}`),
+    executor: async (executionInput) => {
+      try {
+        return await configuredExecutor(executionInput);
+      } catch (error) {
+        const rejected = pmsPlatformRejectedResult(error);
+        if (rejected) return rejected;
+        throw error;
+      }
+    },
   });
-  return {
-    content: [{ type: "text", text: JSON.stringify(publicToolResult(result)) }],
-    details: result,
-  };
+}
+
+function pmsPlatformRejectedResult(error: unknown): PmsWorkflowRejectedResult | undefined {
+  if (error instanceof PmsPlatformRejectedError) return error.result;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return undefined;
+  const record = error as Record<string, unknown>;
+  return isPmsWorkflowRejectedResult(record.result) ? record.result : undefined;
 }
 
 function workflowRequestParams(params: Record<string, unknown>): Omit<GatedToolRequest, "capabilityId" | "actor" | "tenantId"> {
@@ -196,6 +237,14 @@ function workflowRequestParams(params: Record<string, unknown>): Omit<GatedToolR
 
 function publicToolResult(result: { outcome: string; auditId: string; value?: unknown }): Record<string, unknown> {
   const value = result.value;
+  if (isPmsWorkflowRejectedResult(value)) {
+    return {
+      outcome: result.outcome,
+      auditId: result.auditId,
+      rejected: value,
+      summary: value.summary,
+    };
+  }
   if (isPmsEvidenceLike(value)) {
     return {
       outcome: result.outcome,

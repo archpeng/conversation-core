@@ -18,6 +18,7 @@ import type {
   ReservationFact,
   ReservationGroupDraftFact,
   ReservationGroupQuoteFact,
+  PmsWorkflowRejectedResult,
   ReservationQuoteFact,
   RoomReservationContextResult,
   RoomFact,
@@ -55,6 +56,7 @@ export type PmsWorkflowExecutorMap = {
   pms_reservation_group_draft_update: GatedToolExecutor<PmsEvidence<ReservationGroupDraftFact>>;
   pms_reservation_group_quote: GatedToolExecutor<PmsEvidence<ReservationGroupQuoteFact>>;
   pms_reservation_group_prepare_confirm: GatedToolExecutor<PmsEvidence<ReservationConfirmPreparation>>;
+  pms_reservation_group_prepare_booking?: GatedToolExecutor<PmsEvidence<ReservationConfirmPreparation> | PmsWorkflowRejectedResult>;
 };
 
 export type UnifiedAgentToolExecutors = {

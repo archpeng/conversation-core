@@ -136,7 +136,7 @@ function approvalCard(tenantId: string, pendingActionId: string, expiresAt?: str
       ...(expiresAt ? { expiresAt } : {})
     },
     title: "确认预订草稿",
-    summary: "PMS 已准备预订草稿待审批操作；点击确认只会确认草稿 pending-action，不代表最终预订已创建。",
+    summary: "PMS 已准备预订确认卡；点击确认后将创建正式预订和房间分配。",
     confirmLabel: "确认",
     cancelLabel: "取消"
   };

@@ -1,6 +1,6 @@
 import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
-import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import { isPmsWorkflowRejectedResult, type PmsEvidence, type PmsWorkflowRejectedResult } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle } from "./context-bundle.js";
 import { createRedactedSessionState, rememberRefs, rememberTurn } from "./continuity.js";
 import { promptAssistantTurn, type AssistantTurn } from "./pi-io.js";
@@ -169,6 +169,9 @@ function runPiNativeToolResults(session: UnifiedAgentSession, assistantTurn: Ass
       evidence.push(details.value);
       continue;
     }
+    if (details.outcome === "allow" && "value" in details && isPmsWorkflowRejectedResult(details.value)) {
+      return { kind: "handled", result: workflowRejectedResult(details.value) };
+    }
     publicTexts.push(toolContentText(toolResult.result));
   }
 
@@ -185,6 +188,14 @@ function runPiNativeToolResults(session: UnifiedAgentSession, assistantTurn: Ass
   return {
     kind: "handled",
     result: synthesizeTextReply({ text, context }).result
+  };
+}
+
+function workflowRejectedResult(rejected: PmsWorkflowRejectedResult): AgentResult {
+  return {
+    type: "refusal",
+    reason: "unsupported",
+    message: rejected.summary,
   };
 }
 

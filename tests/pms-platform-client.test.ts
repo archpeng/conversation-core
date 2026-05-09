@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createPmsPlatformClient,
   PmsPlatformClientError,
+  PmsPlatformRejectedError,
   type PmsFetch
 } from "../packages/pms-platform-client/src/index.js";
 
@@ -276,6 +277,37 @@ describe("PMS Platform client evidence", () => {
         expect(String(error)).not.toContain("raw-platform-secret");
       }
     }
+  });
+
+  it("parses structured workflow rejections instead of treating them as invalid responses", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: false,
+          operation: "pms.reservation.group_quote",
+          status: "rejected",
+          mutationStatus: "none",
+          groupDraft: { groupDraftRef: "group_1", status: "collectingSlots", missingSlots: ["roomSelections"] },
+          errors: [{ code: "RESERVATION_GROUP_DRAFT_MISSING_REQUIRED_SLOTS", message: "Reservation group draft is missing required slots.", field: "missingSlots" }],
+        }),
+      }),
+    });
+
+    await expect(client.quoteReservationGroupDraft({ tenantId: "tenant_1", groupDraftRef: "group_1" }))
+      .rejects.toMatchObject({
+        name: "PmsPlatformRejectedError",
+        result: {
+          operation: "pms.reservation.group_quote",
+          errors: [{ code: "RESERVATION_GROUP_DRAFT_MISSING_REQUIRED_SLOTS" }],
+          missingSlots: ["roomSelections"],
+          summary: "草稿缺少房间选择，无法报价。 缺失项：roomSelections。",
+        },
+      });
+    await expect(client.quoteReservationGroupDraft({ tenantId: "tenant_1", groupDraftRef: "group_1" }))
+      .rejects.toBeInstanceOf(PmsPlatformRejectedError);
   });
 
   it("wraps inventorySummary in evidence with parsed result", async () => {
