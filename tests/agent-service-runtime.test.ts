@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
-import { createRuntimeExecutors, createRuntimePiSessionFactory, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
+import { createRuntimeExecutors, createRuntimePiSessionFactory, createRuntimeResourceLoaderFactory, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
 
 describe("agent service runtime wiring", () => {
   it("loads runtime defaults and explicit opt-ins", () => {
@@ -91,13 +91,70 @@ describe("agent service runtime wiring", () => {
       .rejects.toThrow("model_not_resolved: Pi ModelRegistry could not resolve openai/missing-model-for-test");
   });
 
+  it("injects a virtual PMS hotel profile context file before Pi session creation", async () => {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (String(url).endsWith("/v1/pms/hotel/profile")) {
+        return { ok: true, status: 200, json: async () => ({ readModel: {
+          propertyId: "property-small-hotel",
+          propertyName: "PMS 小型酒店样板",
+          timeZone: "Asia/Shanghai",
+          status: "active",
+          roomTotal: 13,
+          roomTypes: [
+            { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" }
+          ]
+        } }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ readModel: { propertyId: "property-small-hotel", roomTypes: [
+        { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+        { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+        { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+      ] } }) } as Response;
+    }) as typeof fetch;
+    try {
+      const config = loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+      });
+      const loader = await createRuntimeResourceLoaderFactory(config)("system prompt");
+      const profileFile = loader.getAgentsFiles().agentsFiles.find((file) => file.path === "/virtual/PMS_HOTEL_PROFILE.md");
+
+      expect(profileFile?.content).toContain("PMS Platform safe-read snapshot");
+      expect(profileFile?.content).toContain("hotelName: PMS 小型酒店样板");
+      expect(profileFile?.content).toContain("configuredRoomTotal: 13");
+      expect(profileFile?.content).toContain("花园别墅: 6 rooms");
+      expect(profileFile?.content).toContain("Availability, price, reservation, room status");
+      expect(calls.map((call) => call.url)).toEqual([
+        "http://127.0.0.1:8791/v1/pms/hotel/profile",
+        "http://127.0.0.1:8791/v1/pms/room-types/catalog"
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("routes generated availability executor to PMS Platform availability search", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
       const body = JSON.parse(String(init?.body));
-      calls.push({ url: String(url), body });
-      if (body.startDate === "2026-05-11" && body.roomTypeKeyword === undefined) {
+      calls.push({ url: href, body });
+      if (href.endsWith("/v1/pms/room-types/catalog")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ readModel: { propertyId: "property-small-hotel", roomTypes: [
+            { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+            { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+            { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+          ] } })
+        } as Response;
+      }
+      if (href.endsWith("/v1/pms/availability/search") && body.startDate === "2026-05-11" && body.roomTypeKeyword === undefined) {
         return {
           ok: true,
           status: 200,
@@ -118,7 +175,7 @@ describe("agent service runtime wiring", () => {
         PMS_AGENT_DEFAULT_CHECK_OUT_DATE: "2026-05-07"
       }));
 
-      await executors.pmsReadExecutors?.pms_availability_search({
+      await executors.pmsReadExecutors?.pms_availability_search?.({
         auditId: "audit_1",
         decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
         request: {
@@ -130,7 +187,7 @@ describe("agent service runtime wiring", () => {
           quantity: 2
         }
       });
-      await executors.pmsReadExecutors?.pms_availability_search({
+      const unrestrictedText = await executors.pmsReadExecutors?.pms_availability_search?.({
         auditId: "audit_2",
         decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
         request: {
@@ -143,7 +200,7 @@ describe("agent service runtime wiring", () => {
           roomType: "不限制房型"
         }
       });
-      const unmatchedRoomType = await executors.pmsReadExecutors?.pms_availability_search({
+      const unmatchedRoomType = await executors.pmsReadExecutors?.pms_availability_search?.({
         auditId: "audit_3",
         decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
         request: {
@@ -155,6 +212,18 @@ describe("agent service runtime wiring", () => {
           roomType: "大床房"
         }
       });
+      const configuredButUnavailable = await executors.pmsReadExecutors?.pms_availability_search?.({
+        auditId: "audit_4",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
+        request: {
+          capabilityId: "pms_availability_search",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          checkInDate: "2026-05-11",
+          checkOutDate: "2026-05-13",
+          roomType: "花园别墅"
+        }
+      });
 
       expect(calls).toEqual([
         {
@@ -162,21 +231,29 @@ describe("agent service runtime wiring", () => {
           body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", count: 2, startDate: "2026-05-09", endDate: "2026-05-10" }
         },
         {
-          url: "http://127.0.0.1:8791/v1/pms/availability/search",
-          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-17", startDate: "2026-05-11", endDate: "2026-05-17" }
+          url: "http://127.0.0.1:8791/v1/pms/room-types/catalog",
+          body: { operation: "pms_room_type_catalog", propertyId: "property-small-hotel" }
+        },
+        {
+          url: "http://127.0.0.1:8791/v1/pms/room-types/catalog",
+          body: { operation: "pms_room_type_catalog", propertyId: "property-small-hotel" }
+        },
+        {
+          url: "http://127.0.0.1:8791/v1/pms/room-types/catalog",
+          body: { operation: "pms_room_type_catalog", propertyId: "property-small-hotel" }
         },
         {
           url: "http://127.0.0.1:8791/v1/pms/availability/search",
-          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-13", startDate: "2026-05-11", endDate: "2026-05-13", roomType: "大床房", roomTypeKeyword: "大床房" }
+          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-13", startDate: "2026-05-11", endDate: "2026-05-13", roomType: "花园别墅", roomTypeKeyword: "花园别墅" }
         },
-        {
-          url: "http://127.0.0.1:8791/v1/pms/availability/search",
-          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-13", startDate: "2026-05-11", endDate: "2026-05-13" }
-        }
       ]);
-      expect(unmatchedRoomType?.summary).toContain("requested room type 大床房 returned 0 rooms");
-      expect(unmatchedRoomType?.summary).toContain("花园别墅 2");
-      expect(unmatchedRoomType?.summary).toContain("花园套房 1");
+      expect(unrestrictedText?.summary).toContain("no configured room type 不限制房型");
+      expect(unmatchedRoomType?.summary).toContain("no configured room type 大床房");
+      expect(unmatchedRoomType?.summary).toContain("花园别墅 6");
+      expect(unmatchedRoomType?.summary).toContain("花园套房 2");
+      expect(unmatchedRoomType?.summary).toContain("秘境洞穴 5");
+      expect(configuredButUnavailable?.summary).toContain("configured room type 花园别墅");
+      expect(configuredButUnavailable?.summary).toContain("returned 0 rooms");
     } finally {
       globalThis.fetch = originalFetch;
     }

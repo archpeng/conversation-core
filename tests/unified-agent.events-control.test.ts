@@ -81,6 +81,8 @@ function availabilityEvidence(summary: string) {
 
 function readExecutors(evidence: ReturnType<typeof availabilityEvidence>): PmsReadExecutorMap {
   return {
+    pms_hotel_profile: () => evidence as never,
+    pms_room_type_catalog: () => evidence as never,
     pms_availability_search: () => evidence,
     pms_inventory_summary: () => evidence as never,
     pms_room_reservation_context: () => evidence as never,

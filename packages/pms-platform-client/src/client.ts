@@ -21,6 +21,7 @@ import {
   parseAvailabilitySearchResult,
   parseCapabilityManifest,
   parseHealthResult,
+  parseHotelProfileResult,
   parsePendingActionStatusFact,
   parseReservationConfirmPreparation,
   parseReservationDraftFact,
@@ -30,15 +31,18 @@ import {
   parseReservationGroupQuoteFact,
   parseReservationQuoteFact,
   parseRoomFact,
+  parseRoomTypeCatalogResult,
   validateCreateReservationDraftInput,
   validateCreateReservationGroupDraftInput,
   validateGetReservationInput,
   validateGetRoomInput,
+  validateHotelProfileInput,
   validatePendingActionStatusInput,
   validatePrepareReservationConfirmInput,
   validatePrepareReservationGroupConfirmInput,
   validateQuoteReservationGroupDraftInput,
   validateQuoteReservationDraftInput,
+  validateRoomTypeCatalogInput,
   validateSearchAvailabilityInput,
   validateTenantScopedInput,
   validateUpdateReservationDraftInput,
@@ -49,6 +53,8 @@ import {
   type GetReservationInput,
   type GetRoomInput,
   type HealthResult,
+  type HotelProfileInput,
+  type HotelProfileResult,
   type PendingActionStatusFact,
   type PendingActionStatusInput,
   type PmsCapabilityManifest,
@@ -63,6 +69,8 @@ import {
   type ReservationGroupQuoteFact,
   type ReservationQuoteFact,
   type RoomFact,
+  type RoomTypeCatalogInput,
+  type RoomTypeCatalogResult,
   type SearchAvailabilityInput,
   type UpdateReservationDraftInput,
   type UpdateReservationGroupDraftInput
@@ -72,6 +80,8 @@ type HttpMethod = "GET" | "POST";
 type PmsRoute =
   | "/health"
   | "/v1/pms/capabilities/manifest"
+  | "/v1/pms/hotel/profile"
+  | "/v1/pms/room-types/catalog"
   | "/v1/pms/availability/search"
   | "/v1/pms/room"
   | "/v1/pms/reservations/get"
@@ -114,6 +124,8 @@ export type PmsPlatformClientOptions = {
 export type PmsPlatformClient = {
   health(): Promise<HealthResult>;
   capabilitiesManifest(input: { tenantId: string }): Promise<PmsEvidence<PmsCapabilityManifest>>;
+  hotelProfile(input: HotelProfileInput): Promise<PmsEvidence<HotelProfileResult>>;
+  roomTypeCatalog(input: RoomTypeCatalogInput): Promise<PmsEvidence<RoomTypeCatalogResult>>;
   searchAvailability(input: SearchAvailabilityInput): Promise<PmsEvidence<AvailabilitySearchResult>>;
   getRoom(input: GetRoomInput): Promise<PmsEvidence<RoomFact>>;
   getReservation(input: GetReservationInput): Promise<PmsEvidence<ReservationFact>>;
@@ -155,6 +167,14 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
     capabilitiesManifest: (input) => {
       validateInput("capabilitiesManifest", () => validateTenantScopedInput(input));
       return requestEvidence(options, now, "capabilitiesManifest", input.tenantId, { method: "GET", route: "/v1/pms/capabilities/manifest" }, parseCapabilityManifest, capabilitySummary);
+    },
+    hotelProfile: (input) => {
+      validateInput("hotelProfile", () => validateHotelProfileInput(input));
+      return requestEvidence(options, now, "hotelProfile", input.tenantId, { method: "POST", route: "/v1/pms/hotel/profile", body: propertyScopedRequestBody("pms_hotel_profile", input) }, parseHotelProfileResult, hotelProfileSummary);
+    },
+    roomTypeCatalog: (input) => {
+      validateInput("roomTypeCatalog", () => validateRoomTypeCatalogInput(input));
+      return requestEvidence(options, now, "roomTypeCatalog", input.tenantId, { method: "POST", route: "/v1/pms/room-types/catalog", body: propertyScopedRequestBody("pms_room_type_catalog", input) }, parseRoomTypeCatalogResult, roomTypeCatalogSummary);
     },
     searchAvailability: (input) => {
       validateInput("searchAvailability", () => validateSearchAvailabilityInput(input));
@@ -279,6 +299,13 @@ function availabilityRequestBody(input: SearchAvailabilityInput): Record<string,
   };
 }
 
+function propertyScopedRequestBody(operation: string, input: { propertyId?: string }): Record<string, unknown> {
+  return {
+    operation,
+    ...(input.propertyId ? { propertyId: input.propertyId } : {})
+  };
+}
+
 function createReservationDraftRequestBody(input: CreateReservationDraftInput, now: () => Date): Record<string, unknown> {
   return {
     ...reservationWorkflowRequestBody("pms.reservation.draft.create", input, now),
@@ -397,13 +424,25 @@ function capabilitySummary(value: PmsCapabilityManifest): string {
   return `PMS capability manifest returned ${value.capabilities.length} capabilities.`;
 }
 
+function hotelProfileSummary(value: HotelProfileResult): string {
+  const roomTypes = roomTypeCatalogParts(value.roomTypes);
+  return `Hotel profile returned ${value.propertyName} (${value.propertyId}), timezone ${value.timeZone}, status ${value.status}, ${value.roomTotal} rooms.${roomTypes}`;
+}
+
+function roomTypeCatalogSummary(value: RoomTypeCatalogResult): string {
+  const roomTypes = roomTypeCatalogParts(value.roomTypes);
+  return `Room type catalog returned ${value.roomTypes.length} active room types.${roomTypes}`;
+}
+
+function roomTypeCatalogParts(roomTypes: readonly { displayName: string; roomCount: number }[]): string {
+  return roomTypes.length
+    ? ` Room types: ${roomTypes.map((item) => `${item.displayName} ${item.roomCount}`).join(", ")}.`
+    : " No active room types are configured.";
+}
+
 function availabilitySummary(value: AvailabilitySearchResult): string {
   const roomTypes = value.availableRoomTypes?.length
     ? ` Room types: ${value.availableRoomTypes.map((item) => `${item.roomType} ${item.count}`).join(", ")}.`
     : "";
-  const alternatives = value.alternativeRoomTypes?.length
-    ? ` Same dates without the requested room-type filter have: ${value.alternativeRoomTypes.map((item) => `${item.roomType} ${item.count}`).join(", ")}.`
-    : "";
-  const requested = value.requestedRoomType ? ` for requested room type ${value.requestedRoomType}` : "";
-  return `Availability search${requested} returned ${value.rooms.length} rooms.${roomTypes}${alternatives}`;
+  return `Availability search returned ${value.rooms.length} rooms.${roomTypes}`;
 }

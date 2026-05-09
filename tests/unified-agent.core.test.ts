@@ -109,6 +109,8 @@ describe("unified Agent runtime", () => {
       tenantId: "tenant_1",
       executors: {
         pmsReadExecutors: {
+          pms_hotel_profile: () => undefined as never,
+          pms_room_type_catalog: () => undefined as never,
           pms_availability_search: () => createPmsEvidence({
           method: "searchAvailability",
           tenantId: "tenant_1",
@@ -157,6 +159,8 @@ describe("unified Agent runtime", () => {
       actor: { profile: "customer", id: "customer_1" },
       tenantId: "tenant_1",
       executors: { pmsReadExecutors: {
+        pms_hotel_profile: () => evidence as never,
+        pms_room_type_catalog: () => evidence as never,
         pms_availability_search: () => evidence,
         pms_inventory_summary: () => evidence as never,
         pms_room_reservation_context: () => evidence as never,
@@ -261,6 +265,7 @@ describe("unified Agent runtime", () => {
     expect(prompts[0]).toContain("Visible Pi custom tools:");
     expect(prompts[0]).toContain("Use the visible Pi custom tools directly");
     expect(prompts[0]).not.toContain("ToolPlanAction JSON-only output contract:");
+    expect(prompts[0]).toContain('"name": "pms_room_type_catalog"');
     expect(prompts[0]).toContain('"name": "pms_availability_search"');
     expect(prompts[0]).toContain('"name": "pms_inventory_summary"');
     expect(prompts[0]).toContain('"name": "pms_reservation_prepare_confirm"');
@@ -329,11 +334,14 @@ describe("unified Agent runtime", () => {
   it("repairs assistant PMS fact text by forcing a Pi-native PMS tool call", async () => {
     const prompts: string[] = [];
     const evidence = createPmsEvidence({
-      method: "searchAvailability",
+      method: "roomTypeCatalog",
       tenantId: "tenant_1",
       fetchedAt: "2026-05-06T12:00:00.000Z",
-      summary: "Availability search returned 3 rooms. Room types: 花园别墅 2, 花园套房 1.",
-      data: { rooms: [], availableRoomTypes: [{ roomType: "花园别墅", count: 2 }, { roomType: "花园套房", count: 1 }] }
+      summary: "Room type catalog returned 2 active room types. Room types: 花园别墅 2, 花园套房 1.",
+      data: { roomTypes: [
+        { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 2, status: "active" },
+        { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 1, status: "active" }
+      ] }
     });
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
@@ -341,8 +349,8 @@ describe("unified Agent runtime", () => {
       createAgentSession: fakeCreateAgentSessionWithToolCalls([
         { text: "PMS 证据显示有可订房型。" },
         {
-          calls: [{ toolName: "pms_availability_search", params: { checkInDate: "2026-05-11", checkOutDate: "2026-05-13" } }],
-          text: `可订房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`
+          calls: [{ toolName: "pms_room_type_catalog", params: {} }],
+          text: `本酒店房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`
         }
       ], prompts),
       executors: { pmsReadExecutors: readExecutors(evidence) }
@@ -352,7 +360,7 @@ describe("unified Agent runtime", () => {
 
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain("Evidence repair turn.");
-    expect(result).toEqual({ type: "text", text: `可订房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
+    expect(result).toEqual({ type: "text", text: `本酒店房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
   });
 
   it("passes assistant PMS fact text when current PMS evidence is supplied to synthesis", async () => {
@@ -379,6 +387,8 @@ describe("unified Agent runtime", () => {
 
 function readExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
   return {
+    pms_hotel_profile: () => evidence as never,
+    pms_room_type_catalog: () => evidence as never,
     pms_availability_search: () => evidence as never,
     pms_inventory_summary: () => evidence as never,
     pms_room_reservation_context: () => evidence as never,

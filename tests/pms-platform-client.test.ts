@@ -16,6 +16,8 @@ describe("PMS Platform client evidence", () => {
     });
 
     const manifest = await client.capabilitiesManifest({ tenantId: "tenant_1" });
+    const profile = await client.hotelProfile({ tenantId: "tenant_1", propertyId: "property-small-hotel" });
+    const catalog = await client.roomTypeCatalog({ tenantId: "tenant_1", propertyId: "property-small-hotel" });
     const availability = await client.searchAvailability({ tenantId: "tenant_1", hotelId: "hotel_1", checkInDate: "2026-05-06", checkOutDate: "2026-05-07" });
     const room = await client.getRoom({ tenantId: "tenant_1", roomId: "room_1" });
     const reservation = await client.getReservation({ tenantId: "tenant_1", reservationId: "res_1" });
@@ -25,7 +27,7 @@ describe("PMS Platform client evidence", () => {
     const prepareConfirm = await client.prepareReservationConfirm({ tenantId: "tenant_1", draftId: "draft_1" });
     const pendingStatus = await client.pendingActionStatus({ tenantId: "tenant_1", pendingActionId: "pending_1" });
 
-    for (const evidence of [manifest, availability, room, reservation, createdDraft, updatedDraft, quote, prepareConfirm, pendingStatus]) {
+    for (const evidence of [manifest, profile, catalog, availability, room, reservation, createdDraft, updatedDraft, quote, prepareConfirm, pendingStatus]) {
       expect(evidence.evidenceRef).toMatch(/^pms_ev_tenant_1_/);
       expect(evidence.fetchedAt).toBe("2026-05-06T12:00:00.000Z");
       expect(evidence.source.system).toBe("pms-platform");
@@ -33,13 +35,22 @@ describe("PMS Platform client evidence", () => {
       expect(evidence.summary).not.toContain("secret-token");
     }
 
+    expect(profile.data).toMatchObject({ propertyId: "property-small-hotel", propertyName: "PMS 小型酒店样板", roomTotal: 13 });
+    expect(profile.summary).toContain("13 rooms");
+    expect(catalog.data.roomTypes).toEqual([
+      { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+      { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+      { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+    ]);
     expect(availability.data.rooms).toEqual([]);
     expect(availability.summary).toBe("Availability search returned 0 rooms.");
-    expect(calls[1].body).toMatchObject({ checkInDate: "2026-05-06", checkOutDate: "2026-05-07", startDate: "2026-05-06", endDate: "2026-05-07" });
+    expect(calls[3].body).toMatchObject({ checkInDate: "2026-05-06", checkOutDate: "2026-05-07", startDate: "2026-05-06", endDate: "2026-05-07" });
     expect(prepareConfirm.data).toMatchObject({ pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" });
     expect(pendingStatus.data).toEqual({ pendingActionId: "pending_1", status: "pending" });
     expect(calls.map((call) => call.url)).toEqual([
       "https://pms.local/v1/pms/capabilities/manifest",
+      "https://pms.local/v1/pms/hotel/profile",
+      "https://pms.local/v1/pms/room-types/catalog",
       "https://pms.local/v1/pms/availability/search",
       "https://pms.local/v1/pms/room",
       "https://pms.local/v1/pms/reservations/get",
@@ -203,6 +214,7 @@ describe("PMS Platform client evidence", () => {
       "getReservation",
       "getRoom",
       "health",
+      "hotelProfile",
       "inventorySummary",
       "pendingActionStatus",
       "prepareReservationConfirm",
@@ -211,6 +223,7 @@ describe("PMS Platform client evidence", () => {
       "quoteReservationGroupDraft",
       "reservationLookup",
       "roomReservationContext",
+      "roomTypeCatalog",
       "searchAvailability",
       "todayArrivals",
       "todayDepartures",
@@ -508,6 +521,30 @@ function fakeFetch(calls: Array<{ url: string; method: string; body?: unknown }>
 function responseFor(url: string): unknown {
   if (url.endsWith("/health")) return { ok: true };
   if (url.endsWith("/v1/pms/capabilities/manifest")) return { capabilities: ["availability", "drafts", "pending_actions"] };
+  if (url.endsWith("/v1/pms/hotel/profile")) return {
+    readModel: {
+      propertyId: "property-small-hotel",
+      propertyName: "PMS 小型酒店样板",
+      timeZone: "Asia/Shanghai",
+      status: "active",
+      roomTotal: 13,
+      roomTypes: [
+        { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+        { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+        { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+      ]
+    }
+  };
+  if (url.endsWith("/v1/pms/room-types/catalog")) return {
+    readModel: {
+      propertyId: "property-small-hotel",
+      roomTypes: [
+        { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+        { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+        { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+      ]
+    }
+  };
   if (url.endsWith("/v1/pms/availability/search")) return { rooms: [] };
   if (url.endsWith("/v1/pms/room")) return { roomId: "room_1", roomType: "deluxe", status: "available" };
   if (url.endsWith("/v1/pms/reservations/get")) return { reservationId: "res_1", status: "draft", roomId: "room_1" };

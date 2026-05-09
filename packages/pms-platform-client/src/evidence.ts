@@ -5,6 +5,8 @@ export type PmsEvidenceSource = {
 
 export type PmsEvidenceMethod =
   | "capabilitiesManifest"
+  | "hotelProfile"
+  | "roomTypeCatalog"
   | "searchAvailability"
   | "getRoom"
   | "getReservation"

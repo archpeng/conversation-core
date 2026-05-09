@@ -1,6 +1,6 @@
 import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
-import type { AvailabilitySearchResult, PmsEvidence, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
+import type { AvailabilitySearchResult, PmsEvidence, RoomAvailability, RoomTypeCatalogResult } from "@pms-agent-v2/pms-platform-client";
 import type { GatedToolDefinition } from "./pi-session.js";
 import type { RedactedSessionState } from "./continuity.js";
 import { sessionSlotValue } from "./continuity.js";
@@ -11,7 +11,7 @@ export type CustomerLoopResult = {
   pendingActionRefs?: string[];
 };
 
-type Intent = "availability" | "prepare_confirm" | "natural_confirm" | "none";
+type Intent = "availability" | "room_type_catalog" | "prepare_confirm" | "natural_confirm" | "none";
 
 export async function runCustomerPmsLoop(input: {
   turn: FeishuTurnInput;
@@ -20,6 +20,7 @@ export async function runCustomerPmsLoop(input: {
 }): Promise<CustomerLoopResult | undefined> {
   const intent = detectIntent(input.turn.message.text, input.state);
 
+  if (intent === "room_type_catalog") return roomTypeCatalogReply(input.tools);
   if (intent === "availability") return availabilityReply(input.turn, input.tools, input.state);
   if (intent === "prepare_confirm") return prepareConfirmReply(input.turn, input.tools);
   if (intent === "natural_confirm") return naturalConfirmReply(input.turn, input.state);
@@ -30,9 +31,28 @@ function detectIntent(message: string, state: RedactedSessionState): Intent {
   const text = message.toLowerCase();
   if (/确认|confirm/.test(text)) return "natural_confirm";
   if (/预订|预定|reserve|book/.test(text)) return "prepare_confirm";
+  if (hasRoomTypeCatalogCue(message) && !hasDateCue(message)) return "room_type_catalog";
   if (/有房|空房|availability|available|room/.test(text)) return "availability";
   if (state.evidenceRefs.length > 0 && /继续|那|明天|tomorrow|follow/.test(text)) return "availability";
   return "none";
+}
+
+async function roomTypeCatalogReply(tools: readonly GatedToolDefinition[]): Promise<CustomerLoopResult> {
+  const evidence = await runEvidenceTool<RoomTypeCatalogResult>(tools, "pms_room_type_catalog", {});
+  if (!evidence.ok) return { result: evidence.result };
+  if (evidence.value.source.system !== "pms-platform" || evidence.value.source.method !== "roomTypeCatalog") {
+    return { result: { type: "refusal", reason: "unsupported", message: "PMS room type catalog evidence is missing." } };
+  }
+
+  const roomTypes = evidence.value.data.roomTypes.map((roomType) => `${roomType.displayName}（${roomType.roomCount} 间）`).join("、") || "未配置房型";
+  return {
+    result: {
+      type: "text",
+      text: `PMS 证据显示本酒店配置房型：${roomTypes}。evidenceRefs=${evidence.value.evidenceRef}`,
+      evidenceRefs: [evidence.value.evidenceRef]
+    },
+    evidenceRefs: [evidence.value.evidenceRef]
+  };
 }
 
 async function availabilityReply(turn: FeishuTurnInput, tools: readonly GatedToolDefinition[], state: RedactedSessionState): Promise<CustomerLoopResult> {
@@ -132,6 +152,10 @@ function hasDateCue(message: string): boolean {
 
 function hasRoomTypeCue(message: string): boolean {
   return /房型|大床|双床|套房|king|twin|suite|room type/i.test(message);
+}
+
+function hasRoomTypeCatalogCue(message: string): boolean {
+  return /有哪些房型|有什么房型|房型.*(有哪些|有什么|列表|目录)|room types?/i.test(message);
 }
 
 function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {

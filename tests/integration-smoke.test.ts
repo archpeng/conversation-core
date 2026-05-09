@@ -171,6 +171,8 @@ function localPmsReadExecutors(calls: string[]): PmsReadExecutorMap {
     });
   };
   return {
+    pms_hotel_profile: read as never,
+    pms_room_type_catalog: read as never,
     pms_availability_search: read,
     pms_inventory_summary: read as never,
     pms_room_reservation_context: read as never,

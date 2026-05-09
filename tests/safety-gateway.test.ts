@@ -130,6 +130,8 @@ describe("Safety Gateway policy kernel", () => {
   });
 
   const safeReadCapabilityIds = [
+    "pms_hotel_profile",
+    "pms_room_type_catalog",
     "pms_availability_search",
     "pms_inventory_summary",
     "pms_room_reservation_context",

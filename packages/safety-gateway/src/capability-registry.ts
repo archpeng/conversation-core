@@ -3,6 +3,8 @@ import { capabilityRisks, type CapabilityRisk } from "./risk.js";
 
 export const capabilityIds = [
   "pms_confirm",
+  "pms_hotel_profile",
+  "pms_room_type_catalog",
   "pms_availability_search",
   "pms_inventory_summary",
   "pms_room_reservation_context",
@@ -51,6 +53,18 @@ export const capabilityRegistry: Record<CapabilityId, CapabilityDefinition> = {
     kind: "pms",
     risk: capabilityRisks.pmsConfirm,
     constraints: ["tenant_scope_required", "pending_action_required", "typed_approval_required"]
+  },
+  pms_hotel_profile: {
+    id: "pms_hotel_profile",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_room_type_catalog: {
+    id: "pms_room_type_catalog",
+    kind: "pms",
+    risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
   },
   pms_availability_search: {
     id: "pms_availability_search",

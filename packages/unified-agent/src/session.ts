@@ -242,9 +242,13 @@ function pmsEvidenceDiagnostics(evidence: PmsEvidence<unknown>): Record<string, 
   if (evidence.source.method === "searchAvailability" && data) {
     return compactDiagnostics({
       roomCount: Array.isArray(data.rooms) ? data.rooms.length : undefined,
-      roomTypes: data.availableRoomTypes,
-      requestedRoomType: data.requestedRoomType,
-      alternativeRoomTypes: data.alternativeRoomTypes
+      roomTypes: data.availableRoomTypes
+    });
+  }
+  if ((evidence.source.method === "hotelProfile" || evidence.source.method === "roomTypeCatalog") && data) {
+    return compactDiagnostics({
+      roomTotal: data.roomTotal,
+      roomTypes: data.roomTypes
     });
   }
   if (evidence.source.method === "inventorySummary" && data) {

@@ -13,6 +13,7 @@ import {
   llmPlanPmsReadGrounded,
   llmPlanRawToolRejected,
   naturalConfirm,
+  nonexistentRoomType,
   prepareConfirm,
   profileBoundary,
   promptInjection,
@@ -93,6 +94,7 @@ export async function runMvpEvals(): Promise<EvalRunResult> {
 function evalCases(writer: SafetyAuditJsonlWriter): readonly { id: string; category: EvalCategory; run: () => Promise<void> }[] {
   return [
     { id: "availability-discrepancy-12-candidates-not-total", category: "availability-discrepancy", run: () => availabilityDiscrepancy(writer) },
+    { id: "nonexistent-room-type-catalog-backed", category: "availability-discrepancy", run: () => nonexistentRoomType(writer) },
     { id: "grounded-availability", category: "grounding", run: () => groundedAvailability(writer) },
     { id: "prepare-confirm-audit-chain", category: "prepare-confirm", run: () => prepareConfirm(writer) },
     { id: "natural-confirm-no-mutation", category: "natural-confirm", run: () => naturalConfirm(writer) },

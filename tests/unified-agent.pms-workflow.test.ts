@@ -140,6 +140,8 @@ function readExecutors(
     data: { dates: [] }
   });
   return {
+    pms_hotel_profile: () => availability as never,
+    pms_room_type_catalog: () => availability as never,
     pms_availability_search: ({ request }) => {
       calls?.push(request.capabilityId);
       return availability;

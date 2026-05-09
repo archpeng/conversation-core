@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { GatedToolExecutor, GatedToolRequest } from "@pms-agent-v2/gated-tools";
-import { createPmsPlatformClient, type AvailabilitySearchResult, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
+import { createPmsPlatformClient, type AvailabilitySearchResult, type PmsEvidence, type RoomTypeCatalogItem, type RoomTypeCatalogResult } from "@pms-agent-v2/pms-platform-client";
 import type {
   PmsReadExecutorMap,
   PmsWorkflowExecutorMap,
@@ -29,6 +29,18 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
   });
 
   const pmsReadExecutors: PmsReadExecutorMap = {
+    pms_hotel_profile: async ({ request }) =>
+      client.hotelProfile({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId
+      }),
+
+    pms_room_type_catalog: async ({ request }) =>
+      client.roomTypeCatalog({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId
+      }),
+
     pms_availability_search: async ({ request }) => {
       const roomType = availabilityRoomType(request.roomType, config.defaultRoomType);
       const baseSearch = {
@@ -38,13 +50,26 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
         checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
         ...(request.quantity && request.quantity > 1 ? { quantity: request.quantity } : {}),
       };
+      if (!roomType) return client.searchAvailability(baseSearch);
+
+      const catalogEvidence = await client.roomTypeCatalog({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId
+      });
+      const matchedRoomType = findCatalogRoomType(catalogEvidence.data.roomTypes, roomType);
+      if (!matchedRoomType) {
+        return catalogBackedRoomTypeMissEvidence(catalogEvidence, roomType);
+      }
+
       const evidence = await client.searchAvailability({
         ...baseSearch,
-        ...(roomType ? { roomType } : {})
+        roomType: matchedRoomType.displayName
       });
-      if (roomType && evidence.data.rooms.length === 0) {
-        const broadEvidence = await client.searchAvailability(baseSearch);
-        return availabilityEvidenceWithAlternatives(evidence, roomType, broadEvidence.data);
+      if (evidence.data.rooms.length === 0) {
+        return {
+          ...evidence,
+          summary: `Availability search returned 0 rooms for configured room type ${matchedRoomType.displayName} from ${baseSearch.checkInDate} to ${baseSearch.checkOutDate}.`
+        };
       }
       return evidence;
     },
@@ -216,29 +241,32 @@ function availabilityRoomType(requested: string | undefined, defaultRoomType: st
 function normalizedRoomType(value: string | undefined): string | undefined {
   const text = value?.trim();
   if (!text) return undefined;
-  if (text === "*" || text === "/" || text === "-") return undefined;
-  if (/^(不限制|不限)(房型|房间|客房)?$/i.test(text)) return undefined;
-  if (/^(全部|所有|任意)(房型|房间|客房|可订房型|可订房间|可订客房)?$/i.test(text)) return undefined;
-  if (/^(全酒店|房|房间|客房|房源|可订房|可订房间|可订客房)$/i.test(text)) return undefined;
   return text;
 }
 
-function availabilityEvidenceWithAlternatives(
-  evidence: PmsEvidence<AvailabilitySearchResult>,
-  requestedRoomType: string,
-  broadAvailability: AvailabilitySearchResult
+function findCatalogRoomType(roomTypes: readonly RoomTypeCatalogItem[], requestedRoomType: string): RoomTypeCatalogItem | undefined {
+  const needle = requestedRoomType.trim().toLocaleLowerCase();
+  return roomTypes.find((roomType) =>
+    roomType.displayName.toLocaleLowerCase() === needle
+    || roomType.code.toLocaleLowerCase() === needle
+    || roomType.roomTypeId.toLocaleLowerCase() === needle
+  );
+}
+
+function catalogBackedRoomTypeMissEvidence(
+  evidence: PmsEvidence<RoomTypeCatalogResult>,
+  requestedRoomType: string
 ): PmsEvidence<AvailabilitySearchResult> {
-  const alternativeRoomTypes = broadAvailability.availableRoomTypes ?? [];
-  const alternatives = alternativeRoomTypes.length
-    ? ` Same dates without room-type filter have available room types: ${alternativeRoomTypes.map((item) => `${item.roomType} ${item.count}`).join(", ")}.`
-    : " Same dates without room-type filter also returned 0 available rooms.";
+  const configured = evidence.data.roomTypes.map((item) => `${item.displayName} ${item.roomCount}`).join(", ");
   return {
     ...evidence,
-    summary: `Availability search for requested room type ${requestedRoomType} returned 0 rooms.${alternatives}`,
+    summary: `Room type catalog shows this hotel has no configured room type ${requestedRoomType}. Configured room types: ${configured || "none"}.`,
     data: {
-      ...evidence.data,
-      requestedRoomType,
-      alternativeRoomTypes
+      rooms: [],
+      availableRoomTypes: evidence.data.roomTypes.map((item) => ({
+        roomType: item.displayName,
+        count: item.roomCount
+      }))
     }
   };
 }

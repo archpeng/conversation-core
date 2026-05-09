@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
-import { createPmsEvidence, type AvailabilitySearchResult } from "../packages/pms-platform-client/src/index.js";
+import { createPmsEvidence, type AvailabilitySearchResult, type RoomTypeCatalogResult } from "../packages/pms-platform-client/src/index.js";
 import { createUnifiedAgentSession, runAgentTurn, type AgentSessionFactory, type PmsReadExecutorMap } from "../packages/unified-agent/src/index.js";
 import type { FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
@@ -27,6 +27,34 @@ describe("customer PMS degraded loop", () => {
     expect(response.body).toMatchObject({ type: "text", evidenceRefs: ["pms_ev_tenant_1_searchAvailability_1778068800000"] });
     expect(JSON.stringify(response.body)).toContain("大床房");
     expect(JSON.stringify(response.body)).not.toContain("room_secret_1");
+  });
+
+  it("uses room type catalog instead of availability for no-date room type questions", async () => {
+    let availabilityReads = 0;
+    const response = await runEvalTurn({
+      body: { ...turn, message: { text: "有哪些房型" } },
+      pmsReadExecutors: {
+        ...availabilityExecutors(evidence({ rooms: [] })),
+        pms_availability_search: () => {
+          availabilityReads += 1;
+          return evidence({ rooms: [] });
+        },
+        pms_room_type_catalog: () => catalogEvidence({
+          roomTypes: [
+            { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+            { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" }
+          ]
+        })
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      type: "text",
+      text: "PMS 证据显示本酒店配置房型：花园别墅（6 间）、花园套房（2 间）。evidenceRefs=pms_ev_tenant_1_roomTypeCatalog_1778068800000",
+      evidenceRefs: ["pms_ev_tenant_1_roomTypeCatalog_1778068800000"]
+    });
+    expect(availabilityReads).toBe(0);
   });
 
   it("asks for required availability slots before reading PMS", async () => {
@@ -118,6 +146,8 @@ async function runEvalTurn(input: RunEvalTurnInput) {
 function availabilityExecutors(read: ReturnType<typeof evidence> | (() => ReturnType<typeof evidence>)): PmsReadExecutorMap {
   const readFn = typeof read === "function" ? read : () => read;
   return {
+    pms_hotel_profile: readFn as never,
+    pms_room_type_catalog: readFn as never,
     pms_availability_search: readFn,
     pms_inventory_summary: readFn as never,
     pms_room_reservation_context: readFn as never,
@@ -136,6 +166,16 @@ function evidence(data: AvailabilitySearchResult, fetchedAt = "2026-05-06T12:00:
     fetchedAt,
     data,
     summary: "availability"
+  });
+}
+
+function catalogEvidence(data: RoomTypeCatalogResult, fetchedAt = "2026-05-06T12:00:00.000Z") {
+  return createPmsEvidence({
+    method: "roomTypeCatalog",
+    tenantId: "tenant_1",
+    fetchedAt,
+    data,
+    summary: "room type catalog"
   });
 }
 

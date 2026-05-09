@@ -70,6 +70,7 @@ export function synthesizeTextReply(input: Omit<ResponseSynthesisInput, "draft">
 export function looksLikeCurrentPmsFactReply(text: string): boolean {
   return /PMS\s*(证据|evidence).*?(有|未查到|available|unavailable|priceCents|状态)/i.test(text)
     || /(有\s*\d+\s*个可订候选|未查到可订房型|可订的?房型|可选房型|可用房型|可住(房间|客房)|可用(房间|客房)|暂无可订|没有可订|空房\s*[:：]?\s*(有|无)|available\s*[:=]\s*(true|false))/i.test(text)
+    || /(本酒店|酒店|PMS).*?(房型|客房类型).*?(配置|未配置|共有|包括|有)|房型.*?(未配置|已配置|共有|包括)/i.test(text)
     || /(PMS\s*)?(priceCents=\d+|价格\s*[:：=]\s*\d+|\d+\s*元)/i.test(text)
     || /(预订|订单|reservation|pending action|pendingActionStatus|room state|roomState).*?(状态为|status\s*[:=]|已确认|confirmed|已取消|cancelled)/i.test(text);
 }

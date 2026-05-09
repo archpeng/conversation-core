@@ -1,7 +1,7 @@
 import { createAgentService } from "@pms-agent-v2/agent-service";
 import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import { gatedBash, gatedRead, type GatedDecision, type GatedToolExecutor, type GatedToolRequest, type SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import { createPmsEvidence, type AvailabilitySearchResult, type InventorySummaryResult, type PmsEvidenceMethod, type ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
+import { createPmsEvidence, type AvailabilitySearchResult, type HotelProfileResult, type InventorySummaryResult, type PmsEvidenceMethod, type ReservationConfirmPreparation, type RoomTypeCatalogResult } from "@pms-agent-v2/pms-platform-client";
 import { createSafetyAuditEvent, createSafetyAuditJsonlWriter, decideToolRequest, type SafetyAuditJsonlWriter, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
 import { buildContextBundle, clarificationFromMissingSlot, createRedactedSessionState, createUnifiedAgentSession, loadAgentProfile, mergeIntentFrameIntoSessionState, parseIntentFrame, registerGatedTools, runAgentTurn, synthesizeTextReply, type AgentSessionEvent, type AgentSessionFactory, type PmsReadExecutorMap, type PmsWorkflowExecutorMap, type UnifiedAgentToolExecutors } from "@pms-agent-v2/unified-agent";
 
@@ -596,6 +596,41 @@ export async function availabilityDiscrepancy(writer: SafetyAuditJsonlWriter): P
   assert(auditCount(writer, "pms_inventory_summary", "allow") === inventoryAudits + 1, "availability discrepancy must audit inventory summary safe-read");
 }
 
+export async function nonexistentRoomType(writer: SafetyAuditJsonlWriter): Promise<void> {
+  const availabilityAudits = auditCount(writer, "pms_availability_search", "allow");
+  const evidenceItem = fakePmsEvidence<AvailabilitySearchResult>({
+    method: "roomTypeCatalog",
+    data: {
+      rooms: [],
+      availableRoomTypes: [
+        { roomType: "花园别墅", count: 6 },
+        { roomType: "花园套房", count: 2 },
+        { roomType: "秘境洞穴", count: 5 }
+      ]
+    },
+    summary: "Room type catalog shows this hotel has no configured room type 大床房. Configured room types: 花园别墅 6, 花园套房 2, 秘境洞穴 5."
+  });
+  const session = await createUnifiedAgentSession({
+    turn: customerTurn,
+    gateway: recordingGateway(writer),
+    createAgentSession: queuedToolCallSession([{
+      calls: [{ toolName: "pms_availability_search", params: { checkInDate: "2026-05-06", checkOutDate: "2026-05-07", roomType: "大床房" } }],
+      text: `本酒店未配置“大床房”。当前配置房型：花园别墅 6、花园套房 2、秘境洞穴 5。evidenceRefs=${evidenceItem.evidenceRef}`
+    }]),
+    executors: {
+      pmsReadExecutors: availabilitySafeReadExecutors(evidenceItem)
+    }
+  });
+
+  const result = await runAgentTurn(session, { ...customerTurn, messageId: "message_nonexistent_room_type", message: { text: "2026-05-06 大床房有房吗" } });
+  const text = result.type === "text" ? result.text : "";
+  assert(result.type === "text", "nonexistent room type must produce an evidence-grounded text response");
+  assert(result.evidenceRefs?.[0] === evidenceItem.evidenceRef, "nonexistent room type must cite catalog-backed PMS evidence");
+  assert(text.includes("未配置") && text.includes("花园别墅") && text.includes("秘境洞穴"), "nonexistent room type response must explain the configured room types");
+  assert(!/暂无可订|没有可订|不可订|no available/i.test(text), "nonexistent room type must not be framed as a date availability miss");
+  assert(auditCount(writer, "pms_availability_search", "allow") === availabilityAudits + 1, "nonexistent room type must audit the safe-read tool");
+}
+
 function availabilitySafeReadExecutors(
   availabilityEvidence: ReturnType<typeof fakePmsEvidence<AvailabilitySearchResult>>,
   calls?: string[]
@@ -709,6 +744,34 @@ function discrepancySafeReadExecutors(
   inventoryEvidence: ReturnType<typeof fakePmsEvidence<InventorySummaryResult>>
 ): PmsReadExecutorMap {
   return {
+    pms_hotel_profile: () => fakePmsEvidence<HotelProfileResult>({
+      method: "hotelProfile",
+      data: {
+        propertyId: "property-small-hotel",
+        propertyName: "PMS 小型酒店样板",
+        timeZone: "Asia/Shanghai",
+        status: "active",
+        roomTotal: 13,
+        roomTypes: [
+          { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+          { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+          { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+        ]
+      },
+      summary: "hotel profile"
+    }),
+    pms_room_type_catalog: () => fakePmsEvidence<RoomTypeCatalogResult>({
+      method: "roomTypeCatalog",
+      data: {
+        propertyId: "property-small-hotel",
+        roomTypes: [
+          { roomTypeId: "room-type-garden-villa", code: "garden-villa", displayName: "花园别墅", roomCount: 6, status: "active" },
+          { roomTypeId: "room-type-garden-suite", code: "garden-suite", displayName: "花园套房", roomCount: 2, status: "active" },
+          { roomTypeId: "room-type-cave", code: "cave", displayName: "秘境洞穴", roomCount: 5, status: "active" }
+        ]
+      },
+      summary: "room type catalog"
+    }),
     pms_availability_search: () => availabilityEvidence,
     pms_inventory_summary: () => inventoryEvidence,
     pms_room_reservation_context: () => fakePmsEvidence({

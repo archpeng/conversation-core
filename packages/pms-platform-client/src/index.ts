@@ -16,6 +16,8 @@ export type {
   GetReservationInput,
   GetRoomInput,
   HealthResult,
+  HotelProfileInput,
+  HotelProfileResult,
   PendingActionStatusFact,
   PendingActionStatusInput,
   PmsCapabilityManifest,
@@ -31,6 +33,9 @@ export type {
   ReservationQuoteFact,
   RoomAvailability,
   RoomFact,
+  RoomTypeCatalogInput,
+  RoomTypeCatalogItem,
+  RoomTypeCatalogResult,
   SearchAvailabilityInput,
   UpdateReservationDraftInput,
   UpdateReservationGroupDraftInput
@@ -61,4 +66,3 @@ export {
   validateTodayArrivalsInput,
   validateTodayDeparturesInput
 } from "./inventory-schemas.js";
-

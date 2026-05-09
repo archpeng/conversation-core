@@ -9,6 +9,7 @@ import {
 } from "@pms-agent-v2/gated-tools";
 import type {
   AvailabilitySearchResult,
+  HotelProfileResult,
   InventorySummaryResult,
   PendingActionStatusFact,
   PmsEvidence,
@@ -20,6 +21,7 @@ import type {
   ReservationQuoteFact,
   RoomReservationContextResult,
   RoomFact,
+  RoomTypeCatalogResult,
   TodayArrivalsResult,
   TodayDeparturesResult
 } from "@pms-agent-v2/pms-platform-client";
@@ -32,6 +34,8 @@ import type { TSchema } from "typebox";
 type RegisteredGatedTool = GatedToolDefinition<TSchema, GatedToolResult<unknown>>;
 
 export type PmsReadExecutorMap = {
+  pms_hotel_profile: GatedToolExecutor<PmsEvidence<HotelProfileResult>>;
+  pms_room_type_catalog: GatedToolExecutor<PmsEvidence<RoomTypeCatalogResult>>;
   pms_availability_search: GatedToolExecutor<PmsEvidence<AvailabilitySearchResult>>;
   pms_inventory_summary: GatedToolExecutor<PmsEvidence<InventorySummaryResult>>;
   pms_room_reservation_context: GatedToolExecutor<PmsEvidence<RoomReservationContextResult>>;

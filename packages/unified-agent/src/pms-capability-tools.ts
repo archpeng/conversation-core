@@ -10,6 +10,8 @@ import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { UnifiedAgentToolExecutors } from "./tool-registration.js";
 
 export const PMS_SAFE_READ_TOOLS = [
+  "pms_hotel_profile",
+  "pms_room_type_catalog",
   "pms_availability_search",
   "pms_inventory_summary",
   "pms_room_reservation_context",
@@ -40,8 +42,14 @@ const PMS_SAFE_READ_PROJECTION: readonly PmsCapabilityPlannerProjectionItem[] =
   }));
 
 const PmsToolDescriptions: Record<PmsSafeReadToolName, string> = {
+  pms_hotel_profile:
+    "Read static hotel profile facts from PMS Platform: property ID, hotel name, timezone, status, total room count, and configured room type summary. Use for hotel profile or total configured room inventory questions. Availability, prices, reservations, and status still require their specific PMS tools.",
+
+  pms_room_type_catalog:
+    "Read the PMS-configured active room type catalog without dates: room type IDs, codes, display names, room counts, and status. Use when the user asks what room types the hotel has. Use pms_availability_search only when the question asks which room types are bookable for a date range.",
+
   pms_availability_search:
-    "Search full-stay available room candidates for the requested date range. A returned room is available for every requested night. Use pms_inventory_summary when the user asks about total room count, booked rooms, blocked rooms, or why the result count differs from hotel inventory.",
+    "Search full-stay available room candidates for the requested date range. A returned room is available for every requested night. This is not the hotel room type catalog. Use pms_room_type_catalog when the user asks what room types the hotel has without dates.",
 
   pms_inventory_summary:
     "Read daily inventory totals for a date range, including total rooms and status counts where supported. Use this to explain availability discrepancies and booked/blocked/occupied counts. This does not pick a bookable room candidate; combine with pms_availability_search for booking preparation.",
@@ -66,6 +74,18 @@ const PmsToolDescriptions: Record<PmsSafeReadToolName, string> = {
 };
 
 const PmsToolSchemas: Record<PmsSafeReadToolName, object> = {
+  pms_hotel_profile: {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+  },
+
+  pms_room_type_catalog: {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+  },
+
   pms_availability_search: {
     type: "object",
     additionalProperties: false,
@@ -216,6 +236,8 @@ async function runGeneratedTool(toolName: PmsSafeReadToolName, input: GeneratePm
 
 function toolLabel(toolName: PmsSafeReadToolName): string {
   const labels: Record<PmsSafeReadToolName, string> = {
+    pms_hotel_profile: "PMS Hotel Profile",
+    pms_room_type_catalog: "PMS Room Type Catalog",
     pms_availability_search: "PMS Availability Search",
     pms_inventory_summary: "PMS Inventory Summary",
     pms_room_reservation_context: "PMS Room Reservation Context",

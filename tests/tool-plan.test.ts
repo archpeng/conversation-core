@@ -29,8 +29,10 @@ describe("PMS Pi tool surface", () => {
 
   it("documents availability as full-stay candidates, not total inventory", () => {
     expect(pmsToolDescription("pms_availability_search")).toContain("available for every requested night");
-    expect(pmsToolDescription("pms_availability_search")).toContain("differs from hotel inventory");
+    expect(pmsToolDescription("pms_availability_search")).toContain("not the hotel room type catalog");
+    expect(pmsToolDescription("pms_room_type_catalog")).toContain("PMS-configured active room type catalog");
     expect(pmsToolDescription("pms_inventory_summary")).toContain("total rooms");
+    expect(pmsToolSchema("pms_room_type_catalog")).toMatchObject({ properties: {} });
     expect(pmsToolSchema("pms_availability_search")).toMatchObject({
       properties: {
         checkInDate: { pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
@@ -105,6 +107,8 @@ describe("PMS Pi tool surface", () => {
 
 function readExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
   return {
+    pms_hotel_profile: () => evidence as never,
+    pms_room_type_catalog: () => evidence as never,
     pms_availability_search: () => evidence,
     pms_inventory_summary: () => evidence as never,
     pms_room_reservation_context: () => evidence as never,
