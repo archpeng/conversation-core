@@ -22,7 +22,7 @@ describe("unified Agent Pi-native event control", () => {
     expect(result).toMatchObject({ type: "text", evidenceRefs: [evidence.evidenceRef] });
     expect(events).toEqual([
       { event: "pms_agent_turn_planned", profile: "customer_pms", plannerPath: "pi_native_tools", toolCount: 1 },
-      { event: "pms_agent_tool_result", profile: "customer_pms", toolName: "pms_availability_search", outcome: "allow", evidenceMethod: "searchAvailability" },
+      { event: "pms_agent_tool_result", profile: "customer_pms", toolName: "pms_availability_search", outcome: "allow", evidenceMethod: "searchAvailability", diagnostics: { roomCount: 1 } },
       { event: "pms_agent_turn_result", profile: "customer_pms", resultType: "text", evidenceCount: 1, pendingActionCount: 0 }
     ]);
     expect(JSON.stringify(events)).not.toContain("room_secret");

@@ -16,6 +16,10 @@ export type InventorySummaryResult = {
     blocked: number;
     occupied: number;
   }>;
+  roomTypes?: Array<{
+    roomType: string;
+    total: number;
+  }>;
 };
 
 export type RoomReservationContextInput = {
@@ -118,7 +122,8 @@ export function validateTodayDeparturesInput(input: unknown): asserts input is T
 
 export function parseInventorySummaryResult(value: unknown): InventorySummaryResult {
   const object = assertRecord(value, "inventory summary response");
-  const rawDates = Array.isArray(object.dates) ? object.dates : platformSummaryDates(object);
+  const platformSummary = platformSummaryProjection(object);
+  const rawDates = Array.isArray(object.dates) ? object.dates : platformSummary?.dates;
   if (!Array.isArray(rawDates)) throw new Error("dates must be an array");
   const dates = rawDates.map((item, index) => {
     const entry = assertRecord(item, `dates[${index}]`);
@@ -141,40 +146,56 @@ export function parseInventorySummaryResult(value: unknown): InventorySummaryRes
       occupied
     };
   });
-  return { dates };
+  return {
+    dates,
+    ...(platformSummary?.roomTypes ? { roomTypes: platformSummary.roomTypes } : {})
+  };
 }
 
-function platformSummaryDates(object: Record<string, unknown>): unknown[] | undefined {
+function platformSummaryProjection(object: Record<string, unknown>): { dates: unknown[]; roomTypes: Array<{ roomType: string; total: number }> } | undefined {
   const readModelValue = object.readModel;
   if (!readModelValue || typeof readModelValue !== "object" || Array.isArray(readModelValue)) return undefined;
   const readModel = readModelValue as Record<string, unknown>;
   const summaries = readModel.summaries;
   if (!Array.isArray(summaries)) return undefined;
   const byDate = new Map<string, { total: number; available: number; reserved: number; blocked: number; occupied: number }>();
+  const byRoomType = new Map<string, number>();
   summaries.forEach((item, index) => {
     const summary = assertRecord(item, `readModel.summaries[${index}]`);
     const date = assertText(summary.businessDate, `readModel.summaries[${index}].businessDate`);
+    const roomType = optionalText(summary.roomType) ?? assertText(summary.roomTypeId, `readModel.summaries[${index}].roomTypeId`);
+    const totalRooms = numericSummaryField(summary.totalRooms);
     const current = byDate.get(date) ?? { total: 0, available: 0, reserved: 0, blocked: 0, occupied: 0 };
     byDate.set(date, {
-      total: current.total + numericSummaryField(summary.totalRooms),
+      total: current.total + totalRooms,
       available: current.available + numericSummaryField(summary.availableRooms),
       reserved: current.reserved + numericSummaryField(summary.reservedRooms),
       blocked: current.blocked + numericSummaryField(summary.blockedRooms),
       occupied: current.occupied + numericSummaryField(summary.occupiedRooms)
     });
+    byRoomType.set(roomType, Math.max(byRoomType.get(roomType) ?? 0, totalRooms));
   });
-  return Array.from(byDate.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, counts]) => {
-      return {
-        date,
-        ...counts
-      };
-    });
+  return {
+    dates: Array.from(byDate.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, counts]) => {
+        return {
+          date,
+          ...counts
+        };
+      }),
+    roomTypes: Array.from(byRoomType.entries())
+      .map(([roomType, total]) => ({ roomType, total }))
+      .sort((left, right) => left.roomType.localeCompare(right.roomType))
+  };
 }
 
 function numericSummaryField(value: unknown): number {
   return typeof value === "number" ? value : -1;
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function isoDateMs(value: string): number {
@@ -260,7 +281,10 @@ export function inventorySummary(result: InventorySummaryResult): string {
   const first = result.dates[0]?.date ?? "?";
   const last = result.dates[count - 1]?.date ?? "?";
   const perDateTotal = result.dates[0]?.total ?? 0;
-  return `Inventory for ${first}–${last}: ${perDateTotal} total rooms across ${count} dates. Available: ${present.available}, Reserved: ${present.reserved}, Blocked: ${present.blocked}, Occupied: ${present.occupied}.`;
+  const roomTypes = result.roomTypes?.length
+    ? ` Room types: ${result.roomTypes.map((item) => `${item.roomType} ${item.total}`).join(", ")}.`
+    : "";
+  return `Inventory for ${first}–${last}: ${perDateTotal} total rooms across ${count} dates. Available: ${present.available}, Reserved: ${present.reserved}, Blocked: ${present.blocked}, Occupied: ${present.occupied}.${roomTypes}`;
 }
 
 export function roomReservationContextSummary(result: RoomReservationContextResult): string {

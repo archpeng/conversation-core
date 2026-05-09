@@ -26,6 +26,32 @@ export function fallbackNaturalReply(turn: FeishuTurnInput): string {
   return "我在。可以帮你查询 PMS 房态、整理预订信息，或生成需要审批的操作卡片。涉及实时房态、价格或订单状态时，我会以 PMS 平台证据为准。";
 }
 
+export function evidenceRepairPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, rejectedText: string, options: RunAgentTurnOptions): string {
+  return [
+    "Evidence repair turn.",
+    "Your previous draft attempted to answer current PMS facts without current PMS evidence accepted by the runtime.",
+    "Do not answer current availability, inventory, room type, reservation, price, or pending-action facts from continuity alone.",
+    "Call the visible PMS custom tool(s) needed for the user's latest question, then answer using only returned PMS evidence.",
+    "If the user asks what room types are available for a remembered date range, use pms_availability_search without a roomType filter or use PMS evidence that includes room types.",
+    "Do not pass wildcard or generic values such as *, /, -, 全部, 所有房型, or 任意房型 as roomType.",
+    "Visible Pi custom tools:",
+    JSON.stringify(visibleToolPromptItems(session), null, 2),
+    "Continuity refs:",
+    continuityPrompt(session.state),
+    contextBundlePrompt(buildContextBundle({
+      state: session.state,
+      userMessage: turn.message.text,
+      workspaceAdvisory: options.workspaceAdvisory,
+      pmsEvidence: options.pmsEvidence,
+      modelPriorSummary: options.modelPriorSummary
+    })),
+    "Rejected draft:",
+    rejectedText,
+    "User message:",
+    turn.message.text
+  ].join("\n");
+}
+
 export function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions): string {
   return [
     ...(session.systemPromptInjected ? [] : [session.systemPrompt]),
@@ -43,6 +69,8 @@ export function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, 
     "Use the visible Pi custom tools directly when current PMS facts or PMS workflow evidence are needed.",
     "You may call multiple PMS tools in sequence when the answer depends on more than one fact. Example: if pms_availability_search returns 12 candidates and the user asks why there are 13 rooms total, call pms_inventory_summary before answering.",
     "Tool semantics: pms_availability_search returns room candidates available for every night in the requested stay. It is not total hotel inventory.",
+    "For room-type list followups such as 有哪些房型, 有什么房型, 可选房型, or 可用房型, call pms_availability_search for the remembered/current date range without a roomType filter; do not answer from continuity refs alone.",
+    "Do not pass wildcard or generic values such as *, /, -, 全部, 所有房型, or 任意房型 as roomType.",
     "Safe workflow tools are draft, quote, and prepare-confirm only. Final PMS confirm/cancel is never available as a natural-language tool and must happen only through an approval card/gateway.",
     "Do not call or name raw tools such as bash, read, write, edit, http, or http_request.",
     "If required slots are missing, ask one focused clarification question in natural language.",

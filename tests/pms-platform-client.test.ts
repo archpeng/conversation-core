@@ -290,7 +290,12 @@ describe("PMS Platform client evidence", () => {
     });
     expect(evidence.summary).toContain("Inventory for");
     expect(evidence.summary).toContain("10 total rooms across 2 dates");
+    expect(evidence.summary).toContain("Room types:");
     expect(evidence.data.dates).toHaveLength(2);
+    expect(evidence.data.roomTypes).toEqual([
+      { roomType: "花园别墅", total: 6 },
+      { roomType: "花园套房", total: 4 }
+    ]);
     expect(evidence.data.dates[0]).toEqual({
       date: "2026-05-09",
       total: 10,
@@ -514,10 +519,10 @@ function responseFor(url: string): unknown {
   if (url.endsWith("/v1/pms/inventory/summary")) return {
     readModel: {
       summaries: [
-        { businessDate: "2026-05-09", totalRooms: 4, availableRooms: 2, reservedRooms: 1, blockedRooms: 1, occupiedRooms: 0 },
-        { businessDate: "2026-05-09", totalRooms: 6, availableRooms: 3, reservedRooms: 2, blockedRooms: 0, occupiedRooms: 1 },
-        { businessDate: "2026-05-10", totalRooms: 4, availableRooms: 2, reservedRooms: 1, blockedRooms: 1, occupiedRooms: 0 },
-        { businessDate: "2026-05-10", totalRooms: 6, availableRooms: 2, reservedRooms: 3, blockedRooms: 0, occupiedRooms: 1 }
+        { businessDate: "2026-05-09", roomType: "花园套房", totalRooms: 4, availableRooms: 2, reservedRooms: 1, blockedRooms: 1, occupiedRooms: 0 },
+        { businessDate: "2026-05-09", roomType: "花园别墅", totalRooms: 6, availableRooms: 3, reservedRooms: 2, blockedRooms: 0, occupiedRooms: 1 },
+        { businessDate: "2026-05-10", roomType: "花园套房", totalRooms: 4, availableRooms: 2, reservedRooms: 1, blockedRooms: 1, occupiedRooms: 0 },
+        { businessDate: "2026-05-10", roomType: "花园别墅", totalRooms: 6, availableRooms: 2, reservedRooms: 3, blockedRooms: 0, occupiedRooms: 1 }
       ]
     }
   };

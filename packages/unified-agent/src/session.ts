@@ -10,7 +10,7 @@ import { runCustomerPmsLoop } from "./customer-loop.js";
 import { runAdminProposalLoop } from "./proposal-loop.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
 import { registerGatedTools } from "./tool-registration.js";
-import { fallbackNaturalReply, turnPrompt } from "./session-turn-prompt.js";
+import { evidenceRepairPrompt, fallbackNaturalReply, turnPrompt } from "./session-turn-prompt.js";
 import { fallbackEvidenceSequenceTextReply, isPmsEvidence, synthesizeEvidenceSequenceTextReply, synthesizePrepareConfirmApproval, type PlannedAgentResult } from "./session-evidence.js";
 import type {
   CreateUnifiedAgentSessionInput,
@@ -102,14 +102,37 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   }
 
   const text = assistantText.trim() || fallbackNaturalReply(turn);
-  const result = synthesizeTextReply({
+  const synthesized = synthesizeTextReply({
     text,
     evidenceRefs: options.evidenceRefs,
     pmsEvidence: options.pmsEvidence,
     context: turnContext(session, turn, options)
-  }).result;
+  });
+  if (!synthesized.ok && needsEvidenceRepair(synthesized.reason)) {
+    const repaired = await runEvidenceRepairTurn(session, turn, text, options);
+    if (repaired?.kind === "handled") {
+      rememberRefs(session.state, repaired);
+      emitFinalResultEvent(session, options, repaired);
+      return repaired.result;
+    }
+  }
+  const result = synthesized.result;
   emitFinalResultEvent(session, options, { result, evidenceRefs: options.evidenceRefs ? [...options.evidenceRefs] : undefined, pendingActionRefs: options.pendingActionRefs ? [...options.pendingActionRefs] : undefined });
   return result;
+}
+
+function needsEvidenceRepair(reason: string): boolean {
+  return reason === "missing_pms_evidence" || reason === "invalid_pms_evidence_ref";
+}
+
+async function runEvidenceRepairTurn(session: UnifiedAgentSession, turn: FeishuTurnInput, rejectedText: string, options: RunAgentTurnOptions): Promise<PlannerPathOutcome | undefined> {
+  try {
+    const repairTurn = await promptAssistantTurn(session.piSession, evidenceRepairPrompt(session, turn, rejectedText, options));
+    const repaired = runPiNativeToolResults(session, repairTurn, turn, options);
+    return repaired.kind === "handled" ? repaired : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function runPiNativeToolResults(session: UnifiedAgentSession, assistantTurn: AssistantTurn, turn: FeishuTurnInput, options: RunAgentTurnOptions): PlannerPathOutcome {
@@ -210,8 +233,34 @@ function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurn
     profile: session.profile.id,
     toolName,
     outcome,
-    ...(isPmsEvidence(value) ? { evidenceMethod: value.source.method } : {})
+    ...(isPmsEvidence(value) ? { evidenceMethod: value.source.method, diagnostics: pmsEvidenceDiagnostics(value) } : {})
   });
+}
+
+function pmsEvidenceDiagnostics(evidence: PmsEvidence<unknown>): Record<string, unknown> {
+  const data = evidence.data as Record<string, unknown> | undefined;
+  if (evidence.source.method === "searchAvailability" && data) {
+    return compactDiagnostics({
+      roomCount: Array.isArray(data.rooms) ? data.rooms.length : undefined,
+      roomTypes: data.availableRoomTypes,
+      requestedRoomType: data.requestedRoomType,
+      alternativeRoomTypes: data.alternativeRoomTypes
+    });
+  }
+  if (evidence.source.method === "inventorySummary" && data) {
+    const dates = Array.isArray(data.dates) ? data.dates : [];
+    const first = dates[0] as Record<string, unknown> | undefined;
+    return compactDiagnostics({
+      dateCount: dates.length,
+      firstDateTotal: first?.total,
+      roomTypes: data.roomTypes
+    });
+  }
+  return {};
+}
+
+function compactDiagnostics(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
 function emitFinalResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, result: PlannedAgentResult): void {

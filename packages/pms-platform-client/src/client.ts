@@ -398,5 +398,12 @@ function capabilitySummary(value: PmsCapabilityManifest): string {
 }
 
 function availabilitySummary(value: AvailabilitySearchResult): string {
-  return `Availability search returned ${value.rooms.length} rooms.`;
+  const roomTypes = value.availableRoomTypes?.length
+    ? ` Room types: ${value.availableRoomTypes.map((item) => `${item.roomType} ${item.count}`).join(", ")}.`
+    : "";
+  const alternatives = value.alternativeRoomTypes?.length
+    ? ` Same dates without the requested room-type filter have: ${value.alternativeRoomTypes.map((item) => `${item.roomType} ${item.count}`).join(", ")}.`
+    : "";
+  const requested = value.requestedRoomType ? ` for requested room type ${value.requestedRoomType}` : "";
+  return `Availability search${requested} returned ${value.rooms.length} rooms.${roomTypes}${alternatives}`;
 }

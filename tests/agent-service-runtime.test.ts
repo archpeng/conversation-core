@@ -95,8 +95,20 @@ describe("agent service runtime wiring", () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
-      return { ok: true, status: 200, json: async () => ({ rooms: [] }) } as Response;
+      const body = JSON.parse(String(init?.body));
+      calls.push({ url: String(url), body });
+      if (body.startDate === "2026-05-11" && body.roomTypeKeyword === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ readModel: { candidates: [
+            { roomId: "room-A1", roomType: "花园别墅" },
+            { roomId: "room-A2", roomType: "花园别墅" },
+            { roomId: "room-C2", roomType: "花园套房" }
+          ] } })
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ readModel: { candidates: [] } }) } as Response;
     }) as typeof fetch;
     try {
       const executors = createRuntimeExecutors(loadAgentServiceRuntimeConfig({
@@ -131,6 +143,18 @@ describe("agent service runtime wiring", () => {
           roomType: "不限制房型"
         }
       });
+      const unmatchedRoomType = await executors.pmsReadExecutors?.pms_availability_search({
+        auditId: "audit_3",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
+        request: {
+          capabilityId: "pms_availability_search",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          checkInDate: "2026-05-11",
+          checkOutDate: "2026-05-13",
+          roomType: "大床房"
+        }
+      });
 
       expect(calls).toEqual([
         {
@@ -140,8 +164,19 @@ describe("agent service runtime wiring", () => {
         {
           url: "http://127.0.0.1:8791/v1/pms/availability/search",
           body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-17", startDate: "2026-05-11", endDate: "2026-05-17" }
+        },
+        {
+          url: "http://127.0.0.1:8791/v1/pms/availability/search",
+          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-13", startDate: "2026-05-11", endDate: "2026-05-13", roomType: "大床房", roomTypeKeyword: "大床房" }
+        },
+        {
+          url: "http://127.0.0.1:8791/v1/pms/availability/search",
+          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-13", startDate: "2026-05-11", endDate: "2026-05-13" }
         }
       ]);
+      expect(unmatchedRoomType?.summary).toContain("requested room type 大床房 returned 0 rooms");
+      expect(unmatchedRoomType?.summary).toContain("花园别墅 2");
+      expect(unmatchedRoomType?.summary).toContain("花园套房 1");
     } finally {
       globalThis.fetch = originalFetch;
     }

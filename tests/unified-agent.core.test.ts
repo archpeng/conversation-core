@@ -6,11 +6,12 @@ import {
   PMS_SAFE_WORKFLOW_TOOLS,
   registerGatedTools,
   runAgentTurn,
-  type AgentSessionFactoryOptions
+  type AgentSessionFactoryOptions,
+  type PmsReadExecutorMap
 } from "../packages/unified-agent/src/index.js";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
 import type { FeishuActorRole, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
-import { baseTurn, fakeCreateAgentSession, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithAssistantTextSequence, safetyGateway } from "./unified-agent.helpers.js";
+import { baseTurn, fakeCreateAgentSession, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithAssistantTextSequence, fakeCreateAgentSessionWithToolCalls, safetyGateway } from "./unified-agent.helpers.js";
 
 const customerRegisteredToolNames = [
   ...PMS_SAFE_READ_TOOLS,
@@ -313,6 +314,47 @@ describe("unified Agent runtime", () => {
     expect(result).toMatchObject({ type: "refusal", reason: "invalid_request", message: "Current PMS facts require pms-platform evidence refs." });
   });
 
+  it("treats Chinese room-type availability phrasing as PMS fact text", async () => {
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithAssistantText("同样日期目前可选房型有：花园别墅。大床房暂无可住房间。")
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "有哪些房型" } });
+
+    expect(result).toMatchObject({ type: "refusal", reason: "invalid_request", message: "Current PMS facts require pms-platform evidence refs." });
+  });
+
+  it("repairs assistant PMS fact text by forcing a Pi-native PMS tool call", async () => {
+    const prompts: string[] = [];
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "Availability search returned 3 rooms. Room types: 花园别墅 2, 花园套房 1.",
+      data: { rooms: [], availableRoomTypes: [{ roomType: "花园别墅", count: 2 }, { roomType: "花园套房", count: 1 }] }
+    });
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway([]),
+      createAgentSession: fakeCreateAgentSessionWithToolCalls([
+        { text: "PMS 证据显示有可订房型。" },
+        {
+          calls: [{ toolName: "pms_availability_search", params: { checkInDate: "2026-05-11", checkOutDate: "2026-05-13" } }],
+          text: `可订房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`
+        }
+      ], prompts),
+      executors: { pmsReadExecutors: readExecutors(evidence) }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "有哪些房型" } });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Evidence repair turn.");
+    expect(result).toEqual({ type: "text", text: `可订房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
+  });
+
   it("passes assistant PMS fact text when current PMS evidence is supplied to synthesis", async () => {
     const evidence = createPmsEvidence({
       method: "searchAvailability",
@@ -334,3 +376,16 @@ describe("unified Agent runtime", () => {
 
 
 });
+
+function readExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
+  return {
+    pms_availability_search: () => evidence as never,
+    pms_inventory_summary: () => evidence as never,
+    pms_room_reservation_context: () => evidence as never,
+    pms_reservation_lookup: () => evidence as never,
+    pms_get_room: () => evidence as never,
+    pms_today_arrivals: () => evidence as never,
+    pms_today_departures: () => evidence as never,
+    pms_pending_action_status: () => evidence as never
+  };
+}

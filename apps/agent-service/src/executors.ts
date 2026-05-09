@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { GatedToolExecutor, GatedToolRequest } from "@pms-agent-v2/gated-tools";
-import { createPmsPlatformClient } from "@pms-agent-v2/pms-platform-client";
+import { createPmsPlatformClient, type AvailabilitySearchResult, type PmsEvidence } from "@pms-agent-v2/pms-platform-client";
 import type {
   PmsReadExecutorMap,
   PmsWorkflowExecutorMap,
@@ -31,14 +31,22 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
   const pmsReadExecutors: PmsReadExecutorMap = {
     pms_availability_search: async ({ request }) => {
       const roomType = availabilityRoomType(request.roomType, config.defaultRoomType);
-      return client.searchAvailability({
+      const baseSearch = {
         tenantId: tenantId(request),
         hotelId: config.defaultHotelId,
         checkInDate: request.checkInDate ?? config.defaultCheckInDate,
         checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
         ...(request.quantity && request.quantity > 1 ? { quantity: request.quantity } : {}),
+      };
+      const evidence = await client.searchAvailability({
+        ...baseSearch,
         ...(roomType ? { roomType } : {})
       });
+      if (roomType && evidence.data.rooms.length === 0) {
+        const broadEvidence = await client.searchAvailability(baseSearch);
+        return availabilityEvidenceWithAlternatives(evidence, roomType, broadEvidence.data);
+      }
+      return evidence;
     },
 
     pms_inventory_summary: async ({ request }) =>
@@ -208,9 +216,31 @@ function availabilityRoomType(requested: string | undefined, defaultRoomType: st
 function normalizedRoomType(value: string | undefined): string | undefined {
   const text = value?.trim();
   if (!text) return undefined;
-  if (/不限制|不限|全酒店|全部房型|所有房型|任意房型/i.test(text)) return undefined;
-  if (/^(房|房间|客房|房源|可订房|可订房间|可订客房)$/i.test(text)) return undefined;
+  if (text === "*" || text === "/" || text === "-") return undefined;
+  if (/^(不限制|不限)(房型|房间|客房)?$/i.test(text)) return undefined;
+  if (/^(全部|所有|任意)(房型|房间|客房|可订房型|可订房间|可订客房)?$/i.test(text)) return undefined;
+  if (/^(全酒店|房|房间|客房|房源|可订房|可订房间|可订客房)$/i.test(text)) return undefined;
   return text;
+}
+
+function availabilityEvidenceWithAlternatives(
+  evidence: PmsEvidence<AvailabilitySearchResult>,
+  requestedRoomType: string,
+  broadAvailability: AvailabilitySearchResult
+): PmsEvidence<AvailabilitySearchResult> {
+  const alternativeRoomTypes = broadAvailability.availableRoomTypes ?? [];
+  const alternatives = alternativeRoomTypes.length
+    ? ` Same dates without room-type filter have available room types: ${alternativeRoomTypes.map((item) => `${item.roomType} ${item.count}`).join(", ")}.`
+    : " Same dates without room-type filter also returned 0 available rooms.";
+  return {
+    ...evidence,
+    summary: `Availability search for requested room type ${requestedRoomType} returned 0 rooms.${alternatives}`,
+    data: {
+      ...evidence.data,
+      requestedRoomType,
+      alternativeRoomTypes
+    }
+  };
 }
 
 function draftIdentifier(request: GatedToolRequest): { draftId: string } | { draftRef: string } {

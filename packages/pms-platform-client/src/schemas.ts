@@ -18,8 +18,16 @@ export type RoomAvailability = {
   priceCents?: number;
 };
 
+export type RoomTypeAvailabilitySummary = {
+  roomType: string;
+  count: number;
+};
+
 export type AvailabilitySearchResult = {
   rooms: RoomAvailability[];
+  availableRoomTypes?: RoomTypeAvailabilitySummary[];
+  requestedRoomType?: string;
+  alternativeRoomTypes?: RoomTypeAvailabilitySummary[];
 };
 
 export type GetRoomInput = {
@@ -276,13 +284,13 @@ export function parseCapabilityManifest(value: unknown): PmsCapabilityManifest {
 
 export function parseAvailabilitySearchResult(value: unknown): AvailabilitySearchResult {
   const object = assertRecord(value, "availability response");
-  if (Array.isArray(object.rooms)) return { rooms: parseRooms(object.rooms) };
+  if (Array.isArray(object.rooms)) return availabilityResult(parseRooms(object.rooms));
 
   const readModel = isPlainRecord(object.readModel) ? object.readModel : undefined;
   const candidates = Array.isArray(readModel?.candidates) ? readModel.candidates : undefined;
   if (candidates) {
-    return {
-      rooms: candidates.map((candidate: unknown, index: number) => {
+    return availabilityResult(
+      candidates.map((candidate: unknown, index: number) => {
         const item = assertRecord(candidate, `candidates[${index}]`);
         return {
           roomId: assertText(item.roomId, `candidates[${index}].roomId`),
@@ -290,10 +298,28 @@ export function parseAvailabilitySearchResult(value: unknown): AvailabilitySearc
           available: true
         };
       })
-    };
+    );
   }
 
   throw new Error("availability response must contain rooms or readModel.candidates");
+}
+
+function availabilityResult(rooms: RoomAvailability[]): AvailabilitySearchResult {
+  return {
+    rooms,
+    availableRoomTypes: roomTypeCounts(rooms)
+  };
+}
+
+export function roomTypeCounts(rooms: readonly Pick<RoomAvailability, "roomType">[]): RoomTypeAvailabilitySummary[] {
+  const counts = new Map<string, number>();
+  for (const room of rooms) {
+    const roomType = room.roomType.trim() || "unknown";
+    counts.set(roomType, (counts.get(roomType) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([roomType, count]) => ({ roomType, count }))
+    .sort((left, right) => left.roomType.localeCompare(right.roomType));
 }
 
 function parseRooms(rooms: unknown[]): RoomAvailability[] {
