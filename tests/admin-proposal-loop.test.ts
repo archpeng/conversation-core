@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
-import { createUnifiedAgentSession, runAgentTurn, type PiCreateAgentSession } from "../packages/unified-agent/src/index.js";
+import { createUnifiedAgentSession, runAgentTurn, type AgentSessionFactory } from "../packages/unified-agent/src/index.js";
 import type { FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
 
@@ -113,7 +113,7 @@ function writeRecorder(writes: WrittenArtifact[]): GatedToolExecutor<{ path: str
   };
 }
 
-const fakeCreateAgentSession: PiCreateAgentSession = async () => ({
+const fakeCreateAgentSession: AgentSessionFactory = async () => ({
   session: {
     async prompt() {}
   }

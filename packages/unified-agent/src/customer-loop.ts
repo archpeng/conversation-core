@@ -1,7 +1,7 @@
 import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
-import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
-import type { PiToolDefinition } from "./pi-session.js";
+import type { AvailabilitySearchResult, PmsEvidence, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
+import type { GatedToolDefinition } from "./pi-session.js";
 import type { RedactedSessionState } from "./continuity.js";
 import { sessionSlotValue } from "./continuity.js";
 
@@ -15,7 +15,7 @@ type Intent = "availability" | "prepare_confirm" | "natural_confirm" | "none";
 
 export async function runCustomerPmsLoop(input: {
   turn: FeishuTurnInput;
-  tools: readonly PiToolDefinition[];
+  tools: readonly GatedToolDefinition[];
   state: RedactedSessionState;
 }): Promise<CustomerLoopResult | undefined> {
   const intent = detectIntent(input.turn.message.text, input.state);
@@ -35,7 +35,7 @@ function detectIntent(message: string, state: RedactedSessionState): Intent {
   return "none";
 }
 
-async function availabilityReply(turn: FeishuTurnInput, tools: readonly PiToolDefinition[], state: RedactedSessionState): Promise<CustomerLoopResult> {
+async function availabilityReply(turn: FeishuTurnInput, tools: readonly GatedToolDefinition[], state: RedactedSessionState): Promise<CustomerLoopResult> {
   if (!hasDateCue(turn.message.text) && !sessionSlotValue(state, "stay_date")) {
     return { result: { type: "refusal", reason: "invalid_request", message: "请先提供入住和离店日期。" } };
   }
@@ -43,7 +43,7 @@ async function availabilityReply(turn: FeishuTurnInput, tools: readonly PiToolDe
     return { result: { type: "refusal", reason: "invalid_request", message: "请先提供要查询的房型。" } };
   }
 
-  const evidence = await runEvidenceTool<AvailabilitySearchResult>(tools, "gated_pms_read", "availability");
+  const evidence = await runEvidenceTool<AvailabilitySearchResult>(tools, "pms_availability_search", {});
   if (!evidence.ok) return { result: evidence.result };
   if (evidence.value.source.system !== "pms-platform" || evidence.value.source.method !== "searchAvailability") {
     return { result: { type: "refusal", reason: "unsupported", message: "PMS availability evidence is missing." } };
@@ -59,22 +59,10 @@ async function availabilityReply(turn: FeishuTurnInput, tools: readonly PiToolDe
   };
 }
 
-async function prepareConfirmReply(turn: FeishuTurnInput, tools: readonly PiToolDefinition[]): Promise<CustomerLoopResult> {
-  const evidence = await runEvidenceTool<ReservationConfirmPreparation>(tools, "gated_pms_workflow", "prepare_confirm");
-  if (!evidence.ok) return { result: evidence.result };
-  if (evidence.value.source.system !== "pms-platform" || evidence.value.source.method !== "prepareReservationConfirm") {
-    return { result: { type: "refusal", reason: "unsupported", message: "PMS prepare-confirm evidence is missing." } };
-  }
-  if (evidence.value.data.confirmationMode !== "typedCardOnly" || evidence.value.data.mutationStatus !== "none") {
-    return { result: { type: "refusal", reason: "policy", message: "PMS confirmation requires typed approval." } };
-  }
-
-  const pendingActionId = evidence.value.data.pendingActionId;
-  return {
-    result: { type: "approval_card", card: approvalCard(turn.tenantId, pendingActionId, evidence.value.data.expiresAt) },
-    evidenceRefs: [evidence.value.evidenceRef],
-    pendingActionRefs: [pendingActionId]
-  };
+async function prepareConfirmReply(turn: FeishuTurnInput, tools: readonly GatedToolDefinition[]): Promise<CustomerLoopResult> {
+  void turn;
+  void tools;
+  return { result: { type: "refusal", reason: "unsupported", message: "PMS booking preparation requires the LLM to compose the safe PMS workflow tools. Please retry when the LLM is available." } };
 }
 
 function naturalConfirmReply(turn: FeishuTurnInput, state: RedactedSessionState): CustomerLoopResult {
@@ -88,12 +76,12 @@ function naturalConfirmReply(turn: FeishuTurnInput, state: RedactedSessionState)
   };
 }
 
-async function runEvidenceTool<T>(tools: readonly PiToolDefinition[], toolName: string, target: string): Promise<{ ok: true; value: PmsEvidence<T> } | { ok: false; result: AgentResult }> {
+async function runEvidenceTool<T>(tools: readonly GatedToolDefinition[], toolName: string, params: Record<string, unknown>): Promise<{ ok: true; value: PmsEvidence<T> } | { ok: false; result: AgentResult }> {
   const tool = tools.find((candidate) => candidate.name === toolName);
   if (!tool) return { ok: false, result: { type: "refusal", reason: "unsupported", message: "Required PMS tool is not available." } };
 
   try {
-    const toolResult = await tool.execute(`customer_loop_${toolName}`, { target });
+    const toolResult = await tool.executePlan(params);
     const details = toolResult.details as GatedToolResult<PmsEvidence<T>>;
     if (details.outcome === "deny") return { ok: false, result: { type: "refusal", reason: "policy", message: "PMS request was denied by policy." } };
     if (details.outcome === "require_approval") return { ok: false, result: { type: "refusal", reason: "policy", message: "PMS request requires typed approval." } };

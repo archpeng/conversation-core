@@ -1,7 +1,7 @@
 import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { RedactedSessionState } from "./continuity.js";
-import type { PiToolDefinition } from "./pi-session.js";
+import type { GatedToolDefinition } from "./pi-session.js";
 
 export type ProposalLoopResult = {
   result: AgentResult;
@@ -15,7 +15,7 @@ type ProposalArtifact = {
 
 export async function runAdminProposalLoop(input: {
   turn: FeishuTurnInput;
-  tools: readonly PiToolDefinition[];
+  tools: readonly GatedToolDefinition[];
   state: RedactedSessionState;
 }): Promise<ProposalLoopResult | undefined> {
   if (!isProposalRequest(input.turn.message.text)) return undefined;
@@ -96,12 +96,12 @@ function proposalArtifacts(input: { workspaceRoot: string; rule: string }): Prop
   ];
 }
 
-async function writeProposalArtifact(tools: readonly PiToolDefinition[], artifact: ProposalArtifact): Promise<{ ok: true; auditId: string } | { ok: false; result: AgentResult }> {
+async function writeProposalArtifact(tools: readonly GatedToolDefinition[], artifact: ProposalArtifact): Promise<{ ok: true; auditId: string } | { ok: false; result: AgentResult }> {
   const tool = tools.find((candidate) => candidate.name === "gated_proposal_write");
   if (!tool) return { ok: false, result: { type: "refusal", reason: "unsupported", message: "Proposal workspace write tool is not available." } };
 
   try {
-    const toolResult = await tool.execute(`proposal_write_${artifact.path}`, { path: artifact.path, content: artifact.content });
+    const toolResult = await tool.executePlan({ path: artifact.path, content: artifact.content });
     const details = toolResult.details as GatedToolResult<unknown>;
     if (details.outcome === "allow") return { ok: true, auditId: details.auditId };
     return { ok: false, result: { type: "refusal", reason: "policy", message: "Proposal artifact write was denied by policy." } };

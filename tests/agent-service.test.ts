@@ -4,7 +4,7 @@ import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type To
 import type { AgentResult, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
-import type { PiCreateAgentSession, PiCreateAgentSessionOptions, UnifiedAgentTurnEvent } from "../packages/unified-agent/src/index.js";
+import { PMS_SAFE_READ_TOOLS, PMS_SAFE_WORKFLOW_TOOLS, type AgentSessionFactory, type AgentSessionFactoryOptions, type PmsReadExecutorMap, type UnifiedAgentTurnEvent } from "../packages/unified-agent/src/index.js";
 
 const validTurn: FeishuTurnInput = {
   channel: "feishu",
@@ -15,6 +15,10 @@ const validTurn: FeishuTurnInput = {
   message: { text: "raw secret general question" },
   receivedAt: "2026-05-06T12:00:00.000Z"
 };
+const customerRegisteredToolNames = [
+  ...PMS_SAFE_READ_TOOLS,
+  ...PMS_SAFE_WORKFLOW_TOOLS
+];
 
 describe("agent service API", () => {
   it("returns redacted health", async () => {
@@ -34,7 +38,7 @@ describe("agent service API", () => {
   });
 
   it("lets an adapter call /v1/feishu-turn and receives AgentResult only", async () => {
-    const calls: PiCreateAgentSessionOptions[] = [];
+    const calls: AgentSessionFactoryOptions[] = [];
     const service = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(calls) });
 
     const response = await service.handle({ method: "POST", path: "/v1/feishu-turn", body: JSON.stringify(validTurn) });
@@ -46,13 +50,13 @@ describe("agent service API", () => {
     expect(response.body).not.toHaveProperty("result");
     expect(response.body).not.toHaveProperty("replies");
     expect(calls[0].tools).toEqual([]);
-    expect(calls[0].customTools.map((tool) => tool.name)).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
+    expect(calls[0].customTools.map((tool) => tool.name)).toEqual(customerRegisteredToolNames);
   });
 
   it("uses a deterministic redacted Pi session file for the same Feishu conversation", async () => {
     const sessionDir = "/tmp/pms-agent-v2-runtime-test/pi-sessions";
-    const firstCalls: PiCreateAgentSessionOptions[] = [];
-    const secondCalls: PiCreateAgentSessionOptions[] = [];
+    const firstCalls: AgentSessionFactoryOptions[] = [];
+    const secondCalls: AgentSessionFactoryOptions[] = [];
     const firstService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(firstCalls), piSessionDir: sessionDir });
     const secondService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(secondCalls), piSessionDir: sessionDir });
 
@@ -70,8 +74,8 @@ describe("agent service API", () => {
 
   it("uses a different Pi session file for a different Feishu conversation", async () => {
     const sessionDir = "/tmp/pms-agent-v2-runtime-test/pi-sessions";
-    const firstCalls: PiCreateAgentSessionOptions[] = [];
-    const secondCalls: PiCreateAgentSessionOptions[] = [];
+    const firstCalls: AgentSessionFactoryOptions[] = [];
+    const secondCalls: AgentSessionFactoryOptions[] = [];
     const firstService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(firstCalls), piSessionDir: sessionDir });
     const secondService = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(secondCalls), piSessionDir: sessionDir });
 
@@ -107,7 +111,7 @@ describe("agent service API", () => {
         state: {}
       }
     }]]);
-    const calls: PiCreateAgentSessionOptions[] = [];
+    const calls: AgentSessionFactoryOptions[] = [];
 
     const response = await handleAgentServiceRequest(
       { gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(calls) },
@@ -122,13 +126,13 @@ describe("agent service API", () => {
   });
 
   it("reuses cached sessions for continuity across /v1/feishu-turn calls", async () => {
-    const calls: PiCreateAgentSessionOptions[] = [];
+    const calls: AgentSessionFactoryOptions[] = [];
     let pmsReadCount = 0;
     const service = createAgentService({
       gateway: safetyGateway(),
       createAgentSession: fakeCreateAgentSession(calls),
       executors: {
-        pmsRead: () => {
+        pmsReadExecutors: availabilityExecutors(() => {
           pmsReadCount += 1;
           return createPmsEvidence({
             method: "searchAvailability",
@@ -137,7 +141,7 @@ describe("agent service API", () => {
             summary: "availability search summary",
             data: { rooms: [{ roomId: `room_${pmsReadCount}`, roomType: "大床房", available: true }] }
           });
-        }
+        })
       }
     });
 
@@ -153,7 +157,7 @@ describe("agent service API", () => {
   });
 
   it("supports /v1/eval-turn with the same AgentResult-only output shape", async () => {
-    const calls: PiCreateAgentSessionOptions[] = [];
+    const calls: AgentSessionFactoryOptions[] = [];
     const service = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(calls) });
 
     const response = await service.handle({ method: "POST", path: "/v1/eval-turn", body: { ...validTurn, messageId: "message_secret_eval" } });
@@ -176,18 +180,18 @@ describe("agent service API", () => {
   });
 
   it("routes customer/staff and admin/internal to deterministic profile tools", async () => {
-    const customerCalls: PiCreateAgentSessionOptions[] = [];
-    const staffCalls: PiCreateAgentSessionOptions[] = [];
-    const adminCalls: PiCreateAgentSessionOptions[] = [];
-    const internalCalls: PiCreateAgentSessionOptions[] = [];
+    const customerCalls: AgentSessionFactoryOptions[] = [];
+    const staffCalls: AgentSessionFactoryOptions[] = [];
+    const adminCalls: AgentSessionFactoryOptions[] = [];
+    const internalCalls: AgentSessionFactoryOptions[] = [];
 
     await createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(customerCalls) }).handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, actor: { role: "customer", id: "customer_1" } } });
     await createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(staffCalls) }).handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, actor: { role: "staff", id: "staff_1" } } });
     await createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(adminCalls) }).handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, actor: { role: "admin", id: "admin_1" } } });
     await createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(internalCalls) }).handle({ method: "POST", path: "/v1/feishu-turn", body: { ...validTurn, actor: { role: "internal", id: "internal_1" } } });
 
-    expect(toolNames(customerCalls)).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
-    expect(toolNames(staffCalls)).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
+    expect(toolNames(customerCalls)).toEqual(customerRegisteredToolNames);
+    expect(toolNames(staffCalls)).toEqual(customerRegisteredToolNames);
     expect(toolNames(adminCalls)).toEqual(["gated_proposal_read", "gated_proposal_write", "gated_proposal_edit"]);
     expect(toolNames(internalCalls)).toEqual(["gated_proposal_read", "gated_proposal_write", "gated_proposal_edit"]);
   });
@@ -233,11 +237,11 @@ function expectAgentResultBody(response: AgentServiceResponse): asserts response
   expect(response.body).not.toHaveProperty("replies");
 }
 
-function toolNames(calls: PiCreateAgentSessionOptions[]): string[] {
+function toolNames(calls: AgentSessionFactoryOptions[]): string[] {
   return calls[0].customTools.map((tool) => tool.name);
 }
 
-function fakeCreateAgentSession(calls: PiCreateAgentSessionOptions[]): PiCreateAgentSession {
+function fakeCreateAgentSession(calls: AgentSessionFactoryOptions[]): AgentSessionFactory {
   return async (options) => {
     calls.push(options);
     return {
@@ -245,6 +249,19 @@ function fakeCreateAgentSession(calls: PiCreateAgentSessionOptions[]): PiCreateA
         async prompt() {}
       }
     };
+  };
+}
+
+function availabilityExecutors(read: () => ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
+  return {
+    pms_availability_search: read,
+    pms_inventory_summary: read as never,
+    pms_room_reservation_context: read as never,
+    pms_reservation_lookup: read as never,
+    pms_get_room: read as never,
+    pms_today_arrivals: read as never,
+    pms_today_departures: read as never,
+    pms_pending_action_status: read as never
   };
 }
 

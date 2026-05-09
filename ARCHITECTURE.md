@@ -59,25 +59,16 @@ FeishuTurnInput
 runAgentTurn()                              [session.ts]
   │
   ├─ rememberTurn()                         [continuity.ts]
-  ├─ promptAssistantText(piSession)         [pi-io.ts] → Pi LLM
+  ├─ promptAssistantTurn(piSession)         [pi-io.ts] → Pi LLM + native tool calls
   │
-  ├─ runAssistantToolPlan()                 [session.ts]
-  │   ├─ parseAssistantToolPlanJson()       [pi-io.ts]
-  │   │
-  │   ├─ [call_tool]
-  │   │   └─ executeToolPlan()              [tool-plan.ts]
-  │   │       └─ tool.execute()
-  │   │           └─ runGatedTool()          [gated-tools]
-  │   │               ├─ gateway.decide()    [safety-gateway]
-  │   │               ├─ executor()          [executors.ts]
-  │   │               │   └─ pmsPlatformClient   [pms-platform-client]
-  │   │               └─ gateway.audit()     [safety-gateway]
-  │   │
-  │   └─ [bounded_read_then_workflow]
-  │       └─ executeBoundedReadThenWorkflowPlan()
-  │           ├─ executeToolPlan(read)       → PMS evidence
-  │           ├─ selectRoomCandidates()      [room-selection.ts]
-  │           └─ executeToolPlan(workflow)   → prepare confirm
+  ├─ runPiNativeToolResults()               [session.ts]
+  │   └─ tool_execution_end events
+  │       └─ registered PMS Pi custom tools
+  │           └─ runGatedTool()              [gated-tools]
+  │               ├─ gateway.decide()        [safety-gateway]
+  │               ├─ executor()              [executors.ts]
+  │               │   └─ pmsPlatformClient   [pms-platform-client]
+  │               └─ gateway.audit()         [safety-gateway]
   │
   ├─ [LLM unavailable only]
   │   └─ runPostLlmSafetyScaffoldFallback()  [session.ts]
@@ -110,7 +101,7 @@ Every tool call flows through this gate. No code path may call an executor direc
 
 | Profile | Visible Tools |
 |---------|--------------|
-| `customer_pms` | `gated_pms_read`, `gated_pms_workflow`, `gated_pms_confirm` |
+| `customer_pms` | generated PMS safe reads: `pms_availability_search`, `pms_inventory_summary`, `pms_room_reservation_context`, `pms_reservation_lookup`, `pms_get_room`, `pms_today_arrivals`, `pms_today_departures`, `pms_pending_action_status`; safe workflow steps: draft create/update, quote, prepare-confirm, and group variants |
 | `admin_customization` | `gated_proposal_read`, `gated_proposal_write`, `gated_proposal_edit` |
 
 ## Pi SDK Boundary
@@ -121,13 +112,13 @@ Every tool call flows through this gate. No code path may call an executor direc
 Our code                          Pi SDK
 ─────────                        ──────
 System prompt (ResourceLoader) → LLM context
-PiToolDefinition[]              → Tool manifest
+GatedToolDefinition[]          → Tool manifest
 turnPrompt(text)                → LLM inference
                                 ← assistant text
-PiToolResult.details (opaque)   ← raw tool output
+AgentToolResult.details         ← gated tool output
 ```
 
-Three casts at `apps/agent-service/src/runtime.ts:160-170` exist because `PiCreateAgentSession` parameter types have structural mismatches with our `GatedTool` types. This is a known type-impedance item — the fix is explicit adapter functions, not stronger casts.
+`packages/unified-agent/src/pi-session.ts` re-exports the official Pi SDK session/tool result types and defines the PMS-specific `GatedToolDefinition` extension. Runtime-only PMS enrichment uses `executePlan(params)`; SDK-facing execution still uses official `ToolDefinition.execute(...)`.
 
 ## Workspace Zones
 

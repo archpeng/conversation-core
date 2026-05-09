@@ -2,7 +2,7 @@ import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contrac
 import type { GatedToolRequest } from "@pms-agent-v2/gated-tools";
 import type { AvailabilitySearchResult, PmsEvidence, RoomAvailability } from "@pms-agent-v2/pms-platform-client";
 import type { ContextBundle } from "./context-bundle.js";
-import type { PiAgentSession } from "./pi-session.js";
+import type { AgentSessionPort } from "./pi-session.js";
 import { promptAssistantText } from "./pi-io.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
 
@@ -21,7 +21,7 @@ type RoomTypeResolution =
   | { ok: false; message?: string };
 
 export async function selectRoomCandidates(
-  piSession: PiAgentSession,
+  piSession: AgentSessionPort,
   turn: FeishuTurnInput,
   evidence: PmsEvidence<AvailabilitySearchResult>,
   workflowParams: Record<string, unknown>,
@@ -88,7 +88,7 @@ function roomTypeResolutionPrompt(turn: FeishuTurnInput, evidence: PmsEvidence<A
 }
 
 async function resolveRoomTypeFromEvidence(
-  piSession: PiAgentSession,
+  piSession: AgentSessionPort,
   turn: FeishuTurnInput,
   evidence: PmsEvidence<AvailabilitySearchResult>,
   availableRooms: readonly RoomAvailability[],

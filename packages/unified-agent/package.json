@@ -7,8 +7,10 @@
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "dependencies": {
+    "@mariozechner/pi-coding-agent": "0.73.0",
     "@pms-agent-v2/adapter-contracts": "workspace:*",
     "@pms-agent-v2/gated-tools": "workspace:*",
-    "@pms-agent-v2/pms-platform-client": "workspace:*"
+    "@pms-agent-v2/pms-platform-client": "workspace:*",
+    "typebox": "1.1.38"
   }
 }

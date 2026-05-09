@@ -2,19 +2,22 @@
 
 ## Active Pack
 
-_No active pack. All slices complete._
+- none
 
 ## Current Active Slice
 
-_None._
+- none
 
 ## Intended Handoff
 
-_Closed._
+- none
 
 ## Status
 
-- Latest closed pack: `pms-agent-code-readability-r0-r3-v1-2026-05-08`
+- Active state: `PACK_COMPLETE`
+- Active triplet: none
+- Latest gate: `pnpm build` passed; `pnpm test` passed with 22 files, 172 tests, boundary guard passed, eval 20/20.
+- Latest closed pack: `pms-pi-tool-surface-p0-p6-v1-2026-05-09`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
 
@@ -22,22 +25,22 @@ _Closed._
 
 Closed pack archive:
 
-- `docs/plan-archive/pms-agent-code-readability-r0-r3-v1-2026-05-08/`
+- `docs/plan-archive/pms-pi-tool-surface-p0-p6-v1-2026-05-09/`
 
 Closed pack result:
 
-- R0 split session.ts (681→452 lines) into pi-io.ts and room-selection.ts
-- R1 extract createRuntimeExecutors from runtime.ts (427→275 lines) into executors.ts
-- R2 replace 11 `as Partial<T>` assertions with `Record<string, unknown>` across 4 files
-- R3 split evals/index.ts (679→148 lines) into eval-cases.ts
+- Generated fine-grained PMS Pi tools for safe reads and safe workflow preparation
+- Replaced JSON-plan execution with Pi-native custom tool sequencing
+- Removed coarse customer PMS aliases and coarse `pms_read`/`pms_workflow` gateway compatibility IDs
+- Kept final `pms_confirm` gateway/card-only and absent from the visible LLM tool surface
 
 Closeout artifact:
 
-- `docs/plan-archive/pms-agent-code-readability-r0-r3-v1-2026-05-08/pms-agent-code-readability-r0-r3-v1-2026-05-08_CLOSEOUT.md`
+- `docs/plan-archive/pms-pi-tool-surface-p0-p6-v1-2026-05-09/pms-pi-tool-surface-p0-p6-v1-2026-05-09_CLOSEOUT.md`
 
 Successor pack:
 
-- None queued.
+- none
 
 ## Parser Scope Contract
 

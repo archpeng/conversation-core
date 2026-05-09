@@ -1,18 +1,17 @@
 import type { AgentResult, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
+import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle } from "./context-bundle.js";
 import { createRedactedSessionState, rememberRefs, rememberTurn } from "./continuity.js";
-import { parseAssistantToolPlanJson, promptAssistantText } from "./pi-io.js";
+import { promptAssistantTurn, type AssistantTurn } from "./pi-io.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { loadAgentProfile } from "./profile.js";
 import { runCustomerPmsLoop } from "./customer-loop.js";
 import { runAdminProposalLoop } from "./proposal-loop.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
-import { omitParam, requestedRoomTypeText, roomSelection, selectRoomCandidates } from "./room-selection.js";
-import { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan, type ToolPlanAction } from "./tool-plan.js";
 import { registerGatedTools } from "./tool-registration.js";
 import { fallbackNaturalReply, turnPrompt } from "./session-turn-prompt.js";
-import { isAvailabilityEvidence, isPmsEvidence, synthesizeToolResult, type PlannedAgentResult } from "./session-evidence.js";
+import { fallbackEvidenceSequenceTextReply, isPmsEvidence, synthesizeEvidenceSequenceTextReply, synthesizePrepareConfirmApproval, type PlannedAgentResult } from "./session-evidence.js";
 import type {
   CreateUnifiedAgentSessionInput,
   RunAgentTurnOptions,
@@ -30,18 +29,13 @@ export type {
 
 type PlannerPathOutcome =
   | (PlannedAgentResult & { kind: "handled" })
-  | { kind: "no_structured_plan"; reason: "assistant_output_not_json" };
+  | { kind: "no_tool_results" };
 
 type PostLlmSafetyScaffoldInput = {
   session: UnifiedAgentSession;
   turn: FeishuTurnInput;
   reason: "llm_unavailable";
 };
-
-type AssistantToolPlanJson =
-  | { ok: true; hasPlan: true; value: unknown }
-  | { ok: true; hasPlan: false }
-  | { ok: false; hasPlan: true };
 
 export async function createUnifiedAgentSession(input: CreateUnifiedAgentSessionInput): Promise<UnifiedAgentSession> {
   const profile = loadAgentProfile(input.turn.actor.role);
@@ -79,15 +73,15 @@ export async function createUnifiedAgentSession(input: CreateUnifiedAgentSession
 
 export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTurnInput, options: RunAgentTurnOptions = {}): Promise<AgentResult> {
   rememberTurn(session.state, turn, options);
-  let assistantText: string;
+  let assistantTurn: AssistantTurn = { text: "", toolResults: [] };
   let llmFailed = false;
   try {
-    assistantText = await promptAssistantText(session.piSession, turnPrompt(session, turn, options));
+    assistantTurn = await promptAssistantTurn(session.piSession, turnPrompt(session, turn, options));
   } catch {
-    assistantText = "";
     llmFailed = true;
   }
-  const plannerOutcome = await runAssistantToolPlan(session, assistantText, turn, options);
+  const assistantText = assistantTurn.text;
+  const plannerOutcome = runPiNativeToolResults(session, assistantTurn, turn, options);
   if (plannerOutcome.kind === "handled") {
     rememberRefs(session.state, plannerOutcome);
     emitFinalResultEvent(session, options, plannerOutcome);
@@ -95,7 +89,7 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   }
 
   // Only run the deterministic safety scaffold when the LLM is genuinely unavailable.
-  // An available LLM that returns natural language without a JSON plan means the
+  // An available LLM that returns natural language without calling tools means the
   // LLM decided not to call tools -- we synthesize its text directly.
   const llmUnavailable = llmFailed || !assistantText.trim();
   if (llmUnavailable) {
@@ -118,82 +112,65 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   return result;
 }
 
-async function runAssistantToolPlan(session: UnifiedAgentSession, assistantText: string, turn: FeishuTurnInput, options: RunAgentTurnOptions): Promise<PlannerPathOutcome> {
-  const json = parseAssistantToolPlanJson(assistantText);
-  if (!json.hasPlan) {
-    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "no_structured_plan" });
-    return { kind: "no_structured_plan", reason: "assistant_output_not_json" };
-  }
-  if (!json.ok) {
-    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "invalid_tool_plan" });
-    return { kind: "handled", result: { type: "refusal", reason: "invalid_request", message: "Invalid tool plan JSON." } };
+function runPiNativeToolResults(session: UnifiedAgentSession, assistantTurn: AssistantTurn, turn: FeishuTurnInput, options: RunAgentTurnOptions): PlannerPathOutcome {
+  if (assistantTurn.toolResults.length === 0) {
+    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "no_tool_results" });
+    return { kind: "no_tool_results" };
   }
 
-  const manifest = buildVisibleGatedToolManifest(session.profile, session.tools);
-  const parsed = parseToolPlan(json.value, manifest);
-  if (!parsed.ok) {
-    emitEvent(options, { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "invalid_tool_plan" });
-    return { kind: "handled", result: { type: "refusal", reason: toolPlanRefusalReason(parsed.reason), message: `Invalid tool plan: ${parsed.reason}.` } };
+  emitEvent(options, {
+    event: "pms_agent_turn_planned",
+    profile: session.profile.id,
+    plannerPath: "pi_native_tools",
+    toolCount: assistantTurn.toolResults.length
+  });
+
+  const context = turnContext(session, turn, options);
+  const evidence: PmsEvidence<unknown>[] = [];
+  const publicTexts: string[] = [];
+
+  for (const toolResult of assistantTurn.toolResults) {
+    const details = gatedToolDetails(toolResult.result);
+    emitToolResultEvent(session, options, toolResult.toolName, toolResult.result);
+    if (!details) {
+      publicTexts.push(toolContentText(toolResult.result));
+      continue;
+    }
+    if (details.outcome === "deny") {
+      return { kind: "handled", result: { type: "refusal", reason: "policy", message: "PMS request was denied by policy." } };
+    }
+    if (details.outcome === "require_approval") {
+      return { kind: "handled", result: { type: "refusal", reason: "policy", message: "PMS request requires typed approval." } };
+    }
+    if (details.outcome === "allow" && "value" in details && isPmsEvidence(details.value)) {
+      evidence.push(details.value);
+      continue;
+    }
+    publicTexts.push(toolContentText(toolResult.result));
   }
 
-  emitEvent(options, toolPlanEvent(session, parsed.plan));
-  if (parsed.plan.type === "bounded_read_then_workflow") {
-    return executeBoundedReadThenWorkflowPlan(session, parsed.plan, turn, options);
+  if (evidence.length > 0) {
+    const approval = latestApproval(evidence);
+    if (approval) {
+      return { kind: "handled", ...approval, evidenceRefs: evidence.map((item) => item.evidenceRef) };
+    }
+    const synthesized = synthesizeEvidenceSequenceTextReply(assistantTurn.text, evidence, context, options);
+    return { kind: "handled", ...(synthesized ?? fallbackEvidenceSequenceTextReply(evidence, context, options)) };
   }
-  const executed = await executeToolPlan(parsed.plan, session.tools);
-  if (!executed.ok) return { kind: "handled", result: executed.result };
-  const planned = await synthesizeToolResult(session, turn, executed.toolResult, turnContext(session, turn, options), options);
-  emitToolResultEvent(session, options, parsed.plan.type === "call_tool" ? parsed.plan.toolName : "none", executed.toolResult, planned.result);
-  return { kind: "handled", ...planned };
-}
 
-async function executeBoundedReadThenWorkflowPlan(session: UnifiedAgentSession, plan: Extract<ToolPlanAction, { type: "bounded_read_then_workflow" }>, turn: FeishuTurnInput, options: RunAgentTurnOptions): Promise<PlannerPathOutcome> {
-  const roomTypeText = requestedRoomTypeText(plan.read.params, plan.workflow.params);
-  const readParams = roomTypeText ? omitParam(plan.read.params, "roomType") : plan.read.params;
-  const readResult = await executeToolPlan({ type: "call_tool", toolName: plan.read.toolName, params: readParams }, session.tools);
-  if (!readResult.ok) return { kind: "handled", result: readResult.result };
-  const readDetails = readResult.toolResult.details as Record<string, unknown>;
-  const readValue = "value" in readDetails ? readDetails.value : undefined;
-  const readEvidence = readDetails.outcome === "allow" && isPmsEvidence(readValue) ? readValue : undefined;
-  if (!isAvailabilityEvidence(readEvidence)) {
-    return { kind: "handled", result: { type: "refusal", reason: "unsupported", message: "PMS availability evidence is missing." } };
-  }
-  emitToolResultEvent(session, options, plan.read.toolName, readResult.toolResult, { type: "text", text: "PMS read evidence captured.", evidenceRefs: [readEvidence.evidenceRef] });
-
-  const selection = await selectRoomCandidates(
-    session.piSession,
-    turn,
-    readEvidence,
-    plan.workflow.params,
-    roomTypeText,
-    turnContext(session, turn, options)
-  );
-  if (!selection.ok) {
-    return { kind: "handled", result: selection.planned.result, evidenceRefs: [readEvidence.evidenceRef] };
-  }
-  const candidates = selection.candidates;
-
-  const workflowParams = {
-    ...plan.workflow.params,
-    roomId: candidates[0]?.roomId,
-    ...(candidates[0]?.roomType ? { roomType: candidates[0].roomType } : {}),
-    ...(candidates.length > 1 ? { selections: candidates.map((candidate) => roomSelection(candidate, readEvidence.evidenceRef)) } : {}),
-    sourceEpisodeRefs: [readEvidence.evidenceRef]
+  const text = assistantTurn.text.trim() || publicTexts.filter(Boolean).join("\n").trim() || "Gated action completed.";
+  return {
+    kind: "handled",
+    result: synthesizeTextReply({ text, context }).result
   };
-  const workflowResult = await executeToolPlan({ type: "call_tool", toolName: plan.workflow.toolName, params: workflowParams }, session.tools);
-  if (!workflowResult.ok) return { kind: "handled", result: workflowResult.result, evidenceRefs: [readEvidence.evidenceRef] };
-  const planned = await synthesizeToolResult(session, turn, workflowResult.toolResult, turnContext(session, turn, options), options);
-  emitToolResultEvent(session, options, plan.workflow.toolName, workflowResult.toolResult, planned.result);
-  return { kind: "handled", ...planned, evidenceRefs: [readEvidence.evidenceRef, ...(planned.evidenceRefs ?? [])] };
 }
 
 async function runPostLlmSafetyScaffoldFallback(input: PostLlmSafetyScaffoldInput): Promise<PlannedAgentResult | undefined> {
   void input.reason;
   // This bounded scaffold runs only when the LLM is genuinely unavailable (stub mode,
   // error, or empty output). It is not planner success and must not expand into the
-  // primary business brain. When the LLM is available but produced no structured
-  // ToolPlanAction JSON, the LLM's text is synthesized directly -- the regex-based
-  // fallback must not override an available model's natural-language decision.
+  // primary business brain. When the LLM is available but did not call tools, the
+  // LLM's text is synthesized directly.
   if (input.session.profile.id === "customer_pms") {
     return runCustomerPmsLoop({ turn: input.turn, tools: input.session.tools, state: input.session.state });
   }
@@ -205,36 +182,35 @@ async function runPostLlmSafetyScaffoldFallback(input: PostLlmSafetyScaffoldInpu
   return undefined;
 }
 
-function toolPlanRefusalReason(reason: string): "policy" | "unsupported" | "invalid_request" {
-  if (reason === "raw_tool_not_visible") return "policy";
-  if (reason === "tool_not_visible") return "unsupported";
-  return "invalid_request";
-}
-
-function toolPlanEvent(session: UnifiedAgentSession, plan: ToolPlanAction): UnifiedAgentTurnEvent {
-  if (plan.type !== "call_tool") {
-    return { event: "pms_agent_turn_planned", profile: session.profile.id, plannerPath: "structured_tool_plan", toolPlanType: plan.type };
+function latestApproval(evidence: readonly PmsEvidence<unknown>[]): PlannedAgentResult | undefined {
+  for (let index = evidence.length - 1; index >= 0; index -= 1) {
+    const approval = synthesizePrepareConfirmApproval(evidence[index]);
+    if (approval) return approval;
   }
-  return {
-    event: "pms_agent_turn_planned",
-    profile: session.profile.id,
-    plannerPath: "structured_tool_plan",
-    toolPlanType: plan.type,
-    toolName: plan.toolName,
-    paramKeys: Object.keys(plan.params).sort()
-  };
+  return undefined;
 }
 
-function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, toolName: string, toolResult: import("./pi-session.js").AgentToolResult<GatedToolResult<unknown>>, result: AgentResult): void {
+function gatedToolDetails(toolResult: import("./pi-session.js").AgentToolResult<unknown>): GatedToolResult<unknown> | undefined {
   const details = toolResult.details as Record<string, unknown>;
-  const value = "value" in details ? details.value : undefined;
+  if (!details || typeof details !== "object") return undefined;
+  if (details.outcome !== "allow" && details.outcome !== "deny" && details.outcome !== "require_approval") return undefined;
+  return details as GatedToolResult<unknown>;
+}
+
+function toolContentText(toolResult: import("./pi-session.js").AgentToolResult<unknown>): string {
+  return toolResult.content.map((item) => item.type === "text" ? item.text : "").filter(Boolean).join("\n").trim();
+}
+
+function emitToolResultEvent(session: UnifiedAgentSession, options: RunAgentTurnOptions, toolName: string, toolResult: import("./pi-session.js").AgentToolResult<unknown>): void {
+  const details = gatedToolDetails(toolResult);
+  const value = details && "value" in details ? details.value : undefined;
+  const outcome = details?.outcome ?? "unknown";
   emitEvent(options, {
     event: "pms_agent_tool_result",
     profile: session.profile.id,
     toolName,
-    outcome: typeof details.outcome === "string" ? details.outcome : "unknown",
-    ...(isPmsEvidence(value) ? { evidenceMethod: value.source.method } : {}),
-    resultType: result.type
+    outcome,
+    ...(isPmsEvidence(value) ? { evidenceMethod: value.source.method } : {})
   });
 }
 

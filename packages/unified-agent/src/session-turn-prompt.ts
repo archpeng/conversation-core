@@ -2,7 +2,6 @@ import type { FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import type { PmsEvidence } from "@pms-agent-v2/pms-platform-client";
 import { buildContextBundle, contextBundlePrompt } from "./context-bundle.js";
 import { continuityPrompt } from "./continuity.js";
-import { buildVisibleGatedToolManifest } from "./tool-plan.js";
 import type { RunAgentTurnOptions, UnifiedAgentSession } from "./session-types.js";
 
 export function evidenceReplyPrompt(turn: FeishuTurnInput, evidence: PmsEvidence<unknown>): string {
@@ -39,24 +38,26 @@ export function turnPrompt(session: UnifiedAgentSession, turn: FeishuTurnInput, 
       pmsEvidence: options.pmsEvidence,
       modelPriorSummary: options.modelPriorSummary
     })),
-    "Visible gated tool manifest:",
-    JSON.stringify(buildVisibleGatedToolManifest(session.profile, session.tools), null, 2),
-    "ToolPlanAction JSON-only output contract:",
-    "Return exactly one JSON object and no markdown or extra prose for actionable turns.",
-    "Allowed shapes:",
-    JSON.stringify([
-      { type: "call_tool", toolName: "one visible gated tool name", params: {} },
-      {
-        type: "bounded_read_then_workflow",
-        read: { toolName: "gated_pms_read", params: { target: "availability" } },
-        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm" } }
-      },
-      { type: "ask_clarification", message: "focused clarification question" },
-      { type: "refuse", reason: "policy|unsupported|invalid_request", message: "safe refusal text" },
-      { type: "require_approval", message: "approval-card/proposal required text" }
-    ], null, 2),
-    "Never call or name raw tools such as bash, read, write, edit, http, or http_request. Choose only from the visible gated tool manifest; runtime validation and Safety Gateway remain authoritative.",
+    "Visible Pi custom tools:",
+    JSON.stringify(visibleToolPromptItems(session), null, 2),
+    "Use the visible Pi custom tools directly when current PMS facts or PMS workflow evidence are needed.",
+    "You may call multiple PMS tools in sequence when the answer depends on more than one fact. Example: if pms_availability_search returns 12 candidates and the user asks why there are 13 rooms total, call pms_inventory_summary before answering.",
+    "Tool semantics: pms_availability_search returns room candidates available for every night in the requested stay. It is not total hotel inventory.",
+    "Safe workflow tools are draft, quote, and prepare-confirm only. Final PMS confirm/cancel is never available as a natural-language tool and must happen only through an approval card/gateway.",
+    "Do not call or name raw tools such as bash, read, write, edit, http, or http_request.",
+    "If required slots are missing, ask one focused clarification question in natural language.",
     "User message:",
     turn.message.text
   ].join("\n");
+}
+
+function visibleToolPromptItems(session: UnifiedAgentSession): readonly Record<string, unknown>[] {
+  const visibleNames = new Set(session.profile.visibleToolNames);
+  return session.tools
+    .filter((tool) => visibleNames.has(tool.name))
+    .map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters
+    }));
 }

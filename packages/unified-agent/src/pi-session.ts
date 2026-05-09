@@ -1,47 +1,39 @@
-export type PiToolTextContent = {
-  type: "text";
-  text: string;
+import type {
+  AgentSession,
+  AgentSessionEvent,
+  AgentToolResult,
+  CreateAgentSessionOptions,
+  ResourceLoader,
+  ToolDefinition
+} from "@mariozechner/pi-coding-agent";
+import type { TSchema } from "typebox";
+
+export type {
+  AgentSession,
+  AgentSessionEvent,
+  AgentToolResult,
+  CreateAgentSessionOptions,
+  ResourceLoader,
+  ToolDefinition
+} from "@mariozechner/pi-coding-agent";
+
+export type AgentSessionPort = {
+  prompt: AgentSession["prompt"];
+  subscribe?: (listener: (event: AgentSessionEvent) => void) => () => void;
+  readonly messages?: unknown[];
+  dispose?: AgentSession["dispose"];
 };
 
-export type PiToolResult = {
-  content: PiToolTextContent[];
-  details: unknown;
+export type GatedToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown> = Omit<ToolDefinition<TParams, TDetails>, "renderCall" | "renderResult"> & {
+  executePlan(params: Record<string, unknown>): Promise<AgentToolResult<TDetails>>;
 };
 
-export type PiToolDefinition<Parameters = Record<string, unknown>> = {
-  name: string;
-  label: string;
-  description: string;
-  parameters: unknown;
-  execute(toolCallId: string, params: Parameters, signal?: AbortSignal, onUpdate?: unknown, context?: unknown): Promise<PiToolResult>;
-};
-
-export type PiAssistantEvent = {
-  type?: string;
-  assistantMessageEvent?: { type?: string; delta?: string };
-  message?: unknown;
-  messages?: unknown[];
-};
-
-export type PiAgentSession = {
-  prompt(text: string, options?: { source?: string; streamingBehavior?: "steer" | "followUp" }): Promise<void>;
-  subscribe?(listener: (event: PiAssistantEvent) => void): () => void;
-  messages?: unknown[];
-  dispose?(): void;
-};
-
-export type PiCreateAgentSessionOptions = {
-  cwd?: string;
-  agentDir?: string;
+export type AgentSessionFactoryOptions = Omit<CreateAgentSessionOptions, "customTools" | "tools"> & {
   sessionFile?: string;
   tools: readonly string[];
-  customTools: readonly PiToolDefinition[];
-  resourceLoader?: unknown;
-  sessionManager?: unknown;
-  authStorage?: unknown;
-  modelRegistry?: unknown;
+  customTools: readonly GatedToolDefinition[];
 };
 
-export type PiCreateAgentSession = (options: PiCreateAgentSessionOptions) => Promise<{ session: PiAgentSession }>;
+export type AgentSessionFactory = (options: AgentSessionFactoryOptions) => Promise<{ session: AgentSessionPort }>;
 
-export type PiResourceLoaderFactory = (systemPrompt: string) => unknown | Promise<unknown>;
+export type ResourceLoaderFactory = (systemPrompt: string) => ResourceLoader | Promise<ResourceLoader>;

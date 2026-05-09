@@ -1,10 +1,12 @@
 import {
-  gatedPmsRead,
+  gatedPmsSafeRead,
   type GatedToolExecutor,
   type GatedToolRequest,
   type SafetyGatewayPort,
 } from "@pms-agent-v2/gated-tools";
-import type { PiToolDefinition } from "./pi-session.js";
+import type { GatedToolDefinition, AgentToolResult } from "./pi-session.js";
+import type { TSchema } from "typebox";
+import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { UnifiedAgentToolExecutors } from "./tool-registration.js";
 
 export const PMS_SAFE_READ_TOOLS = [
@@ -15,9 +17,27 @@ export const PMS_SAFE_READ_TOOLS = [
   "pms_get_room",
   "pms_today_arrivals",
   "pms_today_departures",
+  "pms_pending_action_status",
 ] as const;
 
 export type PmsSafeReadToolName = (typeof PMS_SAFE_READ_TOOLS)[number];
+
+export type PmsCapabilityPlannerProjectionItem = {
+  readonly name: PmsSafeReadToolName;
+  readonly customerChatAllowed: boolean;
+  readonly naturalLanguageExecutable: boolean;
+  readonly confirmationRequired: boolean;
+  readonly capabilityClass: "safe_read" | "workflow" | "confirm" | "internal";
+};
+
+const PMS_SAFE_READ_PROJECTION: readonly PmsCapabilityPlannerProjectionItem[] =
+  PMS_SAFE_READ_TOOLS.map((name) => ({
+    name,
+    customerChatAllowed: true,
+    naturalLanguageExecutable: true,
+    confirmationRequired: false,
+    capabilityClass: name === "pms_pending_action_status" ? "internal" : "safe_read",
+  }));
 
 const PmsToolDescriptions: Record<PmsSafeReadToolName, string> = {
   pms_availability_search:
@@ -40,6 +60,9 @@ const PmsToolDescriptions: Record<PmsSafeReadToolName, string> = {
 
   pms_today_departures:
     "List or check departures for a business date. Returns reservation codes, room assignments, guest names, and departure statuses.",
+
+  pms_pending_action_status:
+    "Read status for a known PMS pending action created by a typed approval workflow. This is status readback only; confirm and cancel are never available as natural-language tools.",
 };
 
 const PmsToolSchemas: Record<PmsSafeReadToolName, object> = {
@@ -104,6 +127,14 @@ const PmsToolSchemas: Record<PmsSafeReadToolName, object> = {
       businessDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
     },
   },
+
+  pms_pending_action_status: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      pendingActionId: { type: "string", minLength: 1 },
+    },
+  },
 };
 
 export type GeneratePmsSafeReadToolsInput = {
@@ -115,10 +146,15 @@ export type GeneratePmsSafeReadToolsInput = {
 
 export function generatePmsSafeReadTools(
   input: GeneratePmsSafeReadToolsInput,
-): PiToolDefinition[] {
-  return PMS_SAFE_READ_TOOLS.map((toolName) =>
-    defineGeneratedTool(toolName, input),
-  );
+  projection: readonly PmsCapabilityPlannerProjectionItem[] = PMS_SAFE_READ_PROJECTION,
+): GatedToolDefinition<TSchema, GatedToolResult<unknown>>[] {
+  return projection
+    .filter(isVisibleSafeReadProjection)
+    .map((item) => defineGeneratedTool(item.name, input));
+}
+
+export function pmsSafeReadProjection(): readonly PmsCapabilityPlannerProjectionItem[] {
+  return PMS_SAFE_READ_PROJECTION;
 }
 
 export function pmsToolDescription(
@@ -142,34 +178,39 @@ export function pmsToolSchema(capabilityName: PmsSafeReadToolName): object {
 function defineGeneratedTool(
   toolName: PmsSafeReadToolName,
   input: GeneratePmsSafeReadToolsInput,
-): PiToolDefinition {
+): GatedToolDefinition<TSchema, GatedToolResult<unknown>> {
   const description = pmsToolDescription(toolName);
   const parameters = pmsToolSchema(toolName);
+
+  const executePlan = async (params: Record<string, unknown>) => {
+    return runGeneratedTool(toolName, input, params);
+  };
 
   return {
     name: toolName,
     label: toolLabel(toolName),
     description,
     parameters,
-    async execute(_toolCallId, params) {
-      const result = await gatedPmsRead({
-        gateway: input.gateway,
-        actor: input.actor,
-        tenantId: input.tenantId,
-        target: toolName,
-        executor:
-          input.executors?.pmsRead ?? notConfiguredExecutor("pmsRead"),
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(publicToolResult(result)),
-          },
-        ],
-        details: result,
-      };
+    executePlan,
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      return executePlan(params);
     },
+  };
+}
+
+async function runGeneratedTool(toolName: PmsSafeReadToolName, input: GeneratePmsSafeReadToolsInput, params: Record<string, unknown>): Promise<AgentToolResult<GatedToolResult<unknown>>> {
+  const executor = input.executors?.pmsReadExecutors?.[toolName] as GatedToolExecutor<unknown> | undefined;
+  const result = await gatedPmsSafeRead({
+    gateway: input.gateway,
+    actor: input.actor,
+    tenantId: input.tenantId,
+    capabilityId: toolName,
+    ...safeReadRequestParams(params),
+    executor: executor ?? notConfiguredExecutor(`pmsReadExecutors.${toolName}`),
+  });
+  return {
+    content: [{ type: "text", text: JSON.stringify(publicToolResult(result)) }],
+    details: result,
   };
 }
 
@@ -182,8 +223,33 @@ function toolLabel(toolName: PmsSafeReadToolName): string {
     pms_get_room: "PMS Get Room",
     pms_today_arrivals: "PMS Today Arrivals",
     pms_today_departures: "PMS Today Departures",
+    pms_pending_action_status: "PMS Pending Action Status",
   };
   return labels[toolName];
+}
+
+function isVisibleSafeReadProjection(item: PmsCapabilityPlannerProjectionItem): boolean {
+  if (!item.customerChatAllowed || !item.naturalLanguageExecutable || item.confirmationRequired) return false;
+  if (item.capabilityClass === "confirm" || item.capabilityClass === "workflow") return false;
+  return item.capabilityClass === "safe_read" || item.name === "pms_pending_action_status";
+}
+
+function safeReadRequestParams(params: Record<string, unknown>): Omit<GatedToolRequest, "capabilityId" | "actor" | "tenantId"> {
+  return {
+    target: optionalText(params.target),
+    roomId: optionalText(params.roomId),
+    pendingActionId: optionalText(params.pendingActionId),
+    checkInDate: optionalText(params.checkInDate),
+    checkOutDate: optionalText(params.checkOutDate),
+    startDate: optionalText(params.startDate),
+    endDate: optionalText(params.endDate),
+    businessDate: optionalText(params.businessDate),
+    reservationCode: optionalText(params.reservationCode),
+    dateContext: optionalText(params.dateContext),
+    roomType: optionalText(params.roomType),
+    quantity: optionalPositiveInteger(params.quantity),
+    guestName: optionalText(params.guestName),
+  };
 }
 
 function publicToolResult(result: {
@@ -224,4 +290,12 @@ function notConfiguredExecutor<T = unknown>(name: string): GatedToolExecutor<T> 
   return () => {
     throw new Error(`Gated tool executor is not configured: ${name}`);
   };
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function optionalPositiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }

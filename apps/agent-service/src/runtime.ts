@@ -7,9 +7,9 @@ import { AuthStorage, createAgentSession, DefaultResourceLoader, ModelRegistry, 
 import { createAgentService, type AgentService } from "./index.js";
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
-import type { PiCreateAgentSession, PiResourceLoaderFactory } from "@pms-agent-v2/unified-agent";
-import { createRuntimeExecutors, dispatchPmsRead, type RuntimeExecutorConfig } from "./executors.js";
-export { createRuntimeExecutors, dispatchPmsRead, type RuntimeExecutorConfig };
+import type { AgentSessionFactory, AgentSessionFactoryOptions, ResourceLoaderFactory } from "@pms-agent-v2/unified-agent";
+import { createRuntimeExecutors, type RuntimeExecutorConfig } from "./executors.js";
+export { createRuntimeExecutors, type RuntimeExecutorConfig };
 
 export type AgentServiceRuntimeConfig = {
   host: string;
@@ -110,8 +110,8 @@ export async function startAgentHttpServer(config: AgentServiceRuntimeConfig, se
   };
 }
 
-function createRuntimeResourceLoaderFactory(config: AgentServiceRuntimeConfig): PiResourceLoaderFactory {
-  return async (systemPrompt) => {
+function createRuntimeResourceLoaderFactory(config: AgentServiceRuntimeConfig): ResourceLoaderFactory {
+  return async (systemPrompt: string) => {
     ensureRuntimePiDirs(config);
     const loader = new DefaultResourceLoader({
       cwd: config.cwd,
@@ -144,12 +144,12 @@ function ensureRuntimePiDirs(config: AgentServiceRuntimeConfig): void {
   if (config.piSessionMode === "persistent") mkdirSync(config.piSessionDir, { recursive: true });
 }
 
-export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig, createSession: typeof createAgentSession = createAgentSession): PiCreateAgentSession {
+export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig, createSession: typeof createAgentSession = createAgentSession): AgentSessionFactory {
   if (config.piMode === "stub") {
     return async () => ({ session: { async prompt() {} } });
   }
 
-  return async (options) => {
+  return async (options: AgentSessionFactoryOptions) => {
     ensureRuntimePiDirs(config);
     const authStorage = AuthStorage.create(join(config.piAgentDir, "auth.json"));
     const modelRegistry = ModelRegistry.create(authStorage, join(config.piAgentDir, "models.json"));
@@ -171,9 +171,9 @@ export function createRuntimePiSessionFactory(config: AgentServiceRuntimeConfig,
   };
 }
 
-function piSessionResult(value: ReturnType<typeof createAgentSession>): ReturnType<PiCreateAgentSession> {
+function piSessionResult(value: ReturnType<typeof createAgentSession>): ReturnType<AgentSessionFactory> {
   // Pi SDK session factory and the local port expose equivalent runtime shapes but distinct type aliases.
-  return value as unknown as ReturnType<PiCreateAgentSession>;
+  return value as unknown as ReturnType<AgentSessionFactory>;
 }
 
 function runtimeSessionManager(config: AgentServiceRuntimeConfig, sessionFile?: string): ReturnType<typeof SessionManager.inMemory> {

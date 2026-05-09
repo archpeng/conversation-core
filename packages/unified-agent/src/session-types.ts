@@ -33,8 +33,8 @@ export type CreateUnifiedAgentSessionInput = {
 };
 
 export type UnifiedAgentTurnEvent =
-  | { event: "pms_agent_turn_planned"; profile: UnifiedAgentProfile["id"]; plannerPath: "structured_tool_plan" | "no_structured_plan" | "invalid_tool_plan"; toolPlanType?: string; toolName?: string; paramKeys?: readonly string[] }
-  | { event: "pms_agent_tool_result"; profile: UnifiedAgentProfile["id"]; toolName: string; outcome: string; evidenceMethod?: string; resultType: AgentResult["type"] }
+  | { event: "pms_agent_turn_planned"; profile: UnifiedAgentProfile["id"]; plannerPath: "pi_native_tools" | "no_tool_results"; toolCount?: number }
+  | { event: "pms_agent_tool_result"; profile: UnifiedAgentProfile["id"]; toolName: string; outcome: string; evidenceMethod?: string }
   | { event: "pms_agent_turn_result"; profile: UnifiedAgentProfile["id"]; resultType: AgentResult["type"]; evidenceCount: number; pendingActionCount: number }
   | { event: "pms_agent_turn_failed"; stage: "create_or_run_turn"; status: 502; errorName: string; errorMessageHash: string };
 

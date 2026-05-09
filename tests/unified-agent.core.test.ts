@@ -2,16 +2,24 @@ import { describe, expect, it } from "vitest";
 import {
   createUnifiedAgentSession,
   loadAgentProfile,
+  PMS_SAFE_READ_TOOLS,
+  PMS_SAFE_WORKFLOW_TOOLS,
   registerGatedTools,
   runAgentTurn,
-  type PiCreateAgentSessionOptions
+  type AgentSessionFactoryOptions
 } from "../packages/unified-agent/src/index.js";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
-import type { FeishuActorRole } from "../packages/adapter-contracts/src/index.js";
+import type { FeishuActorRole, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
 import { baseTurn, fakeCreateAgentSession, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithAssistantTextSequence, safetyGateway } from "./unified-agent.helpers.js";
+
+const customerRegisteredToolNames = [
+  ...PMS_SAFE_READ_TOOLS,
+  ...PMS_SAFE_WORKFLOW_TOOLS
+];
+
 describe("unified Agent runtime", () => {
   it("creates pi-coding-agent sessions with gated custom tools and no raw built-ins", async () => {
-    const calls: PiCreateAgentSessionOptions[] = [];
+    const calls: AgentSessionFactoryOptions[] = [];
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
       gateway: safetyGateway([]),
@@ -25,7 +33,7 @@ describe("unified Agent runtime", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].cwd).toBe("/repo");
     expect(calls[0].tools).toEqual([]);
-    expect(calls[0].customTools.map((tool) => tool.name)).toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
+    expect(calls[0].customTools.map((tool) => tool.name)).toEqual(customerRegisteredToolNames);
     expect(calls[0].customTools.map((tool) => tool.name)).not.toEqual(expect.arrayContaining(["read", "write", "edit", "bash", "http"]));
     expect(calls[0].resourceLoader).toEqual({ systemPromptOverride: session.systemPrompt });
   });
@@ -48,9 +56,8 @@ describe("unified Agent runtime", () => {
     const adminProfile = loadAgentProfile("admin");
 
     expect(customerProfile.visibleToolNames).toEqual([
-      "gated_pms_read", "gated_pms_workflow", "gated_pms_confirm",
-      "pms_availability_search", "pms_inventory_summary", "pms_room_reservation_context",
-      "pms_reservation_lookup", "pms_get_room", "pms_today_arrivals", "pms_today_departures"
+      ...PMS_SAFE_READ_TOOLS,
+      ...PMS_SAFE_WORKFLOW_TOOLS
     ]);
     expect(customerProfile.visibleToolNames).toEqual(expect.arrayContaining(registerGatedTools({
       profile: customerProfile,
@@ -100,18 +107,27 @@ describe("unified Agent runtime", () => {
       actor: { profile: "customer", id: "customer_1" },
       tenantId: "tenant_1",
       executors: {
-        pmsRead: () => createPmsEvidence({
+        pmsReadExecutors: {
+          pms_availability_search: () => createPmsEvidence({
           method: "searchAvailability",
           tenantId: "tenant_1",
           fetchedAt: "2026-05-06T12:00:00.000Z",
           summary: "availability search summary",
           data: { available: true }
-        })
+          }),
+          pms_inventory_summary: () => undefined as never,
+          pms_room_reservation_context: () => undefined as never,
+          pms_reservation_lookup: () => undefined as never,
+          pms_get_room: () => undefined as never,
+          pms_today_arrivals: () => undefined as never,
+          pms_today_departures: () => undefined as never,
+          pms_pending_action_status: () => undefined as never
+        }
       }
     });
 
-    const read = tools.find((tool) => tool.name === "gated_pms_read");
-    const result = await read?.execute("tool_1", { target: "availability" });
+    const read = tools.find((tool) => tool.name === "pms_availability_search");
+    const result = await read?.execute("tool_1", {});
 
     expect(result?.details).toMatchObject({
       outcome: "allow",
@@ -139,16 +155,25 @@ describe("unified Agent runtime", () => {
       gateway: safetyGateway([]),
       actor: { profile: "customer", id: "customer_1" },
       tenantId: "tenant_1",
-      executors: { pmsRead: () => evidence }
+      executors: { pmsReadExecutors: {
+        pms_availability_search: () => evidence,
+        pms_inventory_summary: () => evidence as never,
+        pms_room_reservation_context: () => evidence as never,
+        pms_reservation_lookup: () => evidence as never,
+        pms_get_room: () => evidence as never,
+        pms_today_arrivals: () => evidence as never,
+        pms_today_departures: () => evidence as never,
+        pms_pending_action_status: () => evidence as never
+      } }
     });
 
-    const read = tools.find((tool) => tool.name === "gated_pms_read");
-    const result = await read?.execute("tool_1", { target: "availability" });
+    const read = tools.find((tool) => tool.name === "pms_availability_search");
+    const result = await read?.execute("tool_1", {});
     const publicContent = String(result?.content[0].text);
 
     expect(JSON.parse(publicContent)).toEqual({
       outcome: "allow",
-      auditId: "audit_pms_read_allow",
+      auditId: "audit_pms_availability_search_allow",
       evidenceRef: evidence.evidenceRef,
       source: { system: "pms-platform", method: "searchAvailability" },
       summary: "availability search summary"
@@ -157,7 +182,7 @@ describe("unified Agent runtime", () => {
     expect(publicContent).not.toContain("data");
     expect(publicContent).not.toContain("room_secret_tool_content");
     expect(publicContent).not.toContain("raw-platform-secret");
-    expect(result?.details).toMatchObject({ outcome: "allow", auditId: "audit_pms_read_allow", value: evidence });
+    expect(result?.details).toMatchObject({ outcome: "allow", auditId: "audit_pms_availability_search_allow", value: evidence });
     expect((result?.details as { value?: unknown }).value).toBe(evidence);
   });
 
@@ -222,7 +247,7 @@ describe("unified Agent runtime", () => {
     expect(prompts[0]).toContain("authority=model_prior");
   });
 
-  it("injects profile-visible gated tool manifest and JSON-only tool-plan contract into turn prompts", async () => {
+  it("injects Pi-native visible custom tools into turn prompts", async () => {
     const prompts: string[] = [];
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
@@ -232,13 +257,13 @@ describe("unified Agent runtime", () => {
 
     await runAgentTurn(session, baseTurn);
 
-    expect(prompts[0]).toContain("Visible gated tool manifest:");
-    expect(prompts[0]).toContain("ToolPlanAction JSON-only output contract:");
-    expect(prompts[0]).toContain("Return exactly one JSON object and no markdown or extra prose");
-    expect(prompts[0]).toContain('"type": "call_tool"');
-    expect(prompts[0]).toContain('"name": "gated_pms_read"');
-    expect(prompts[0]).toContain('"name": "gated_pms_workflow"');
-    expect(prompts[0]).toContain('"name": "gated_pms_confirm"');
+    expect(prompts[0]).toContain("Visible Pi custom tools:");
+    expect(prompts[0]).toContain("Use the visible Pi custom tools directly");
+    expect(prompts[0]).not.toContain("ToolPlanAction JSON-only output contract:");
+    expect(prompts[0]).toContain('"name": "pms_availability_search"');
+    expect(prompts[0]).toContain('"name": "pms_inventory_summary"');
+    expect(prompts[0]).toContain('"name": "pms_reservation_prepare_confirm"');
+    expect(prompts[0]).not.toContain('"name": "gated_pms_read"');
     expect(prompts[0]).not.toContain('"name": "gated_proposal_write"');
     expect(prompts[0]).not.toContain('"name": "bash"');
     expect(prompts[0]).not.toContain('"name": "read"');
@@ -263,11 +288,11 @@ describe("unified Agent runtime", () => {
 
     await runAgentTurn(session, adminTurn);
 
-    expect(prompts[0]).toContain("Visible gated tool manifest:");
+    expect(prompts[0]).toContain("Visible Pi custom tools:");
     expect(prompts[0]).toContain('"name": "gated_proposal_read"');
     expect(prompts[0]).toContain('"name": "gated_proposal_write"');
     expect(prompts[0]).toContain('"name": "gated_proposal_edit"');
-    expect(prompts[0]).not.toContain('"name": "gated_pms_read"');
+    expect(prompts[0]).not.toContain('"name": "pms_availability_search"');
     expect(prompts[0]).not.toContain('"name": "bash"');
     expect(prompts[0]).not.toContain('"name": "read"');
     expect(prompts[0]).not.toContain('"name": "write"');

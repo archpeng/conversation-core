@@ -1,13 +1,14 @@
 export { looksLikeCurrentPmsFactReply, synthesizeAgentResult, synthesizeTextReply, type ResponseSynthesisDraft, type ResponseSynthesisFailureReason, type ResponseSynthesisInput, type ResponseSynthesisResult } from "./response-synthesis.js";
 export { buildContextBundle, contextBundlePrompt, workspaceAdvisoryFromToolValue, type BuildContextBundleInput, type ContextAuthority, type ContextBundle, type ContextBundleItem, type WorkspaceAdvisoryContextInput } from "./context-bundle.js";
-export { buildVisibleGatedToolManifest, executeToolPlan, parseToolPlan, type ExecuteToolPlanResult, type ToolPlanAction, type ToolPlanValidationResult, type VisibleGatedToolManifestItem } from "./tool-plan.js";
 export { clarificationFromMissingSlot, parseIntentFrame, type IntentFrame, type IntentFrameIntent, type IntentFrameParseResult, type IntentSlotName, type IntentSlotState } from "./intent-frame.js";
 export { continuityPrompt, createRedactedSessionState, mergeIntentFrameIntoSessionState, rememberRefs, rememberTurn, sessionRequiresPmsEvidence, sessionSlotValue, type RedactedSessionState, type RedactedTurnRef, type SessionSafetyFlag, type SessionSlotMemory } from "./continuity.js";
-export { type PiAgentSession, type PiCreateAgentSession, type PiCreateAgentSessionOptions, type PiResourceLoaderFactory, type PiToolDefinition, type PiToolResult } from "./pi-session.js";
+export { type AgentSession, type AgentSessionEvent, type AgentSessionFactory, type AgentSessionFactoryOptions, type AgentSessionPort, type AgentToolResult, type CreateAgentSessionOptions, type GatedToolDefinition, type ResourceLoader, type ResourceLoaderFactory, type ToolDefinition } from "./pi-session.js";
 export { buildSystemPrompt } from "./prompt.js";
 export { loadAgentProfile, type UnifiedAgentProfile, type UnifiedAgentProfileId } from "./profile.js";
 export { runCustomerPmsLoop, type CustomerLoopResult } from "./customer-loop.js";
 export { runAdminProposalLoop, type ProposalLoopResult } from "./proposal-loop.js";
 export { createUnifiedAgentSession, runAgentTurn, type CreateUnifiedAgentSessionInput, type RunAgentTurnOptions, type UnifiedAgentSession, type UnifiedAgentTurnEvent } from "./session.js";
-export { registerGatedTools, type InventorySummaryResult, type PmsReadExecutorMap, type RegisterGatedToolsInput, type RoomReservationContextResult, type TodayArrivalsResult, type TodayDeparturesResult, type UnifiedAgentToolExecutors } from "./tool-registration.js";
-export { generatePmsSafeReadTools, PMS_SAFE_READ_TOOLS, pmsToolDescription, pmsToolSchema, type GeneratePmsSafeReadToolsInput, type PmsSafeReadToolName } from "./pms-capability-tools.js";
+export { registerGatedTools, type PmsReadExecutorMap, type PmsWorkflowExecutorMap, type RegisterGatedToolsInput, type UnifiedAgentToolExecutors } from "./tool-registration.js";
+export { generatePmsSafeReadTools, PMS_SAFE_READ_TOOLS, pmsSafeReadProjection, pmsToolDescription, pmsToolSchema, type GeneratePmsSafeReadToolsInput, type PmsCapabilityPlannerProjectionItem, type PmsSafeReadToolName } from "./pms-capability-tools.js";
+export { generatePmsWorkflowTools, PMS_SAFE_WORKFLOW_TOOLS, pmsWorkflowToolDescription, pmsWorkflowToolSchema, type PmsSafeWorkflowToolName } from "./pms-workflow-tools.js";
+export type { InventorySummaryResult, RoomReservationContextResult, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";

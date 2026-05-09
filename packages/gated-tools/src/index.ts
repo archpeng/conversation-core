@@ -10,7 +10,7 @@ export {
   type SafetyGatewayPort
 } from "./run-gated-tool.js";
 
-export { gatedPmsConfirm, gatedPmsRead, gatedPmsSafeRead, gatedPmsWorkflow, type GatedPmsConfirmInput, type GatedPmsInput, type GatedPmsSafeReadInput } from "./pms-tools.js";
+export { gatedPmsSafeRead, gatedPmsWorkflowStep, type GatedPmsCapabilityInput, type GatedPmsSafeReadInput, type GatedPmsWorkflowStepInput } from "./pms-tools.js";
 
 export { gatedEdit, gatedRead, gatedWrite, type GatedFileInput } from "./file-tools.js";
 

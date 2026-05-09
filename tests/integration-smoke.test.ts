@@ -4,7 +4,8 @@ import { isAgentResult, type AgentResult, type FeishuTurnInput } from "../packag
 import { gatedBash, type GatedDecision, type GatedToolExecutor, type GatedToolRequest, type SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
 import { createPmsEvidence, type AvailabilitySearchResult, type ReservationConfirmPreparation } from "../packages/pms-platform-client/src/index.js";
 import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
-import { createUnifiedAgentSession, runAgentTurn, type PiCreateAgentSession } from "../packages/unified-agent/src/index.js";
+import { createUnifiedAgentSession, runAgentTurn, type AgentSessionFactory, type PmsReadExecutorMap, type PmsWorkflowExecutorMap } from "../packages/unified-agent/src/index.js";
+import { fakeCreateAgentSessionWithToolCalls } from "./unified-agent.helpers.js";
 
 const baseTurn: FeishuTurnInput = {
   channel: "feishu",
@@ -27,12 +28,8 @@ describe("local MVP integration smoke", () => {
       gateway,
       createAgentSession: fakeCreateAgentSession,
       executors: {
-        pmsRead: localPmsRead(pmsCalls),
-        pmsWorkflow: localPrepareConfirm(pmsCalls),
-        pmsConfirm: () => {
-          confirmCalls.push("confirm");
-          return { mutated: true };
-        },
+        pmsReadExecutors: localPmsReadExecutors(pmsCalls),
+        pmsWorkflowExecutors: localWorkflowExecutors(pmsCalls),
         proposalWrite: writeRecorder(writes)
       }
     });
@@ -54,8 +51,7 @@ describe("local MVP integration smoke", () => {
       messageId: "message_loop_3",
       message: { text: "book 2026-05-06 suite" }
     }));
-    expect(loop3.kind).toBe("approval_card");
-    expect(loop3.pendingActionId).toBe("pending_secret_smoke");
+    expect(loop3.kind).toBe("refusal");
 
     const cachedServiceConfirm = adapterDeliver(await adapterPostTurn(service, {
       ...baseTurn,
@@ -65,18 +61,17 @@ describe("local MVP integration smoke", () => {
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
       gateway,
-      createAgentSession: fakeCreateAgentSession,
+      createAgentSession: fakeCreateAgentSessionWithToolCalls([{
+        calls: [{ toolName: "pms_reservation_prepare_confirm", params: { draftRef: "draft_1", quoteRef: "quote_1" } }],
+        text: "PMS 已准备审批卡。"
+      }, {}]),
       executors: {
-        pmsWorkflow: localPrepareConfirm(pmsCalls),
-        pmsConfirm: () => {
-          confirmCalls.push("confirm");
-          return { mutated: true };
-        }
+        pmsWorkflowExecutors: localWorkflowExecutors(pmsCalls)
       }
     });
     await runAgentTurn(session, { ...baseTurn, messageId: "message_loop_4b", message: { text: "book 2026-05-06 suite" } });
     const naturalConfirm = adapterDeliver(await runAgentTurn(session, { ...baseTurn, messageId: "message_loop_4c", message: { text: "confirm" } }));
-    expect(cachedServiceConfirm.kind).toBe("approval_card");
+    expect(cachedServiceConfirm.kind).toBe("refusal");
     expect(naturalConfirm.kind).toBe("approval_card");
 
     const loop5 = adapterDeliver(await adapterPostTurn(service, {
@@ -117,10 +112,10 @@ describe("local MVP integration smoke", () => {
     expect(sandboxSideEffects).toEqual(["allowed"]);
 
     expect(confirmCalls).toEqual([]);
-    expect(pmsCalls).toEqual(["pms_read", "pms_workflow", "pms_workflow"]);
+    expect(pmsCalls).toEqual(["pms_availability_search", "pms_reservation_prepare_confirm"]);
     expect(auditEvents).toEqual(expect.arrayContaining([
-      "pms_read:allow",
-      "pms_workflow:allow",
+      "pms_availability_search:allow",
+      "pms_reservation_prepare_confirm:allow",
       "proposal_write:allow",
       "sandbox_bash:allow",
       "sandbox_bash:deny"
@@ -166,8 +161,8 @@ function expectAgentResultResponse(response: AgentServiceResponse): asserts resp
   expect(response.body).not.toHaveProperty("result");
 }
 
-function localPmsRead(calls: string[]): GatedToolExecutor<ReturnType<typeof localStubEvidence<AvailabilitySearchResult>>> {
-  return ({ request }) => {
+function localPmsReadExecutors(calls: string[]): PmsReadExecutorMap {
+  const read = ({ request }: { request: GatedToolRequest }) => {
     calls.push(request.capabilityId);
     return localStubEvidence({
       method: "searchAvailability",
@@ -175,16 +170,36 @@ function localPmsRead(calls: string[]): GatedToolExecutor<ReturnType<typeof loca
       summary: "local availability smoke"
     });
   };
+  return {
+    pms_availability_search: read,
+    pms_inventory_summary: read as never,
+    pms_room_reservation_context: read as never,
+    pms_reservation_lookup: read as never,
+    pms_get_room: read as never,
+    pms_today_arrivals: read as never,
+    pms_today_departures: read as never,
+    pms_pending_action_status: read as never
+  };
 }
 
-function localPrepareConfirm(calls: string[]): GatedToolExecutor<ReturnType<typeof localStubEvidence<ReservationConfirmPreparation>>> {
-  return ({ request }) => {
+function localWorkflowExecutors(calls: string[]): PmsWorkflowExecutorMap {
+  const prepare = ({ request }: { request: GatedToolRequest }) => {
     calls.push(request.capabilityId);
     return localStubEvidence({
       method: "prepareReservationConfirm",
       data: { pendingActionId: "pending_secret_smoke", confirmationMode: "typedCardOnly", mutationStatus: "none" },
       summary: "local prepare-confirm smoke"
     });
+  };
+  return {
+    pms_reservation_draft_create: prepare as never,
+    pms_reservation_draft_update: prepare as never,
+    pms_reservation_quote: prepare as never,
+    pms_reservation_prepare_confirm: prepare,
+    pms_reservation_group_draft_create: prepare as never,
+    pms_reservation_group_draft_update: prepare as never,
+    pms_reservation_group_quote: prepare as never,
+    pms_reservation_group_prepare_confirm: prepare as never
   };
 }
 
@@ -205,7 +220,7 @@ function localStubEvidence<T>(input: { method: "searchAvailability" | "prepareRe
   });
 }
 
-const fakeCreateAgentSession: PiCreateAgentSession = async () => ({
+const fakeCreateAgentSession: AgentSessionFactory = async () => ({
   session: {
     async prompt() {}
   }

@@ -12,13 +12,27 @@ export type GatedToolRequest = {
     path?: string;
   };
   pendingActionId?: string;
+  pendingActionRef?: string;
+  cardPayloadRef?: string;
   target?: string;
   roomId?: string;
   draftId?: string;
+  draftRef?: string;
+  groupDraftId?: string;
+  groupDraftRef?: string;
+  quoteId?: string;
+  quoteRef?: string;
   checkInDate?: string;
   checkOutDate?: string;
+  startDate?: string;
+  endDate?: string;
+  businessDate?: string;
+  reservationCode?: string;
+  dateContext?: string;
   roomType?: string;
   roomTypeText?: string;
+  sourceEvidenceRef?: string;
+  selectedCandidateRef?: string;
   quantity?: number;
   selections?: readonly {
     roomId: string;

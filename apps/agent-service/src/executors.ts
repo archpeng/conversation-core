@@ -4,6 +4,7 @@ import type { GatedToolExecutor, GatedToolRequest } from "@pms-agent-v2/gated-to
 import { createPmsPlatformClient } from "@pms-agent-v2/pms-platform-client";
 import type {
   PmsReadExecutorMap,
+  PmsWorkflowExecutorMap,
   UnifiedAgentToolExecutors
 } from "@pms-agent-v2/unified-agent";
 
@@ -20,33 +21,6 @@ export type RuntimeExecutorConfig = {
   proposalWorkspacePath: string;
 };
 
-export function dispatchPmsRead(
-  request: GatedToolRequest,
-  executors: PmsReadExecutorMap
-): Promise<unknown> {
-  const capabilityId = request.capabilityId;
-
-  // Backward compat: the coarse gated_pms_read tool still sends capabilityId "pms_read"
-  // with a target field. Route to the legacy pmsRead caller via this dispatch function
-  // only for fine-grained capability IDs.
-  if (capabilityId === "pms_read") {
-    throw new Error(
-      "dispatchPmsRead received legacy pms_read capabilityId; use the coarse pmsRead executor instead"
-    );
-  }
-
-  const executor = executors[capabilityId as keyof PmsReadExecutorMap];
-  if (!executor) {
-    throw new Error(`Unknown PMS read capability: ${capabilityId}`);
-  }
-
-  return executor({
-    request,
-    decision: { outcome: "allow", reasons: [], audit: { capabilityId } },
-    auditId: `dispatch_${capabilityId}`
-  });
-}
-
 export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAgentToolExecutors {
   const client = createPmsPlatformClient({
     baseUrl: config.pmsPlatformBaseUrl,
@@ -54,9 +28,6 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
     fetch
   });
 
-  // Per-capability dispatch map: each fine-grained read capability routes to a
-  // specific pms-platform-client method. Unit 4 registers these capability IDs
-  // through the Safety Gateway.
   const pmsReadExecutors: PmsReadExecutorMap = {
     pms_availability_search: async ({ request }) =>
       client.searchAvailability({
@@ -71,25 +42,24 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
       }),
 
     pms_inventory_summary: async ({ request }) =>
-      // Unit 2 merged client method — use type assertion if the method is not yet
-      // reflected in the current worktree's PmsPlatformClient type definition.
-      (client as unknown as Record<string, Function>)["inventorySummary"]({
+      client.inventorySummary({
         tenantId: tenantId(request),
         propertyId: config.defaultPropertyId,
-        startDate: request.checkInDate ?? config.defaultCheckInDate,
-        endDate: request.checkOutDate ?? config.defaultCheckOutDate
+        startDate: request.startDate ?? request.checkInDate ?? config.defaultCheckInDate,
+        endDate: request.endDate ?? request.checkOutDate ?? config.defaultCheckOutDate
       }),
 
     pms_room_reservation_context: async ({ request }) =>
-      (client as unknown as Record<string, Function>)["roomReservationContext"]({
+      client.roomReservationContext({
         tenantId: tenantId(request),
-        roomId: requiredWorkflowText(request.roomId, "roomId required for reservation context")
+        roomId: requiredWorkflowText(request.roomId, "roomId required for reservation context"),
+        ...(request.dateContext ? { dateContext: request.dateContext } : {})
       }),
 
     pms_reservation_lookup: async ({ request }) =>
-      client.getReservation({
+      client.reservationLookup({
         tenantId: tenantId(request),
-        reservationId: requiredWorkflowText(request.target, "reservationId required for reservation lookup")
+        reservationCode: requiredWorkflowText(request.reservationCode ?? request.target, "reservationCode required for reservation lookup")
       }),
 
     pms_get_room: async ({ request }) =>
@@ -99,132 +69,96 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
       }),
 
     pms_today_arrivals: async ({ request }) =>
-      (client as unknown as Record<string, Function>)["todayArrivals"]({
+      client.todayArrivals({
         tenantId: tenantId(request),
-        propertyId: config.defaultPropertyId,
-        date: request.checkInDate ?? config.defaultCheckInDate
+        businessDate: request.businessDate ?? request.checkInDate ?? config.defaultCheckInDate
       }),
 
     pms_today_departures: async ({ request }) =>
-      (client as unknown as Record<string, Function>)["todayDepartures"]({
+      client.todayDepartures({
         tenantId: tenantId(request),
-        propertyId: config.defaultPropertyId,
-        date: request.checkInDate ?? config.defaultCheckInDate
+        businessDate: request.businessDate ?? request.checkInDate ?? config.defaultCheckInDate
       }),
 
     pms_pending_action_status: async ({ request }) =>
       client.pendingActionStatus({
         tenantId: tenantId(request),
-        pendingActionRef:
-          request.pendingActionId ?? request.target ?? "missing-pending-action"
+        pendingActionRef: request.pendingActionRef ?? request.pendingActionId ?? request.target ?? "missing-pending-action",
+        ...(request.cardPayloadRef ? { cardPayloadRef: request.cardPayloadRef } : {})
       })
   };
 
-  return {
-    // Coarse pmsRead executor — preserved for backward compatibility with the
-    // gated_pms_read tool. Unit 4 fine-grained tools use pmsReadExecutors instead.
-    pmsRead: async ({ request }) => {
-      if (request.target === "availability" || request.target === undefined) {
-        return client.searchAvailability({
-          tenantId: tenantId(request),
-          hotelId: config.defaultHotelId,
-          checkInDate: request.checkInDate ?? config.defaultCheckInDate,
-          checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
-          ...(request.quantity ? { quantity: request.quantity } : {}),
-          ...(request.roomType ?? config.defaultRoomType
-            ? { roomType: request.roomType ?? config.defaultRoomType }
-            : {})
-        });
-      }
-      return client.capabilitiesManifest({ tenantId: tenantId(request) });
-    },
-
-    pmsReadExecutors,
-
-    pmsWorkflow: async ({ request }) => {
-      const tenant = tenantId(request);
-      const quantity = request.quantity ?? 1;
-      if (quantity > 1) {
-        const selections = requiredWorkflowSelections(request.selections, quantity);
-        const sourceEvidenceRef = request.sourceEpisodeRefs?.[0];
-        const groupDraft = await client.createReservationGroupDraft({
-          tenantId: tenant,
-          propertyId: config.defaultPropertyId,
-          guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
-          checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
-          checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
-          quantity,
-          ...(request.roomType ? { roomType: request.roomType } : {}),
-          ...(sourceEvidenceRef ? { sourceEvidenceRef } : {})
-        });
-        const groupDraftIdentifier = groupDraft.data.groupDraftRef ?? groupDraft.data.groupDraftId;
-        await client.updateReservationGroupDraft({
-          tenantId: tenant,
-          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required"),
-          selections,
-          ...(sourceEvidenceRef ? { sourceEvidenceRef } : {})
-        });
-        const quote = await client.quoteReservationGroupDraft({
-          tenantId: tenant,
-          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required")
-        });
-        const prepared = await client.prepareReservationGroupConfirm({
-          tenantId: tenant,
-          groupDraftRef: requiredWorkflowText(groupDraftIdentifier, "pms_workflow_group_draft_required"),
-          quoteRef: requiredWorkflowText(quote.data.quoteRef, "pms_workflow_quote_required")
-        });
-        await client.pendingActionStatus({
-          tenantId: tenant,
-          pendingActionRef: prepared.data.pendingActionRef ?? prepared.data.pendingActionId,
-          ...(prepared.data.cardPayloadRef ? { cardPayloadRef: prepared.data.cardPayloadRef } : {})
-        });
-        return prepared;
-      }
-
-      const draft = request.draftId ? undefined : await client.createReservationDraft({
-        tenantId: tenant,
+  const pmsWorkflowExecutors: PmsWorkflowExecutorMap = {
+    pms_reservation_draft_create: async ({ request }) =>
+      client.createReservationDraft({
+        tenantId: tenantId(request),
         propertyId: config.defaultPropertyId,
         roomId: requiredWorkflowText(request.roomId, "pms_workflow_room_required"),
         guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
         checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
         checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
         ...(request.roomType ? { roomType: request.roomType } : {}),
-        ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
-      });
-      const draftIdentifier = request.draftId ?? draft?.data.draftRef ?? draft?.data.draftId;
-      const selectedCandidateRef = request.sourceEpisodeRefs?.[0] ? `${request.sourceEpisodeRefs[0]}:${request.roomId}` : undefined;
-      if (draft?.data.draftRef ?? draft?.data.draftId) {
-        await client.updateReservationDraft({
-          tenantId: tenant,
-          draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
-          patch: {
-            roomId: request.roomId,
-            ...(selectedCandidateRef ? { selectedCandidateRef } : {})
-          },
-          ...(request.sourceEpisodeRefs?.[0] ? { sourceEvidenceRef: request.sourceEpisodeRefs[0] } : {})
-        });
-      }
-      const quote = await client.quoteReservationDraft({
-        tenantId: tenant,
-        draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required")
-      });
+        ...(request.sourceEvidenceRef ? { sourceEvidenceRef: request.sourceEvidenceRef } : {})
+      }),
 
-      const prepared = await client.prepareReservationConfirm({
-        tenantId: tenant,
-        draftRef: requiredWorkflowText(draftIdentifier, "pms_workflow_draft_required"),
-        quoteRef: requiredWorkflowText(quote.data.quoteRef ?? quote.data.quoteId, "pms_workflow_quote_required")
-      });
-      await client.pendingActionStatus({
-        tenantId: tenant,
-        pendingActionRef: prepared.data.pendingActionId,
-        ...(prepared.data.cardPayloadRef ? { cardPayloadRef: prepared.data.cardPayloadRef } : {})
-      });
-      return prepared;
-    },
-    pmsConfirm: async ({ request }) => client.pendingActionStatus({
-      tenantId: tenantId(request),
-      pendingActionId: request.pendingActionId ?? request.target ?? "missing-pending-action"
-    }),
+    pms_reservation_draft_update: async ({ request }) =>
+      client.updateReservationDraft({
+        tenantId: tenantId(request),
+        ...draftIdentifier(request),
+        patch: draftPatch(request),
+        ...(request.sourceEvidenceRef ? { sourceEvidenceRef: request.sourceEvidenceRef } : {})
+      }),
+
+    pms_reservation_quote: async ({ request }) =>
+      client.quoteReservationDraft({
+        tenantId: tenantId(request),
+        ...draftIdentifier(request)
+      }),
+
+    pms_reservation_prepare_confirm: async ({ request }) =>
+      client.prepareReservationConfirm({
+        tenantId: tenantId(request),
+        ...draftIdentifier(request),
+        quoteRef: requiredWorkflowText(request.quoteRef ?? request.quoteId, "pms_workflow_quote_required")
+      }),
+
+    pms_reservation_group_draft_create: async ({ request }) =>
+      client.createReservationGroupDraft({
+        tenantId: tenantId(request),
+        propertyId: config.defaultPropertyId,
+        guestName: requiredWorkflowText(request.guestName, "pms_workflow_guest_required"),
+        checkInDate: requiredWorkflowText(request.checkInDate, "pms_workflow_check_in_required"),
+        checkOutDate: requiredWorkflowText(request.checkOutDate, "pms_workflow_check_out_required"),
+        quantity: requiredPositiveInteger(request.quantity, "pms_workflow_quantity_required"),
+        ...(request.roomType ? { roomType: request.roomType } : {}),
+        ...(request.sourceEvidenceRef ? { sourceEvidenceRef: request.sourceEvidenceRef } : {})
+      }),
+
+    pms_reservation_group_draft_update: async ({ request }) =>
+      client.updateReservationGroupDraft({
+        tenantId: tenantId(request),
+        ...groupDraftIdentifier(request),
+        selections: requiredWorkflowSelections(request.selections),
+        ...(request.sourceEvidenceRef ? { sourceEvidenceRef: request.sourceEvidenceRef } : {})
+      }),
+
+    pms_reservation_group_quote: async ({ request }) =>
+      client.quoteReservationGroupDraft({
+        tenantId: tenantId(request),
+        ...groupDraftIdentifier(request)
+      }),
+
+    pms_reservation_group_prepare_confirm: async ({ request }) =>
+      client.prepareReservationGroupConfirm({
+        tenantId: tenantId(request),
+        ...groupDraftIdentifier(request),
+        quoteRef: requiredWorkflowText(request.quoteRef ?? request.quoteId, "pms_workflow_quote_required")
+      })
+  };
+
+  return {
+    pmsReadExecutors,
+    pmsWorkflowExecutors,
     proposalRead: proposalReadExecutor(config),
     proposalWrite: proposalWriteExecutor(config),
     proposalEdit: proposalWriteExecutor(config)
@@ -257,13 +191,36 @@ function safeProposalPath(root: string, target: string | undefined): string {
   return path;
 }
 
-function requiredWorkflowSelections(value: GatedToolRequest["selections"], quantity: number): NonNullable<GatedToolRequest["selections"]> {
-  if (!Array.isArray(value) || value.length < quantity) throw new Error("pms_workflow_group_selections_required");
-  return value.slice(0, quantity);
+function requiredWorkflowSelections(value: GatedToolRequest["selections"]): NonNullable<GatedToolRequest["selections"]> {
+  if (!Array.isArray(value) || value.length < 1) throw new Error("pms_workflow_group_selections_required");
+  return value;
 }
 
 function tenantId(request: GatedToolRequest): string {
   return request.tenantId ?? "default-tenant";
+}
+
+function draftIdentifier(request: GatedToolRequest): { draftId: string } | { draftRef: string } {
+  if (request.draftId) return { draftId: request.draftId };
+  return { draftRef: requiredWorkflowText(request.draftRef, "pms_workflow_draft_required") };
+}
+
+function groupDraftIdentifier(request: GatedToolRequest): { groupDraftId: string } | { groupDraftRef: string } {
+  if (request.groupDraftId) return { groupDraftId: request.groupDraftId };
+  return { groupDraftRef: requiredWorkflowText(request.groupDraftRef, "pms_workflow_group_draft_required") };
+}
+
+function draftPatch(request: GatedToolRequest): Record<string, unknown> {
+  return {
+    ...(request.roomId ? { roomId: request.roomId } : {}),
+    ...(request.selectedCandidateRef ? { selectedCandidateRef: request.selectedCandidateRef } : {}),
+    ...(request.roomType ? { roomType: request.roomType } : {})
+  };
+}
+
+function requiredPositiveInteger(value: number | undefined, message: string): number {
+  if (Number.isInteger(value) && value !== undefined && value > 0) return value;
+  throw new Error(message);
 }
 
 function requiredWorkflowText(value: string | undefined, message: string): string {

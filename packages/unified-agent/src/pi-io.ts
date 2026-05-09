@@ -1,38 +1,71 @@
-import type { PiAgentSession, PiAssistantEvent } from "./pi-session.js";
+import type { AgentSessionEvent, AgentSessionPort, AgentToolResult } from "./pi-session.js";
 
-export function parseAssistantToolPlanJson(text: string): { ok: true; hasPlan: true; value: unknown } | { ok: true; hasPlan: false } | { ok: false; hasPlan: true } {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) return { ok: true, hasPlan: false };
-  try {
-    return { ok: true, hasPlan: true, value: JSON.parse(trimmed) };
-  } catch {
-    return { ok: false, hasPlan: true };
-  }
+export type AssistantTurnToolResult = {
+  toolCallId?: string;
+  toolName: string;
+  result: AgentToolResult<unknown>;
+  isError: boolean;
+};
+
+export type AssistantTurn = {
+  text: string;
+  toolResults: readonly AssistantTurnToolResult[];
+};
+
+export async function promptAssistantText(piSession: AgentSessionPort, prompt: string): Promise<string> {
+  return (await promptAssistantTurn(piSession, prompt)).text;
 }
 
-export async function promptAssistantText(piSession: PiAgentSession, prompt: string): Promise<string> {
+export async function promptAssistantTurn(piSession: AgentSessionPort, prompt: string): Promise<AssistantTurn> {
   const assistantText: string[] = [];
+  const toolResults: AssistantTurnToolResult[] = [];
+  const toolCallIds = new Set<string>();
   let unsubscribe: (() => void) | undefined;
   if (piSession.subscribe) {
-    unsubscribe = piSession.subscribe((event) => collectAssistantText(event, assistantText));
+    unsubscribe = piSession.subscribe((event) => collectAssistantTurnEvent(event, assistantText, toolResults, toolCallIds));
   }
   try {
-    await piSession.prompt(prompt, { source: "pms-agent-v2" });
+    await piSession.prompt(prompt, { source: "rpc" });
   } finally {
     unsubscribe?.();
   }
-  if (assistantText.length > 0) return assistantText.join("");
-  return extractVisibleText(latestAssistantMessage(piSession.messages));
+  const text = assistantText.length > 0 ? assistantText.join("") : extractVisibleText(latestAssistantMessage(piSession.messages));
+  return { text, toolResults };
 }
 
-function collectAssistantText(event: PiAssistantEvent, assistantText: string[]): void {
+function collectAssistantTurnEvent(event: AgentSessionEvent, assistantText: string[], toolResults: AssistantTurnToolResult[], toolCallIds: Set<string>): void {
   if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta" && typeof event.assistantMessageEvent.delta === "string") {
     assistantText.push(event.assistantMessageEvent.delta);
+    return;
+  }
+  if (event.type === "tool_execution_end" && !event.isError) {
+    toolResults.push({ toolCallId: event.toolCallId, toolName: event.toolName, result: event.result as AgentToolResult<unknown>, isError: false });
+    toolCallIds.add(event.toolCallId);
     return;
   }
   if (event.type === "turn_end") {
     const text = extractVisibleText(event.message);
     if (text && assistantText.length === 0) assistantText.push(text);
+    collectTurnEndToolResults(event.toolResults, toolResults, toolCallIds);
+  }
+}
+
+function collectTurnEndToolResults(messages: unknown, toolResults: AssistantTurnToolResult[], toolCallIds: Set<string>): void {
+  if (!Array.isArray(messages)) return;
+  for (const message of messages) {
+    if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+    const record = message as Record<string, unknown>;
+    const toolCallId = typeof record.toolCallId === "string" ? record.toolCallId : undefined;
+    const toolName = typeof record.toolName === "string" ? record.toolName : undefined;
+    if (!toolCallId || !toolName || toolCallIds.has(toolCallId)) continue;
+    const content = Array.isArray(record.content) ? record.content : [];
+    toolResults.push({
+      toolCallId,
+      toolName,
+      result: { content, details: record.details } as AgentToolResult<unknown>,
+      isError: record.isError === true
+    });
+    toolCallIds.add(toolCallId);
   }
 }
 

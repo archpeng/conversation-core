@@ -11,8 +11,9 @@ import {
   createUnifiedAgentSession,
   loadAgentProfile,
   runAgentTurn,
-  type PiCreateAgentSession,
-  type PiResourceLoaderFactory,
+  type AgentSessionFactory,
+  type AgentSessionFactoryOptions,
+  type ResourceLoaderFactory,
   type UnifiedAgentSession,
   type UnifiedAgentToolExecutors,
   type UnifiedAgentTurnEvent
@@ -36,13 +37,13 @@ export type AgentService = {
 
 export type CreateAgentServiceInput = {
   gateway: SafetyGatewayPort;
-  createAgentSession: PiCreateAgentSession;
-  createResourceLoader?: PiResourceLoaderFactory;
+  createAgentSession: AgentSessionFactory;
+  createResourceLoader?: ResourceLoaderFactory;
   cwd?: string;
   piSessionDir?: string;
-  sessionManager?: unknown;
-  authStorage?: unknown;
-  modelRegistry?: unknown;
+  sessionManager?: AgentSessionFactoryOptions["sessionManager"];
+  authStorage?: AgentSessionFactoryOptions["authStorage"];
+  modelRegistry?: AgentSessionFactoryOptions["modelRegistry"];
   executors?: UnifiedAgentToolExecutors;
   eventSink?: (event: UnifiedAgentTurnEvent) => void;
 };

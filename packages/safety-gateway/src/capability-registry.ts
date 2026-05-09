@@ -2,8 +2,6 @@ import type { SafetyConstraintId } from "./constraints.js";
 import { capabilityRisks, type CapabilityRisk } from "./risk.js";
 
 export const capabilityIds = [
-  "pms_read",
-  "pms_workflow",
   "pms_confirm",
   "pms_availability_search",
   "pms_inventory_summary",
@@ -13,6 +11,14 @@ export const capabilityIds = [
   "pms_today_arrivals",
   "pms_today_departures",
   "pms_pending_action_status",
+  "pms_reservation_draft_create",
+  "pms_reservation_draft_update",
+  "pms_reservation_quote",
+  "pms_reservation_prepare_confirm",
+  "pms_reservation_group_draft_create",
+  "pms_reservation_group_draft_update",
+  "pms_reservation_group_quote",
+  "pms_reservation_group_prepare_confirm",
   "proposal_read",
   "proposal_write",
   "proposal_edit",
@@ -40,18 +46,6 @@ export type CapabilityDefinition = {
 };
 
 export const capabilityRegistry: Record<CapabilityId, CapabilityDefinition> = {
-  pms_read: {
-    id: "pms_read",
-    kind: "pms",
-    risk: capabilityRisks.pmsRead,
-    constraints: ["tenant_scope_required"]
-  },
-  pms_workflow: {
-    id: "pms_workflow",
-    kind: "pms",
-    risk: capabilityRisks.pmsWorkflow,
-    constraints: ["tenant_scope_required"]
-  },
   pms_confirm: {
     id: "pms_confirm",
     kind: "pms",
@@ -104,6 +98,54 @@ export const capabilityRegistry: Record<CapabilityId, CapabilityDefinition> = {
     id: "pms_pending_action_status",
     kind: "pms",
     risk: capabilityRisks.pmsRead,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_draft_create: {
+    id: "pms_reservation_draft_create",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_draft_update: {
+    id: "pms_reservation_draft_update",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_quote: {
+    id: "pms_reservation_quote",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_prepare_confirm: {
+    id: "pms_reservation_prepare_confirm",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_group_draft_create: {
+    id: "pms_reservation_group_draft_create",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_group_draft_update: {
+    id: "pms_reservation_group_draft_update",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_group_quote: {
+    id: "pms_reservation_group_quote",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_group_prepare_confirm: {
+    id: "pms_reservation_group_prepare_confirm",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
     constraints: ["tenant_scope_required"]
   },
   proposal_read: {

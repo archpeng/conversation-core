@@ -9,10 +9,8 @@ import {
   gatedBash,
   gatedEdit,
   gatedHttp,
-  gatedPmsConfirm,
-  gatedPmsRead,
   gatedPmsSafeRead,
-  gatedPmsWorkflow,
+  gatedPmsWorkflowStep,
   gatedRead,
   gatedWrite,
   runGatedTool,
@@ -31,15 +29,15 @@ describe("gated tool runner", () => {
 
     const result = await runGatedTool({
       gateway,
-      request: { capabilityId: "pms_read", actor: customer, tenantId: "tenant_1" },
+      request: { capabilityId: "pms_availability_search", actor: customer, tenantId: "tenant_1" },
       executor: () => {
         order.push("executor");
         return { rooms: 1 };
       }
     });
 
-    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor"]);
-    expect(result).toMatchObject({ outcome: "allow", auditId: "audit_pms_read_allow" });
+    expect(order).toEqual(["decide:pms_availability_search", "audit:allow", "executor"]);
+    expect(result).toMatchObject({ outcome: "allow", auditId: "audit_pms_availability_search_allow" });
     if (result.outcome === "allow") expect(result.value).toEqual({ rooms: 1 });
   });
 
@@ -60,37 +58,22 @@ describe("gated tool runner", () => {
     expect(order).toEqual(["decide:http_request", "audit:deny"]);
   });
 
-  it("returns approval without executor side effects", async () => {
-    const order: string[] = [];
-    const result = await gatedPmsConfirm({
-      gateway: safetyGateway(order),
-      actor: customer,
-      tenantId: "tenant_1",
-      pendingActionId: "pending_1",
-      executor: () => {
-        order.push("executor");
-        return "confirmed";
-      }
-    });
-
-    expect(result).toMatchObject({ outcome: "require_approval", auditId: "audit_pms_confirm_require_approval" });
-    expect(order).toEqual(["decide:pms_confirm", "audit:require_approval"]);
-  });
-
   it("routes every PMS and filesystem wrapper through the Safety Gateway", async () => {
     const order: string[] = [];
     const gateway = safetyGateway(order);
 
-    const pmsReadResult = await gatedPmsRead({
+    const pmsReadResult = await gatedPmsSafeRead({
       gateway,
       actor: customer,
       tenantId: "tenant_1",
+      capabilityId: "pms_availability_search",
       executor: () => "availability"
     });
-    const pmsWorkflowResult = await gatedPmsWorkflow({
+    const pmsWorkflowResult = await gatedPmsWorkflowStep({
       gateway,
       actor: admin,
       tenantId: "tenant_1",
+      capabilityId: "pms_reservation_prepare_confirm",
       executor: () => "draft-workflow"
     });
     const proposalPath = "/workspaces/proposal_1/proposal/rate-change.md";
@@ -127,16 +110,16 @@ describe("gated tool runner", () => {
       executor: () => "bash-ran"
     });
 
-    expect(pmsReadResult).toMatchObject({ outcome: "allow", auditId: "audit_pms_read_allow" });
-    expect(pmsWorkflowResult).toMatchObject({ outcome: "allow", auditId: "audit_pms_workflow_allow" });
+    expect(pmsReadResult).toMatchObject({ outcome: "allow", auditId: "audit_pms_availability_search_allow" });
+    expect(pmsWorkflowResult).toMatchObject({ outcome: "allow", auditId: "audit_pms_reservation_prepare_confirm_allow" });
     expect(fileReadResult).toMatchObject({ outcome: "allow", auditId: "audit_proposal_read_allow" });
     expect(fileWriteResult).toMatchObject({ outcome: "allow", auditId: "audit_proposal_write_allow" });
     expect(fileEditResult).toMatchObject({ outcome: "allow", auditId: "audit_proposal_edit_allow" });
     expect(bashResult).toMatchObject({ outcome: "deny", auditId: "audit_sandbox_bash_deny" });
     expect(order).toEqual([
-      "decide:pms_read",
+      "decide:pms_availability_search",
       "audit:allow",
-      "decide:pms_workflow",
+      "decide:pms_reservation_prepare_confirm",
       "audit:allow",
       "decide:proposal_read",
       "audit:allow",
@@ -185,16 +168,13 @@ describe("gated tool runner", () => {
     if (result.outcome === "allow") expect(result.value).toEqual({ reservation: "r1" });
   });
 
-  it("gatedPmsSafeRead denies without executor side effects", async () => {
+  it("runGatedTool denies final PMS confirmation without executor side effects", async () => {
     const order: string[] = [];
     const gateway = safetyGateway(order);
 
-    // Use pms_confirm capability with no pendingActionId to trigger deny
-    const result = await gatedPmsSafeRead({
+    const result = await runGatedTool({
       gateway,
-      actor: customer,
-      tenantId: "tenant_1",
-      capabilityId: "pms_confirm",
+      request: { capabilityId: "pms_confirm", actor: customer, tenantId: "tenant_1" },
       executor: () => {
         order.push("executor");
         return "should-not-execute";

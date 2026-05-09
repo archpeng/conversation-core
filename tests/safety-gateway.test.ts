@@ -21,13 +21,13 @@ const adminBase = {
 
 describe("Safety Gateway policy kernel", () => {
   it.each([
-    ["pms_read", "low"],
-    ["pms_workflow", "medium"]
+    ["pms_availability_search", "low"],
+    ["pms_reservation_prepare_confirm", "medium"]
   ])("allows tenant-scoped customer %s through registered PMS capability constraints", (capabilityId, riskLevel) => {
     const decision = decideToolRequest({ ...customerBase, capabilityId });
 
     expect(decision.outcome).toBe("allow");
-    expect(decision.capability).toEqual(capabilityRegistry[capabilityId as "pms_read" | "pms_workflow"]);
+    expect(decision.capability).toEqual(capabilityRegistry[capabilityId as "pms_availability_search" | "pms_reservation_prepare_confirm"]);
     expect(decision.reasons[0]).toMatchObject({
       code: "capability_constraints_satisfied",
       capabilityId,
@@ -100,7 +100,7 @@ describe("Safety Gateway policy kernel", () => {
   it("turns every decision outcome into a redacted JSONL audit event", () => {
     const writer = createSafetyAuditJsonlWriter();
     const requests: ToolRequest[] = [
-      { ...customerBase, capabilityId: "pms_read" },
+      { ...customerBase, capabilityId: "pms_availability_search" },
       { ...adminBase, capabilityId: "http_request", target: "https://example.invalid/private-token" },
       { ...customerBase, capabilityId: "pms_confirm", pendingActionId: "pending_1" },
       { ...customerBase, capabilityId: "unknown_capability", target: "secret-target" }
@@ -122,6 +122,11 @@ describe("Safety Gateway policy kernel", () => {
     expect(writer.events()).toHaveLength(requests.length);
     expect(writer.flush()).not.toContain("private-token");
     expect(writer.flush()).not.toContain("tenant_1");
+  });
+
+  it("does not keep coarse PMS read or workflow compatibility capability registrations", () => {
+    expect(getCapabilityDefinition("pms_read")).toBeUndefined();
+    expect(getCapabilityDefinition("pms_workflow")).toBeUndefined();
   });
 
   const safeReadCapabilityIds = [
@@ -155,10 +160,10 @@ describe("Safety Gateway policy kernel", () => {
     }
   );
 
-  it("does not have confirm or cancel capability registrations beyond pms_confirm", () => {
+  it("does not expose final confirm or cancel capability registrations beyond pms_confirm", () => {
     const allIds = Object.keys(capabilityRegistry);
     const confirmOrCancelIds = allIds.filter(
-      (id) => id.includes("confirm") || id.includes("cancel")
+      (id) => (id.includes("confirm") && !id.includes("prepare_confirm")) || id.includes("cancel")
     );
     expect(confirmOrCancelIds).toEqual(["pms_confirm"]);
   });

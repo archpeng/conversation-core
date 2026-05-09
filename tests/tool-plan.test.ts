@@ -1,282 +1,130 @@
 import { describe, expect, it } from "vitest";
-import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
+import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
 import {
-  buildVisibleGatedToolManifest,
-  executeToolPlan,
-  generatePmsSafeReadTools,
   loadAgentProfile,
   PMS_SAFE_READ_TOOLS,
+  PMS_SAFE_WORKFLOW_TOOLS,
   pmsToolDescription,
-  parseToolPlan,
+  pmsToolSchema,
+  pmsWorkflowToolDescription,
+  pmsWorkflowToolSchema,
   registerGatedTools,
-  type PiToolDefinition
+  type PmsReadExecutorMap,
+  type PmsWorkflowExecutorMap
 } from "../packages/unified-agent/src/index.js";
-import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
+import { safetyGateway } from "./unified-agent.helpers.js";
 
-const customer = { profile: "customer" as const, id: "customer_1" };
-const admin = { profile: "admin" as const, id: "admin_1" };
-
-describe("C1 LLM gated tool planning", () => {
-  it("builds profile-visible gated manifests without raw executor names", () => {
-    const customerTools = registerGatedTools({
-      profile: loadAgentProfile("customer"),
-      gateway: safetyGateway([]),
-      actor: customer,
-      tenantId: "tenant_1"
-    });
-    const adminTools = registerGatedTools({
-      profile: loadAgentProfile("admin"),
-      gateway: safetyGateway([]),
-      actor: admin,
-      tenantId: "tenant_1"
-    });
-
-    expect(buildVisibleGatedToolManifest(loadAgentProfile("customer"), customerTools).map((tool) => tool.name))
-      .toEqual(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm"]);
-    expect(buildVisibleGatedToolManifest(loadAgentProfile("admin"), adminTools).map((tool) => tool.name))
-      .toEqual(["gated_proposal_read", "gated_proposal_write", "gated_proposal_edit"]);
-    expect(JSON.stringify(buildVisibleGatedToolManifest(loadAgentProfile("customer"), customerTools))).not.toMatch(/"(read|write|edit|bash|http|http_request|sandbox_bash)"/);
-  });
-
-  it("validates LLM proposed actions against the visible manifest", () => {
-    const manifest = buildVisibleGatedToolManifest(loadAgentProfile("customer"), registerGatedTools({
-      profile: loadAgentProfile("customer"),
-      gateway: safetyGateway([]),
-      actor: customer,
-      tenantId: "tenant_1"
-    }));
-
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } }, manifest))
-      .toEqual({ ok: true, plan: { type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } } });
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } }, manifest))
-      .toEqual({ ok: true, plan: { type: "call_tool", toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } } });
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 1 } }, manifest))
-      .toEqual({ ok: true, plan: { type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 1 } } });
-    expect(parseToolPlan({
-      type: "bounded_read_then_workflow",
-      read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } },
-      workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, roomTypeText: "洞穴房" } }
-    }, manifest)).toEqual({
-      ok: true,
-      plan: {
-        type: "bounded_read_then_workflow",
-        read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, guestName: "王晓" } },
-        workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2, roomTypeText: "洞穴房" } }
-      }
-    });
-    expect(parseToolPlan({ type: "ask_clarification", message: "请提供日期。" }, manifest))
-      .toEqual({ ok: true, plan: { type: "ask_clarification", message: "请提供日期。" } });
-    expect(parseToolPlan({ type: "refuse", reason: "policy", message: "不能执行。" }, manifest))
-      .toEqual({ ok: true, plan: { type: "refuse", reason: "policy", message: "不能执行。" } });
-    expect(parseToolPlan({ type: "require_approval", message: "需要卡片审批。" }, manifest))
-      .toEqual({ ok: true, plan: { type: "require_approval", message: "需要卡片审批。" } });
-  });
-
-  it("rejects non-visible tools, raw executors, and customer workspace or bash plans", () => {
-    const manifest = buildVisibleGatedToolManifest(loadAgentProfile("customer"), registerGatedTools({
-      profile: loadAgentProfile("customer"),
-      gateway: safetyGateway([]),
-      actor: customer,
-      tenantId: "tenant_1"
-    }));
-
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_proposal_write", params: { path: "/workspaces/x/proposal/a.md" } }, manifest))
-      .toEqual({ ok: false, reason: "tool_not_visible" });
-    expect(parseToolPlan({ type: "call_tool", toolName: "bash", params: { command: "pnpm test" } }, manifest))
-      .toEqual({ ok: false, reason: "raw_tool_not_visible" });
-    expect(parseToolPlan({ type: "call_tool", toolName: "read", params: { path: "AGENTS.md" } }, manifest))
-      .toEqual({ ok: false, reason: "raw_tool_not_visible" });
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability", checkInDate: "后天", quantity: 0 } }, manifest))
-      .toEqual({ ok: false, reason: "invalid_tool_params" });
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", roomId: "", guestName: "王晓", checkInDate: "后天", quantity: 0 } }, manifest))
-      .toEqual({ ok: false, reason: "invalid_tool_params" });
-    expect(parseToolPlan({ type: "call_tool", toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", quantity: 2 } }, manifest))
-      .toEqual({ ok: false, reason: "invalid_tool_params" });
-    expect(parseToolPlan({
-      type: "bounded_read_then_workflow",
-      read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } },
-      workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", roomTypeText: "" } }
-    }, manifest)).toEqual({ ok: false, reason: "invalid_tool_params" });
-    expect(parseToolPlan({
-      type: "bounded_read_then_workflow",
-      read: { toolName: "gated_pms_read", params: { target: "availability", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } },
-      workflow: { toolName: "gated_pms_workflow", params: { target: "prepare_confirm", roomId: "room-A1", guestName: "王晓", checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } }
-    }, manifest)).toEqual({ ok: false, reason: "invalid_tool_params" });
-  });
-
-  it("executes accepted calls only through gated Pi tools after Safety Gateway decisions", async () => {
-    const order: string[] = [];
-    const profile = loadAgentProfile("customer");
+describe("PMS Pi tool surface", () => {
+  it("registers generated customer PMS tools without coarse compatibility aliases", () => {
     const tools = registerGatedTools({
-      profile,
-      gateway: safetyGateway(order),
-      actor: customer,
-      tenantId: "tenant_1",
-      executors: {
-        pmsRead: () => {
-          order.push("executor");
-          return { evidenceRef: "pms_ev_1" };
-        }
+      profile: loadAgentProfile("customer"),
+      gateway: safetyGateway([]),
+      actor: { profile: "customer", id: "actor_1" },
+      tenantId: "tenant_1"
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([...PMS_SAFE_READ_TOOLS, ...PMS_SAFE_WORKFLOW_TOOLS]);
+    expect(tools.map((tool) => tool.name)).not.toEqual(expect.arrayContaining(["gated_pms_read", "gated_pms_workflow", "gated_pms_confirm", "bash", "read", "write"]));
+  });
+
+  it("documents availability as full-stay candidates, not total inventory", () => {
+    expect(pmsToolDescription("pms_availability_search")).toContain("available for every requested night");
+    expect(pmsToolDescription("pms_availability_search")).toContain("differs from hotel inventory");
+    expect(pmsToolDescription("pms_inventory_summary")).toContain("total rooms");
+    expect(pmsToolSchema("pms_availability_search")).toMatchObject({
+      properties: {
+        checkInDate: { pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        checkOutDate: { pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
       }
     });
-    const manifest = buildVisibleGatedToolManifest(profile, tools);
-    const parsed = parseToolPlan({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } }, manifest);
-
-    expect(parsed.ok).toBe(true);
-    const result = parsed.ok ? await executeToolPlan(parsed.plan, tools) : undefined;
-
-    expect(result?.ok).toBe(true);
-    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor"]);
   });
 
-  it("prevents executor side effects when Safety Gateway denies or requires approval", async () => {
-    const deniedOrder: string[] = [];
-    const deniedTool: PiToolDefinition = {
-      name: "gated_pms_read",
-      label: "Gated PMS Read",
-      description: "Read tenant PMS facts.",
-      parameters: {},
-      async execute() {
-        deniedOrder.push("decide:pms_read");
-        deniedOrder.push("audit:deny");
-        return { content: [{ type: "text", text: "denied" }], details: { outcome: "deny", auditId: "audit_pms_read_deny" } };
+  it("documents workflow tools as safe draft/quote/prepare steps only", () => {
+    expect(pmsWorkflowToolDescription("pms_reservation_prepare_confirm")).toContain("approval card");
+    expect(pmsWorkflowToolDescription("pms_reservation_prepare_confirm")).toContain("never a natural-language tool");
+    expect(pmsWorkflowToolSchema("pms_reservation_prepare_confirm")).toMatchObject({
+      properties: {
+        draftRef: { type: "string" },
+        quoteRef: { type: "string" }
       }
-    };
-    const approvalTool: PiToolDefinition = {
-      name: "gated_pms_confirm",
-      label: "Gated PMS Confirm",
-      description: "Confirm PMS pending action.",
-      parameters: {},
-      async execute() {
-        deniedOrder.push("decide:pms_confirm");
-        deniedOrder.push("audit:require_approval");
-        return { content: [{ type: "text", text: "approval" }], details: { outcome: "require_approval", auditId: "audit_pms_confirm_require_approval" } };
-      }
-    };
-
-    const denied = await executeToolPlan({ type: "call_tool", toolName: "gated_pms_read", params: { target: "availability" } }, [deniedTool]);
-    const approval = await executeToolPlan({ type: "call_tool", toolName: "gated_pms_confirm", params: { pendingActionId: "pending_1" } }, [approvalTool]);
-
-    expect(denied).toEqual({ ok: false, result: { type: "refusal", reason: "policy", message: "Requested action was denied by policy." } });
-    expect(approval).toEqual({ ok: false, result: { type: "refusal", reason: "policy", message: "Requested action requires typed approval." } });
-    expect(deniedOrder).toEqual(["decide:pms_read", "audit:deny", "decide:pms_confirm", "audit:require_approval"]);
+    });
   });
 
-  it("keeps natural-language confirm from becoming direct PMS mutation", async () => {
+  it("executes generated safe reads through the Safety Gateway with minimized public content", async () => {
     const order: string[] = [];
-    const profile = loadAgentProfile("customer");
-    const tools = registerGatedTools({
-      profile,
-      gateway: safetyGateway(order),
-      actor: customer,
+    const evidence = createPmsEvidence({
+      method: "searchAvailability",
       tenantId: "tenant_1",
-      executors: {
-        pmsConfirm: () => {
-          order.push("confirm_executor");
-          return { mutated: true };
-        }
-      }
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "availability summary",
+      data: { rooms: [{ roomId: "room_secret_1", roomType: "suite", available: true }] }
     });
-    const manifest = buildVisibleGatedToolManifest(profile, tools);
-    const parsed = parseToolPlan({ type: "call_tool", toolName: "gated_pms_confirm", params: { pendingActionId: "pending_1" } }, manifest);
-    const result = parsed.ok ? await executeToolPlan(parsed.plan, tools) : undefined;
+    const tools = registerGatedTools({
+      profile: loadAgentProfile("customer"),
+      gateway: safetyGateway(order),
+      actor: { profile: "customer", id: "actor_1" },
+      tenantId: "tenant_1",
+      executors: { pmsReadExecutors: readExecutors(evidence) }
+    });
 
-    expect(parsed.ok).toBe(true);
-    expect(result).toEqual({ ok: false, result: { type: "refusal", reason: "policy", message: "Requested action requires typed approval." } });
-    expect(order).toEqual(["decide:pms_confirm", "audit:require_approval"]);
+    const tool = tools.find((candidate) => candidate.name === "pms_availability_search");
+    expect(tool).toBeDefined();
+    const result = await tool?.executePlan({ checkInDate: "2026-05-09", checkOutDate: "2026-05-10" });
+
+    expect(order).toEqual(["decide:pms_availability_search", "audit:allow"]);
+    expect(result?.details).toMatchObject({ outcome: "allow", value: { evidenceRef: evidence.evidenceRef } });
+    expect(JSON.stringify(result?.content)).toContain(evidence.evidenceRef);
+    expect(JSON.stringify(result?.content)).not.toContain("room_secret_1");
+  });
+
+  it("executes generated workflow steps through their own capability IDs", async () => {
+    const order: string[] = [];
+    const evidence = createPmsEvidence({
+      method: "prepareReservationConfirm",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-06T12:00:00.000Z",
+      summary: "prepare confirm",
+      data: { pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }
+    });
+    const tools = registerGatedTools({
+      profile: loadAgentProfile("customer"),
+      gateway: safetyGateway(order),
+      actor: { profile: "customer", id: "actor_1" },
+      tenantId: "tenant_1",
+      executors: { pmsWorkflowExecutors: workflowExecutors(evidence) }
+    });
+
+    const tool = tools.find((candidate) => candidate.name === "pms_reservation_prepare_confirm");
+    expect(tool).toBeDefined();
+    const result = await tool?.executePlan({ draftRef: "draft_1", quoteRef: "quote_1" });
+
+    expect(order).toEqual(["decide:pms_reservation_prepare_confirm", "audit:allow"]);
+    expect(result?.details).toMatchObject({ outcome: "allow", value: { evidenceRef: evidence.evidenceRef } });
   });
 });
 
-describe("P2 capability-derived PMS tool descriptors", () => {
-  it("generatePmsSafeReadTools() returns 7 tools with non-empty descriptions", () => {
-    const tools = generatePmsSafeReadTools({
-      gateway: safetyGateway([]),
-      actor: customer,
-      tenantId: "tenant_1"
-    });
-
-    expect(tools).toHaveLength(7);
-    expect(tools.map((t) => t.name).sort()).toEqual([...PMS_SAFE_READ_TOOLS].sort());
-    for (const tool of tools) {
-      expect(tool.description).toBeTruthy();
-      expect(typeof tool.description).toBe("string");
-      expect(tool.description.length).toBeGreaterThan(20);
-    }
-  });
-
-  it("pmsToolDescription returns the curated description for a known capability", () => {
-    const description = pmsToolDescription("pms_availability_search");
-    expect(description).toContain("Search full-stay available room candidates");
-    expect(description).toContain("pms_inventory_summary");
-  });
-
-  it("pmsToolDescription throws for unknown capability", () => {
-    expect(() => pmsToolDescription("pms_unknown" as any)).toThrow("Unknown PMS safe-read capability");
-  });
-
-  it("generated tool names match PMS_SAFE_READ_TOOLS", () => {
-    const tools = generatePmsSafeReadTools({
-      gateway: safetyGateway([]),
-      actor: customer,
-      tenantId: "tenant_1"
-    });
-    const toolNames = tools.map((t) => t.name);
-    expect(toolNames).toEqual([...PMS_SAFE_READ_TOOLS]);
-  });
-
-  it("generated tools produce visible gated manifest items", () => {
-    const profile = { ...loadAgentProfile("customer"), useGeneratedTools: true };
-    const tools = registerGatedTools({
-      profile,
-      gateway: safetyGateway([]),
-      actor: customer,
-      tenantId: "tenant_1"
-    });
-    const manifest = buildVisibleGatedToolManifest(profile, tools);
-    const manifestNames = manifest.map((m) => m.name);
-    for (const toolName of PMS_SAFE_READ_TOOLS) {
-      expect(manifestNames).toContain(toolName);
-    }
-    expect(manifestNames).toContain("gated_pms_workflow");
-    expect(manifestNames).toContain("gated_pms_confirm");
-  });
-
-  it("generated tools execute through Safety Gateway with correct capability target", async () => {
-    const order: string[] = [];
-    const profile = { ...loadAgentProfile("customer"), useGeneratedTools: true };
-    const tools = registerGatedTools({
-      profile,
-      gateway: safetyGateway(order),
-      actor: customer,
-      tenantId: "tenant_1",
-      executors: {
-        pmsRead: () => {
-          order.push("executor");
-          return { evidenceRef: "pms_ev_1", source: { system: "pms-platform", method: "searchAvailability" }, summary: "found" };
-        }
-      }
-    });
-    const manifest = buildVisibleGatedToolManifest(profile, tools);
-    const parsed = parseToolPlan({ type: "call_tool", toolName: "pms_availability_search", params: { checkInDate: "2026-05-09", checkOutDate: "2026-05-10" } }, manifest);
-
-    expect(parsed.ok).toBe(true);
-    const result = parsed.ok ? await executeToolPlan(parsed.plan, tools) : undefined;
-
-    expect(result?.ok).toBe(true);
-    expect(order).toEqual(["decide:pms_read", "audit:allow", "executor"]);
-  });
-});
-
-function safetyGateway(order: string[]): SafetyGatewayPort {
+function readExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
   return {
-    decide(request: GatedToolRequest): GatedDecision {
-      order.push(`decide:${request.capabilityId}`);
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      order.push(`audit:${decision.outcome}`);
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      return { id: `audit_${event.capabilityId}_${event.outcome}` };
-    }
+    pms_availability_search: () => evidence,
+    pms_inventory_summary: () => evidence as never,
+    pms_room_reservation_context: () => evidence as never,
+    pms_reservation_lookup: () => evidence as never,
+    pms_get_room: () => evidence as never,
+    pms_today_arrivals: () => evidence as never,
+    pms_today_departures: () => evidence as never,
+    pms_pending_action_status: () => evidence as never
+  };
+}
+
+function workflowExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsWorkflowExecutorMap {
+  return {
+    pms_reservation_draft_create: () => evidence as never,
+    pms_reservation_draft_update: () => evidence as never,
+    pms_reservation_quote: () => evidence as never,
+    pms_reservation_prepare_confirm: () => evidence as never,
+    pms_reservation_group_draft_create: () => evidence as never,
+    pms_reservation_group_draft_update: () => evidence as never,
+    pms_reservation_group_quote: () => evidence as never,
+    pms_reservation_group_prepare_confirm: () => evidence as never
   };
 }
