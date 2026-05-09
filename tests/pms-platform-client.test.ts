@@ -266,9 +266,10 @@ describe("PMS Platform client evidence", () => {
   });
 
   it("wraps inventorySummary in evidence with parsed result", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     const client = createPmsPlatformClient({
       baseUrl: "https://pms.local",
-      fetch: fakeFetch([]),
+      fetch: fakeFetch(calls),
       now: () => new Date("2026-05-09T08:00:00.000Z")
     });
 
@@ -281,8 +282,15 @@ describe("PMS Platform client evidence", () => {
 
     expect(evidence.source.method).toBe("inventorySummary");
     expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
+    expect(calls[0].body).toEqual({
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
+      startDate: "2026-05-09",
+      horizonDays: 2
+    });
     expect(evidence.summary).toContain("Inventory for");
-    expect(evidence.summary).toContain("10 total rooms across 2 dates");    expect(evidence.data.dates).toHaveLength(2);
+    expect(evidence.summary).toContain("10 total rooms across 2 dates");
+    expect(evidence.data.dates).toHaveLength(2);
     expect(evidence.data.dates[0]).toEqual({
       date: "2026-05-09",
       total: 10,
@@ -504,10 +512,14 @@ function responseFor(url: string): unknown {
   if (url.endsWith("/v1/pms/reservation-drafts/prepare-confirm")) return { pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" };
   if (url.endsWith("/v1/pms/pending-actions/status")) return { pendingActionId: "pending_1", status: "pending" };
   if (url.endsWith("/v1/pms/inventory/summary")) return {
-    dates: [
-      { date: "2026-05-09", total: 10, available: 5, reserved: 3, blocked: 1, occupied: 1 },
-      { date: "2026-05-10", total: 10, available: 4, reserved: 4, blocked: 1, occupied: 1 }
-    ]
+    readModel: {
+      summaries: [
+        { businessDate: "2026-05-09", totalRooms: 4, availableRooms: 2, reservedRooms: 1, blockedRooms: 1, occupiedRooms: 0 },
+        { businessDate: "2026-05-09", totalRooms: 6, availableRooms: 3, reservedRooms: 2, blockedRooms: 0, occupiedRooms: 1 },
+        { businessDate: "2026-05-10", totalRooms: 4, availableRooms: 2, reservedRooms: 1, blockedRooms: 1, occupiedRooms: 0 },
+        { businessDate: "2026-05-10", totalRooms: 6, availableRooms: 2, reservedRooms: 3, blockedRooms: 0, occupiedRooms: 1 }
+      ]
+    }
   };
   if (url.endsWith("/v1/pms/room/reservation-context")) return {
     roomId: "room_1",

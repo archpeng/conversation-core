@@ -52,7 +52,7 @@ export async function createUnifiedAgentSession(input: CreateUnifiedAgentSession
   const { session } = await input.createAgentSession({
     cwd: input.cwd,
     ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-    tools: [],
+    tools: tools.map((tool) => tool.name),
     customTools: tools,
     ...(resourceLoader ? { resourceLoader } : {}),
     ...(input.sessionManager ? { sessionManager: input.sessionManager } : {}),

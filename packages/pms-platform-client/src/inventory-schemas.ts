@@ -77,6 +77,9 @@ export function validateInventorySummaryInput(input: unknown): asserts input is 
   assertText(typed.endDate, "endDate");
   if (!isValidISODate(typed.startDate)) throw new Error("startDate must be a valid ISO date");
   if (!isValidISODate(typed.endDate)) throw new Error("endDate must be a valid ISO date");
+  if (isoDateMs(typed.endDate) < isoDateMs(typed.startDate)) {
+    throw new Error("endDate must be on or after startDate");
+  }
 }
 
 export function validateRoomReservationContextInput(input: unknown): asserts input is RoomReservationContextInput {
@@ -115,7 +118,7 @@ export function validateTodayDeparturesInput(input: unknown): asserts input is T
 
 export function parseInventorySummaryResult(value: unknown): InventorySummaryResult {
   const object = assertRecord(value, "inventory summary response");
-  const rawDates = object.dates;
+  const rawDates = Array.isArray(object.dates) ? object.dates : platformSummaryDates(object);
   if (!Array.isArray(rawDates)) throw new Error("dates must be an array");
   const dates = rawDates.map((item, index) => {
     const entry = assertRecord(item, `dates[${index}]`);
@@ -139,6 +142,44 @@ export function parseInventorySummaryResult(value: unknown): InventorySummaryRes
     };
   });
   return { dates };
+}
+
+function platformSummaryDates(object: Record<string, unknown>): unknown[] | undefined {
+  const readModelValue = object.readModel;
+  if (!readModelValue || typeof readModelValue !== "object" || Array.isArray(readModelValue)) return undefined;
+  const readModel = readModelValue as Record<string, unknown>;
+  const summaries = readModel.summaries;
+  if (!Array.isArray(summaries)) return undefined;
+  const byDate = new Map<string, { total: number; available: number; reserved: number; blocked: number; occupied: number }>();
+  summaries.forEach((item, index) => {
+    const summary = assertRecord(item, `readModel.summaries[${index}]`);
+    const date = assertText(summary.businessDate, `readModel.summaries[${index}].businessDate`);
+    const current = byDate.get(date) ?? { total: 0, available: 0, reserved: 0, blocked: 0, occupied: 0 };
+    byDate.set(date, {
+      total: current.total + numericSummaryField(summary.totalRooms),
+      available: current.available + numericSummaryField(summary.availableRooms),
+      reserved: current.reserved + numericSummaryField(summary.reservedRooms),
+      blocked: current.blocked + numericSummaryField(summary.blockedRooms),
+      occupied: current.occupied + numericSummaryField(summary.occupiedRooms)
+    });
+  });
+  return Array.from(byDate.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, counts]) => {
+      return {
+        date,
+        ...counts
+      };
+    });
+}
+
+function numericSummaryField(value: unknown): number {
+  return typeof value === "number" ? value : -1;
+}
+
+function isoDateMs(value: string): number {
+  const [year, month, day] = value.split("-").map((part) => Number.parseInt(part, 10));
+  return Date.UTC(year, month - 1, day);
 }
 
 export function parseRoomReservationContextResult(value: unknown): RoomReservationContextResult {

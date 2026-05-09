@@ -32,7 +32,7 @@ describe("unified Agent runtime", () => {
     expect(session.profile.id).toBe("customer_pms");
     expect(calls).toHaveLength(1);
     expect(calls[0].cwd).toBe("/repo");
-    expect(calls[0].tools).toEqual([]);
+    expect(calls[0].tools).toEqual(customerRegisteredToolNames);
     expect(calls[0].customTools.map((tool) => tool.name)).toEqual(customerRegisteredToolNames);
     expect(calls[0].customTools.map((tool) => tool.name)).not.toEqual(expect.arrayContaining(["read", "write", "edit", "bash", "http"]));
     expect(calls[0].resourceLoader).toEqual({ systemPromptOverride: session.systemPrompt });

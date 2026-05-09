@@ -49,7 +49,7 @@ describe("agent service API", () => {
     expect(JSON.stringify(response.body)).not.toContain("Agent turn completed");
     expect(response.body).not.toHaveProperty("result");
     expect(response.body).not.toHaveProperty("replies");
-    expect(calls[0].tools).toEqual([]);
+    expect(calls[0].tools).toEqual(customerRegisteredToolNames);
     expect(calls[0].customTools.map((tool) => tool.name)).toEqual(customerRegisteredToolNames);
   });
 

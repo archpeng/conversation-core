@@ -148,12 +148,23 @@ export function inventorySummaryMethod(
       body: {
         tenantId: input.tenantId,
         propertyId: input.propertyId,
-        dateRange: { start: input.startDate, end: input.endDate }
+        startDate: input.startDate,
+        horizonDays: inclusiveHorizonDays(input.startDate, input.endDate)
       }
     },
     parseInventorySummaryResult,
     buildInventorySummary
   );
+}
+
+function inclusiveHorizonDays(startDate: string, endDate: string): number {
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.floor((isoDateMs(endDate) - isoDateMs(startDate)) / dayMs) + 1;
+}
+
+function isoDateMs(value: string): number {
+  const [year, month, day] = value.split("-").map((part) => Number.parseInt(part, 10));
+  return Date.UTC(year, month - 1, day);
 }
 
 export function roomReservationContextMethod(

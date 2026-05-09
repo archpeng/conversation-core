@@ -29,17 +29,17 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
   });
 
   const pmsReadExecutors: PmsReadExecutorMap = {
-    pms_availability_search: async ({ request }) =>
-      client.searchAvailability({
+    pms_availability_search: async ({ request }) => {
+      const roomType = availabilityRoomType(request.roomType, config.defaultRoomType);
+      return client.searchAvailability({
         tenantId: tenantId(request),
         hotelId: config.defaultHotelId,
         checkInDate: request.checkInDate ?? config.defaultCheckInDate,
         checkOutDate: request.checkOutDate ?? config.defaultCheckOutDate,
-        ...(request.quantity ? { quantity: request.quantity } : {}),
-        ...(request.roomType ?? config.defaultRoomType
-          ? { roomType: request.roomType ?? config.defaultRoomType }
-          : {})
-      }),
+        ...(request.quantity && request.quantity > 1 ? { quantity: request.quantity } : {}),
+        ...(roomType ? { roomType } : {})
+      });
+    },
 
     pms_inventory_summary: async ({ request }) =>
       client.inventorySummary({
@@ -198,6 +198,19 @@ function requiredWorkflowSelections(value: GatedToolRequest["selections"]): NonN
 
 function tenantId(request: GatedToolRequest): string {
   return request.tenantId ?? "default-tenant";
+}
+
+function availabilityRoomType(requested: string | undefined, defaultRoomType: string | undefined): string | undefined {
+  if (requested !== undefined) return normalizedRoomType(requested);
+  return normalizedRoomType(defaultRoomType);
+}
+
+function normalizedRoomType(value: string | undefined): string | undefined {
+  const text = value?.trim();
+  if (!text) return undefined;
+  if (/不限制|不限|全酒店|全部房型|所有房型|任意房型/i.test(text)) return undefined;
+  if (/^(房|房间|客房|房源|可订房|可订房间|可订客房)$/i.test(text)) return undefined;
+  return text;
 }
 
 function draftIdentifier(request: GatedToolRequest): { draftId: string } | { draftRef: string } {

@@ -118,11 +118,30 @@ describe("agent service runtime wiring", () => {
           quantity: 2
         }
       });
+      await executors.pmsReadExecutors?.pms_availability_search({
+        auditId: "audit_2",
+        decision: { outcome: "allow", reasons: [], audit: { capabilityId: "pms_availability_search" } },
+        request: {
+          capabilityId: "pms_availability_search",
+          actor: { profile: "customer" },
+          tenantId: "tenant_1",
+          checkInDate: "2026-05-11",
+          checkOutDate: "2026-05-17",
+          quantity: 1,
+          roomType: "不限制房型"
+        }
+      });
 
-      expect(calls).toEqual([{
-        url: "http://127.0.0.1:8791/v1/pms/availability/search",
-        body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", count: 2, startDate: "2026-05-09", endDate: "2026-05-10" }
-      }]);
+      expect(calls).toEqual([
+        {
+          url: "http://127.0.0.1:8791/v1/pms/availability/search",
+          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-09", checkOutDate: "2026-05-10", count: 2, startDate: "2026-05-09", endDate: "2026-05-10" }
+        },
+        {
+          url: "http://127.0.0.1:8791/v1/pms/availability/search",
+          body: { tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-11", checkOutDate: "2026-05-17", startDate: "2026-05-11", endDate: "2026-05-17" }
+        }
+      ]);
     } finally {
       globalThis.fetch = originalFetch;
     }
