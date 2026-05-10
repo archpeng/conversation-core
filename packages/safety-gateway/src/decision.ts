@@ -20,6 +20,7 @@ export type ToolRequest = {
   cardPayloadRef?: string;
   target?: string;
   roomId?: string;
+  roomNumber?: string;
   draftId?: string;
   draftRef?: string;
   groupDraftId?: string;

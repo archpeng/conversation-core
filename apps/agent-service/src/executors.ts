@@ -8,6 +8,7 @@ import type {
   UnifiedAgentToolExecutors
 } from "@pms-agent-v2/unified-agent";
 import { prepareReservationGroupBooking } from "./group-booking-workflow.js";
+import { prepareReservationBooking } from "./single-booking-workflow.js";
 
 export type RuntimeExecutorConfig = {
   pmsPlatformBaseUrl: string;
@@ -155,6 +156,9 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
         ...draftIdentifier(request),
         quoteRef: requiredWorkflowText(request.quoteRef ?? request.quoteId, "pms_workflow_quote_required")
       }),
+
+    pms_reservation_prepare_booking: async ({ request }) =>
+      prepareReservationBooking({ client, config, request }),
 
     pms_reservation_group_draft_create: async ({ request }) =>
       client.createReservationGroupDraft({

@@ -2,17 +2,17 @@
 
 ## Default Golden E2E
 
-`golden-group-booking.e2e.test.ts` is deterministic and runs in the normal `pnpm test` gate. It uses a scripted Pi session, but still exercises the real PMS tool surface, runtime executors, PMS client request shapes, and approval-card synthesis.
+`golden-group-booking.e2e.test.ts` and `golden-single-booking.e2e.test.ts` are deterministic and run in the normal `pnpm test` gate. They use scripted Pi sessions, but still exercise the real PMS tool surface, runtime executors, PMS client request shapes, and approval-card synthesis.
 
 Use it to protect stable product behavior without calling a live model.
 
 ```bash
-pnpm vitest run tests/golden-group-booking.e2e.test.ts
+pnpm vitest run tests/golden-group-booking.e2e.test.ts tests/golden-single-booking.e2e.test.ts
 ```
 
 ## Live Smoke
 
-`live-group-booking.smoke.test.ts` is opt-in because it calls the running `pms-agent-v2` service and depends on the configured real Pi/LLM runtime. It sends the same three Chinese turns used in the production incident, expects an `approval_card`, simulates the typed card confirm against `pms-platform`, and verifies platform readback.
+`live-group-booking.smoke.test.ts` is opt-in because it calls the running `pms-agent-v2` service and depends on the configured real Pi/LLM runtime. It covers both group and single-room Chinese booking flows, expects an `approval_card`, simulates the typed card confirm against `pms-platform`, and verifies platform readback.
 
 It is skipped unless `RUN_PMS_LIVE_SMOKE=true`.
 

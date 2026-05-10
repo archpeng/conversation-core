@@ -44,6 +44,13 @@ describe("PMS Pi tool surface", () => {
   it("documents workflow tools as safe draft/quote/prepare steps only", () => {
     expect(pmsWorkflowToolDescription("pms_reservation_prepare_confirm")).toContain("approval card");
     expect(pmsWorkflowToolDescription("pms_reservation_prepare_confirm")).toContain("never a natural-language tool");
+    expect(pmsWorkflowToolDescription("pms_reservation_prepare_booking")).toContain("single-room booking approval card");
+    expect(pmsWorkflowToolSchema("pms_reservation_prepare_booking")).toMatchObject({
+      properties: {
+        roomNumber: { type: "string" },
+        quantity: { maximum: 1 }
+      }
+    });
     expect(pmsWorkflowToolSchema("pms_reservation_prepare_confirm")).toMatchObject({
       properties: {
         draftRef: { type: "string" },

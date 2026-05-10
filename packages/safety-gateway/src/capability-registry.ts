@@ -17,6 +17,7 @@ export const capabilityIds = [
   "pms_reservation_draft_update",
   "pms_reservation_quote",
   "pms_reservation_prepare_confirm",
+  "pms_reservation_prepare_booking",
   "pms_reservation_group_draft_create",
   "pms_reservation_group_draft_update",
   "pms_reservation_group_quote",
@@ -135,6 +136,12 @@ export const capabilityRegistry: Record<CapabilityId, CapabilityDefinition> = {
   },
   pms_reservation_prepare_confirm: {
     id: "pms_reservation_prepare_confirm",
+    kind: "pms",
+    risk: capabilityRisks.pmsWorkflow,
+    constraints: ["tenant_scope_required"]
+  },
+  pms_reservation_prepare_booking: {
+    id: "pms_reservation_prepare_booking",
     kind: "pms",
     risk: capabilityRisks.pmsWorkflow,
     constraints: ["tenant_scope_required"]

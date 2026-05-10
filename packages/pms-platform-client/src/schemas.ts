@@ -13,8 +13,12 @@ export type SearchAvailabilityInput = {
 
 export type RoomAvailability = {
   roomId: string;
+  roomNumber?: string;
+  roomTypeId?: string;
   roomType: string;
   available: boolean;
+  availableDates?: string[];
+  sourceRefs?: string[];
   priceCents?: number;
 };
 
@@ -334,10 +338,16 @@ export function parseAvailabilitySearchResult(value: unknown): AvailabilitySearc
     return availabilityResult(
       candidates.map((candidate: unknown, index: number) => {
         const item = assertRecord(candidate, `candidates[${index}]`);
+        const availableDates = textArray(item.availableDates);
+        const sourceRefs = textArray(item.sourceRefs);
         return {
           roomId: assertText(item.roomId, `candidates[${index}].roomId`),
+          ...(typeof item.roomNumber === "string" && item.roomNumber.trim() ? { roomNumber: item.roomNumber } : {}),
+          ...(typeof item.roomTypeId === "string" && item.roomTypeId.trim() ? { roomTypeId: item.roomTypeId } : {}),
           roomType: typeof item.roomType === "string" && item.roomType.trim() ? item.roomType : "unknown",
-          available: true
+          available: true,
+          ...(availableDates.length > 0 ? { availableDates } : {}),
+          ...(sourceRefs.length > 0 ? { sourceRefs } : {})
         };
       })
     );
@@ -397,9 +407,20 @@ function parseRooms(rooms: unknown[]): RoomAvailability[] {
       roomType: assertText(item.roomType, `rooms[${index}].roomType`),
       available: item.available === true
     };
+    if (typeof item.roomNumber === "string" && item.roomNumber.trim()) parsed.roomNumber = item.roomNumber;
+    if (typeof item.roomTypeId === "string" && item.roomTypeId.trim()) parsed.roomTypeId = item.roomTypeId;
+    const availableDates = textArray(item.availableDates);
+    if (availableDates.length > 0) parsed.availableDates = availableDates;
+    const sourceRefs = textArray(item.sourceRefs);
+    if (sourceRefs.length > 0) parsed.sourceRefs = sourceRefs;
     if (typeof item.priceCents === "number") parsed.priceCents = item.priceCents;
     return parsed;
   });
+}
+
+function textArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
 function parseRoomTypeCatalogItems(value: unknown, field: string): RoomTypeCatalogItem[] {
@@ -474,6 +495,7 @@ export function parseReservationConfirmPreparation(value: unknown): ReservationC
       mutationStatus: assertLiteral(object.mutationStatus, "none", "mutationStatus")
     };
     if (typeof object.expiresAt === "string" && object.expiresAt.length > 0) result.expiresAt = object.expiresAt;
+    if (typeof object.selectionCount === "number") result.selectionCount = object.selectionCount;
     return result;
   }
   const draft = assertRecord(object.draft, "draft");
@@ -487,6 +509,7 @@ export function parseReservationConfirmPreparation(value: unknown): ReservationC
   if (typeof pendingAction.expiresAt === "string" && pendingAction.expiresAt.length > 0) result.expiresAt = pendingAction.expiresAt;
   if (typeof pendingAction.quoteRef === "string" && pendingAction.quoteRef.trim()) result.quoteRef = pendingAction.quoteRef;
   if (typeof pendingAction.cardPayloadRef === "string" && pendingAction.cardPayloadRef.trim()) result.cardPayloadRef = pendingAction.cardPayloadRef;
+  if (typeof pendingAction.selectionCount === "number") result.selectionCount = pendingAction.selectionCount;
   if (typeof pendingAction.status === "string" && pendingAction.status.trim()) result.status = pendingAction.status;
   return result;
 }

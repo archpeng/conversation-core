@@ -74,7 +74,7 @@ describe("PMS Platform client evidence", () => {
           operation: "pms_availability_search",
           readModel: {
             candidates: [
-              { roomId: "room-A1", roomNumber: "A1", propertyId: "property-small-hotel", roomType: "花园别墅" }
+              { roomId: "room-A1", roomNumber: "A1", propertyId: "property-small-hotel", roomTypeId: "room-type-garden-villa", roomType: "花园别墅", availableDates: ["2026-05-06"], sourceRefs: ["inventory:room-A1"] }
             ]
           }
         })
@@ -84,7 +84,15 @@ describe("PMS Platform client evidence", () => {
 
     const evidence = await client.searchAvailability({ tenantId: "tenant_1", hotelId: "property-small-hotel", checkInDate: "2026-05-06", checkOutDate: "2026-05-07" });
 
-    expect(evidence.data.rooms).toEqual([{ roomId: "room-A1", roomType: "花园别墅", available: true }]);
+    expect(evidence.data.rooms).toEqual([{
+      roomId: "room-A1",
+      roomNumber: "A1",
+      roomTypeId: "room-type-garden-villa",
+      roomType: "花园别墅",
+      available: true,
+      availableDates: ["2026-05-06"],
+      sourceRefs: ["inventory:room-A1"]
+    }]);
   });
 
   it("accepts current pms-platform local reservation workflow envelopes", async () => {

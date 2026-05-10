@@ -16,6 +16,7 @@ export type GatedToolRequest = {
   cardPayloadRef?: string;
   target?: string;
   roomId?: string;
+  roomNumber?: string;
   draftId?: string;
   draftRef?: string;
   groupDraftId?: string;

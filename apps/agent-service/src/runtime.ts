@@ -189,6 +189,7 @@ function formatPmsHotelProfileContext(
     "",
     "## Use",
     "Use this PMS-owned snapshot to understand the hotel's configured static catalog and to choose the right PMS tool.",
+    "For booking workflows, unique partial room type wording can map to the configured room type, for example 洞穴 maps to 秘境洞穴 when it is the only matching active room type.",
     "For a final answer about hotel profile or room type catalog, prefer pms_hotel_profile or pms_room_type_catalog so the reply can include evidenceRefs.",
     "Availability, price, reservation, room status, order status, and pending-action status must always be answered from fresh PMS evidence tools.",
   ].join("\n");

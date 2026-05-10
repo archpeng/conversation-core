@@ -52,6 +52,7 @@ export type PmsWorkflowExecutorMap = {
   pms_reservation_draft_update: GatedToolExecutor<PmsEvidence<ReservationDraftFact>>;
   pms_reservation_quote: GatedToolExecutor<PmsEvidence<ReservationQuoteFact>>;
   pms_reservation_prepare_confirm: GatedToolExecutor<PmsEvidence<ReservationConfirmPreparation>>;
+  pms_reservation_prepare_booking?: GatedToolExecutor<PmsEvidence<ReservationConfirmPreparation> | PmsWorkflowRejectedResult>;
   pms_reservation_group_draft_create: GatedToolExecutor<PmsEvidence<ReservationGroupDraftFact>>;
   pms_reservation_group_draft_update: GatedToolExecutor<PmsEvidence<ReservationGroupDraftFact>>;
   pms_reservation_group_quote: GatedToolExecutor<PmsEvidence<ReservationGroupQuoteFact>>;

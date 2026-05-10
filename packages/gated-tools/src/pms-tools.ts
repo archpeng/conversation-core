@@ -7,6 +7,7 @@ export type GatedPmsCapabilityInput<T> = {
   capabilityId: string;
   target?: string;
   roomId?: string;
+  roomNumber?: string;
   draftId?: string;
   draftRef?: string;
   groupDraftId?: string;
@@ -59,6 +60,7 @@ function pmsCapabilityRequest<T>(input: GatedPmsCapabilityInput<T>): GatedToolRe
     tenantId: input.tenantId,
     target: input.target,
     roomId: input.roomId,
+    roomNumber: input.roomNumber,
     draftId: input.draftId,
     draftRef: input.draftRef,
     groupDraftId: input.groupDraftId,

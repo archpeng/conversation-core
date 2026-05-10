@@ -3,7 +3,7 @@ import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "../packages/
 
 const liveSmokeEnabled = process.env.RUN_PMS_LIVE_SMOKE === "true";
 
-describe.skipIf(!liveSmokeEnabled)("live PMS group-booking smoke", () => {
+describe.skipIf(!liveSmokeEnabled)("live PMS booking smoke", () => {
   it("uses the running real Pi/LLM agent, confirms the approval card, and verifies PMS readback", async () => {
     if (process.env.PMS_AGENT_PI_MODE === "stub") {
       throw new Error("RUN_PMS_LIVE_SMOKE requires a real Pi/LLM runtime, but PMS_AGENT_PI_MODE=stub.");
@@ -66,6 +66,53 @@ describe.skipIf(!liveSmokeEnabled)("live PMS group-booking smoke", () => {
         expect.objectContaining({ roomId, roomType: "花园别墅", startDate: "2026-05-12", endDate: "2026-05-14", status: "allocated" })
       )
     ));
+  }, 180_000);
+
+  it("uses the running real Pi/LLM agent to prepare and confirm a single-room approval card", async () => {
+    if (process.env.PMS_AGENT_PI_MODE === "stub") {
+      throw new Error("RUN_PMS_LIVE_SMOKE requires a real Pi/LLM runtime, but PMS_AGENT_PI_MODE=stub.");
+    }
+
+    const config = liveSmokeConfig();
+    const runId = `live-single-smoke-${Date.now()}`;
+
+    if (config.resetPlatform) await resetPlatform(config);
+
+    await sendTurn(config, liveTurn(runId, 1, "给花理论订一间房"));
+    const second = await sendTurn(config, liveTurn(runId, 2, "明天入住 后天退房"));
+    const third = await sendTurn(config, liveTurn(runId, 3, "洞穴1间"));
+    const card = requireApprovalCard(third);
+
+    expect(second).toMatchObject({ type: "text" });
+    expect(card.ref).toMatchObject({
+      type: "pms_pending_action",
+      action: "reservation_confirm",
+    });
+    expect(card.summary).toContain("点击确认后");
+    expect(card.summary).toContain("正式预订");
+    expect(card.summary).not.toContain("PMS 返回错误");
+
+    const confirm = await confirmPendingAction(config, card, runId);
+    expect(confirm).toMatchObject({
+      ok: true,
+      operation: "pms.pending_action.confirm",
+      mutationStatus: "committed",
+      reservation: {
+        guestDisplayName: "花理论",
+        roomType: "秘境洞穴",
+        arrivalDate: "2026-05-11",
+        departureDate: "2026-05-12",
+        status: "booked",
+      },
+    });
+
+    const readback = await platformGetJson(config, "/v1/sandbox/readback");
+    expect(readback.reservations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ guestDisplayName: "花理论", roomType: "秘境洞穴", arrivalDate: "2026-05-11", departureDate: "2026-05-12", status: "booked" }),
+    ]));
+    expect(readback.reservationAllocations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ roomType: "秘境洞穴", startDate: "2026-05-11", endDate: "2026-05-12", status: "allocated" }),
+    ]));
   }, 180_000);
 });
 

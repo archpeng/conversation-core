@@ -14,6 +14,7 @@ export const PMS_SAFE_WORKFLOW_TOOLS = [
   "pms_reservation_draft_update",
   "pms_reservation_quote",
   "pms_reservation_prepare_confirm",
+  "pms_reservation_prepare_booking",
   "pms_reservation_group_draft_create",
   "pms_reservation_group_draft_update",
   "pms_reservation_group_quote",
@@ -32,6 +33,8 @@ const WorkflowDescriptions: Record<PmsSafeWorkflowToolName, string> = {
     "Quote a reservation draft. Returns quote evidence only and does not confirm the booking.",
   pms_reservation_prepare_confirm:
     "Prepare a typed approval card for a quoted reservation draft. Returns pending-action evidence; final confirm/cancel is never a natural-language tool.",
+  pms_reservation_prepare_booking:
+    "Prepare a single-room booking approval card from PMS availability. Use when guest, dates, and either room type or room number are known. It resolves room type text against the PMS catalog, so unique partial wording such as 洞穴 can be used for 秘境洞穴. It searches current availability, selects the requested room or first available room, creates the draft, quotes it, then prepares typed approval. It never confirms the booking.",
   pms_reservation_group_draft_create:
     "Create group reservation draft evidence only for multiple rooms. This does not confirm or create final reservations.",
   pms_reservation_group_draft_update:
@@ -75,6 +78,20 @@ const WorkflowSchemas: Record<PmsSafeWorkflowToolName, object> = {
       quoteRef: { type: "string", minLength: 1 },
       quoteId: { type: "string", minLength: 1 },
     },
+  },
+  pms_reservation_prepare_booking: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      guestName: { type: "string", minLength: 1 },
+      checkInDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      checkOutDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      roomType: { type: "string", minLength: 1 },
+      roomNumber: { type: "string", minLength: 1 },
+      roomId: { type: "string", minLength: 1 },
+      quantity: { type: "integer", minimum: 1, maximum: 1 },
+    },
+    required: ["guestName", "checkInDate", "checkOutDate"],
   },
   pms_reservation_group_draft_create: {
     type: "object",
@@ -218,6 +235,7 @@ function pmsPlatformRejectedResult(error: unknown): PmsWorkflowRejectedResult | 
 function workflowRequestParams(params: Record<string, unknown>): Omit<GatedToolRequest, "capabilityId" | "actor" | "tenantId"> {
   return {
     roomId: optionalText(params.roomId),
+    roomNumber: optionalText(params.roomNumber),
     draftId: optionalText(params.draftId),
     draftRef: optionalText(params.draftRef),
     groupDraftId: optionalText(params.groupDraftId),

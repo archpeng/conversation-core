@@ -109,6 +109,36 @@ describe("unified Agent Pi-native PMS tools", () => {
     expect(order).toEqual(["decide:pms_reservation_group_prepare_booking", "audit:allow"]);
   });
 
+  it("uses the composite single booking workflow to prepare an approval card without exposing draft refs to Pi", async () => {
+    const order: string[] = [];
+    const calls: string[] = [];
+    const session = await createUnifiedAgentSession({
+      turn: baseTurn,
+      gateway: safetyGateway(order),
+      createAgentSession: fakeCreateAgentSessionWithToolCalls([{
+        calls: [{
+          toolName: "pms_reservation_prepare_booking",
+          params: {
+            guestName: "花理论",
+            checkInDate: "2026-05-11",
+            checkOutDate: "2026-05-12",
+            roomType: "洞穴",
+            roomNumber: "d2",
+            quantity: 1
+          }
+        }],
+        text: "PMS 已准备单房预订确认卡。"
+      }]),
+      executors: { pmsWorkflowExecutors: workflowExecutors(calls) }
+    });
+
+    const result = await runAgentTurn(session, { ...baseTurn, message: { text: "选择d2，发卡片给我确认" } });
+
+    expect(result).toMatchObject({ type: "approval_card", card: { ref: { pendingActionId: "pending_single_booking_1", selectionCount: 1 } } });
+    expect(calls).toEqual(["pms_reservation_prepare_booking"]);
+    expect(order).toEqual(["decide:pms_reservation_prepare_booking", "audit:allow"]);
+  });
+
   it("surfaces structured PMS workflow rejection instead of a generic platform error", async () => {
     const session = await createUnifiedAgentSession({
       turn: baseTurn,
@@ -238,6 +268,10 @@ function workflowExecutors(calls?: string[]): PmsWorkflowExecutorMap {
     pms_reservation_prepare_confirm: ({ request }) => {
       calls?.push(request.capabilityId);
       return createPmsEvidence({ method: "prepareReservationConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "prepare", data: { pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none", quoteRef: request.quoteRef } });
+    },
+    pms_reservation_prepare_booking: ({ request }) => {
+      calls?.push(request.capabilityId);
+      return createPmsEvidence({ method: "prepareReservationConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "single booking prepare", data: { pendingActionId: "pending_single_booking_1", pendingActionRef: "pending_single_booking_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: request.quantity ?? 1 } });
     },
     pms_reservation_group_draft_create: () => createPmsEvidence({ method: "createReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "collectingSlots" } }) as never,
     pms_reservation_group_draft_update: () => createPmsEvidence({ method: "updateReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "quoteReady" } }) as never,
