@@ -10,14 +10,14 @@
 
 ## Intended Handoff
 
-- none
+- No active handoff.
 
 ## Status
 
 - Active state: `PACK_COMPLETE`
 - Active triplet: none
-- Latest gate: `pnpm build` passed; `pnpm test` passed with 22 files, 172 tests, boundary guard passed, eval 20/20.
-- Latest closed pack: `pms-pi-tool-surface-p0-p6-v1-2026-05-09`
+- Latest gate: `pnpm build` passed; `pnpm test` passed with 28 Vitest files passed / 1 skipped, 190 tests passed / 2 skipped, boundary guard passed, eval 21/21 with 22 audit events.
+- Latest closed pack: `pms-agent-agents-readability-r0-r6-v1-2026-05-10`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
 
@@ -25,18 +25,18 @@
 
 Closed pack archive:
 
-- `docs/plan-archive/pms-pi-tool-surface-p0-p6-v1-2026-05-09/`
+- `docs/plan-archive/pms-agent-agents-readability-r0-r6-v1-2026-05-10/`
 
 Closed pack result:
 
-- Generated fine-grained PMS Pi tools for safe reads and safe workflow preparation
-- Replaced JSON-plan execution with Pi-native custom tool sequencing
-- Removed coarse customer PMS aliases and coarse `pms_read`/`pms_workflow` gateway compatibility IDs
-- Kept final `pms_confirm` gateway/card-only and absent from the visible LLM tool surface
+- Removed production runtime cast debt with owner-bound runtime modules
+- Split oversized pms-platform-client, workspace-core, eval, and PMS client test surfaces
+- Bounded degraded fallback and response synthesis regex policy in named owner modules
+- Centralized `notConfiguredExecutor` and typed noisy test stubs
 
 Closeout artifact:
 
-- `docs/plan-archive/pms-pi-tool-surface-p0-p6-v1-2026-05-09/pms-pi-tool-surface-p0-p6-v1-2026-05-09_CLOSEOUT.md`
+- `docs/plan-archive/pms-agent-agents-readability-r0-r6-v1-2026-05-10/pms-agent-agents-readability-r0-r6-v1-2026-05-10_CLOSEOUT.md`
 
 Successor pack:
 

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
-import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
 import { createPmsEvidence, type AvailabilitySearchResult, type RoomTypeCatalogResult } from "../packages/pms-platform-client/src/index.js";
 import { createUnifiedAgentSession, runAgentTurn, type AgentSessionFactory, type PmsReadExecutorMap } from "../packages/unified-agent/src/index.js";
 import type { FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
-import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
+import { pmsReadExecutors, safetyGateway } from "./unified-agent.helpers.js";
 
 const turn: FeishuTurnInput = {
   channel: "feishu",
@@ -95,7 +94,7 @@ describe("customer PMS degraded loop", () => {
   it("keeps natural-language confirm behind the typed-card boundary", async () => {
     const session = await createUnifiedAgentSession({
       turn,
-      gateway: safetyGateway(),
+      gateway: safetyGateway([]),
       createAgentSession: fakeCreateAgentSession,
       executors: { pmsReadExecutors: availabilityExecutors(evidence({ rooms: [] })) }
     });
@@ -109,7 +108,7 @@ describe("customer PMS degraded loop", () => {
     const refs: string[] = [];
     const session = await createUnifiedAgentSession({
       turn,
-      gateway: safetyGateway(),
+      gateway: safetyGateway([]),
       createAgentSession: fakeCreateAgentSession,
       executors: {
         pmsReadExecutors: availabilityExecutors(() => {
@@ -136,7 +135,7 @@ type RunEvalTurnInput = {
 
 async function runEvalTurn(input: RunEvalTurnInput) {
   const service = createAgentService({
-    gateway: safetyGateway(),
+    gateway: safetyGateway([]),
     createAgentSession: fakeCreateAgentSession,
     executors: { pmsReadExecutors: input.pmsReadExecutors }
   });
@@ -145,18 +144,7 @@ async function runEvalTurn(input: RunEvalTurnInput) {
 
 function availabilityExecutors(read: ReturnType<typeof evidence> | (() => ReturnType<typeof evidence>)): PmsReadExecutorMap {
   const readFn = typeof read === "function" ? read : () => read;
-  return {
-    pms_hotel_profile: readFn as never,
-    pms_room_type_catalog: readFn as never,
-    pms_availability_search: readFn,
-    pms_inventory_summary: readFn as never,
-    pms_room_reservation_context: readFn as never,
-    pms_reservation_lookup: readFn as never,
-    pms_get_room: readFn as never,
-    pms_today_arrivals: readFn as never,
-    pms_today_departures: readFn as never,
-    pms_pending_action_status: readFn as never
-  };
+  return pmsReadExecutors({ pms_availability_search: readFn });
 }
 
 function evidence(data: AvailabilitySearchResult, fetchedAt = "2026-05-06T12:00:00.000Z") {
@@ -184,15 +172,3 @@ const fakeCreateAgentSession: AgentSessionFactory = async () => ({
     async prompt() {}
   }
 });
-
-function safetyGateway(): SafetyGatewayPort {
-  return {
-    decide(request: GatedToolRequest): GatedDecision {
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      return { id: `audit_${event.capabilityId}_${event.outcome}` };
-    }
-  };
-}

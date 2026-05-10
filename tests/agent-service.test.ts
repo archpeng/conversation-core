@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService, handleAgentServiceRequest, type AgentServiceResponse } from "../apps/agent-service/src/index.js";
-import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
 import type { AgentResult, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
-import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
 import { PMS_SAFE_READ_TOOLS, PMS_SAFE_WORKFLOW_TOOLS, type AgentSessionFactory, type AgentSessionFactoryOptions, type PmsReadExecutorMap, type UnifiedAgentTurnEvent } from "../packages/unified-agent/src/index.js";
+import { pmsReadExecutors, safetyGateway as testSafetyGateway } from "./unified-agent.helpers.js";
 
 const validTurn: FeishuTurnInput = {
   channel: "feishu",
@@ -116,7 +115,7 @@ describe("agent service API", () => {
     const response = await handleAgentServiceRequest(
       { gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(calls) },
       { method: "POST", path: "/v1/feishu-turn", body: validTurn },
-      sessions as never
+      sessions
     );
 
     expect(response.status).toBe(200);
@@ -253,28 +252,9 @@ function fakeCreateAgentSession(calls: AgentSessionFactoryOptions[]): AgentSessi
 }
 
 function availabilityExecutors(read: () => ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
-  return {
-    pms_hotel_profile: read as never,
-    pms_room_type_catalog: read as never,
-    pms_availability_search: read,
-    pms_inventory_summary: read as never,
-    pms_room_reservation_context: read as never,
-    pms_reservation_lookup: read as never,
-    pms_get_room: read as never,
-    pms_today_arrivals: read as never,
-    pms_today_departures: read as never,
-    pms_pending_action_status: read as never
-  };
+  return pmsReadExecutors({ pms_availability_search: read });
 }
 
-function safetyGateway(): SafetyGatewayPort {
-  return {
-    decide(request: GatedToolRequest): GatedDecision {
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      return { id: `audit_${event.capabilityId}_${event.outcome}` };
-    }
-  };
+function safetyGateway() {
+  return testSafetyGateway([]);
 }

@@ -8,11 +8,9 @@ import {
   pmsToolSchema,
   pmsWorkflowToolDescription,
   pmsWorkflowToolSchema,
-  registerGatedTools,
-  type PmsReadExecutorMap,
-  type PmsWorkflowExecutorMap
+  registerGatedTools
 } from "../packages/unified-agent/src/index.js";
-import { safetyGateway } from "./unified-agent.helpers.js";
+import { pmsReadExecutors, pmsWorkflowExecutors, safetyGateway } from "./unified-agent.helpers.js";
 
 describe("PMS Pi tool surface", () => {
   it("registers generated customer PMS tools without coarse compatibility aliases", () => {
@@ -73,7 +71,7 @@ describe("PMS Pi tool surface", () => {
       gateway: safetyGateway(order),
       actor: { profile: "customer", id: "actor_1" },
       tenantId: "tenant_1",
-      executors: { pmsReadExecutors: readExecutors(evidence) }
+      executors: { pmsReadExecutors: pmsReadExecutors({ pms_availability_search: () => evidence }) }
     });
 
     const tool = tools.find((candidate) => candidate.name === "pms_availability_search");
@@ -100,7 +98,7 @@ describe("PMS Pi tool surface", () => {
       gateway: safetyGateway(order),
       actor: { profile: "customer", id: "actor_1" },
       tenantId: "tenant_1",
-      executors: { pmsWorkflowExecutors: workflowExecutors(evidence) }
+      executors: { pmsWorkflowExecutors: pmsWorkflowExecutors({ pms_reservation_prepare_confirm: () => evidence }) }
     });
 
     const tool = tools.find((candidate) => candidate.name === "pms_reservation_prepare_confirm");
@@ -111,31 +109,3 @@ describe("PMS Pi tool surface", () => {
     expect(result?.details).toMatchObject({ outcome: "allow", value: { evidenceRef: evidence.evidenceRef } });
   });
 });
-
-function readExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
-  return {
-    pms_hotel_profile: () => evidence as never,
-    pms_room_type_catalog: () => evidence as never,
-    pms_availability_search: () => evidence,
-    pms_inventory_summary: () => evidence as never,
-    pms_room_reservation_context: () => evidence as never,
-    pms_reservation_lookup: () => evidence as never,
-    pms_get_room: () => evidence as never,
-    pms_today_arrivals: () => evidence as never,
-    pms_today_departures: () => evidence as never,
-    pms_pending_action_status: () => evidence as never
-  };
-}
-
-function workflowExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsWorkflowExecutorMap {
-  return {
-    pms_reservation_draft_create: () => evidence as never,
-    pms_reservation_draft_update: () => evidence as never,
-    pms_reservation_quote: () => evidence as never,
-    pms_reservation_prepare_confirm: () => evidence as never,
-    pms_reservation_group_draft_create: () => evidence as never,
-    pms_reservation_group_draft_update: () => evidence as never,
-    pms_reservation_group_quote: () => evidence as never,
-    pms_reservation_group_prepare_confirm: () => evidence as never
-  };
-}

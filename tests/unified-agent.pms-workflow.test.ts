@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createPmsEvidence, PmsPlatformRejectedError, type PmsWorkflowRejectedResult } from "../packages/pms-platform-client/src/index.js";
 import { createUnifiedAgentSession, runAgentTurn, type PmsReadExecutorMap, type PmsWorkflowExecutorMap } from "../packages/unified-agent/src/index.js";
-import { baseTurn, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithToolCalls, safetyGateway } from "./unified-agent.helpers.js";
+import { baseTurn, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithToolCalls, pmsReadExecutors, safetyGateway } from "./unified-agent.helpers.js";
 
 describe("unified Agent Pi-native PMS tools", () => {
   it("uses Pi-native PMS safe-read tool results as the primary live path", async () => {
@@ -234,21 +234,13 @@ function readExecutors(
     summary: "inventory",
     data: { dates: [] }
   });
-  return {
-    pms_hotel_profile: () => availability as never,
-    pms_room_type_catalog: () => availability as never,
+  return pmsReadExecutors({
     pms_availability_search: ({ request }) => {
       calls?.push(request.capabilityId);
       return availability;
     },
-    pms_inventory_summary: () => inventoryEvidence as never,
-    pms_room_reservation_context: () => availability as never,
-    pms_reservation_lookup: () => availability as never,
-    pms_get_room: () => availability as never,
-    pms_today_arrivals: () => availability as never,
-    pms_today_departures: () => availability as never,
-    pms_pending_action_status: () => availability as never
-  };
+    pms_inventory_summary: () => inventoryEvidence
+  });
 }
 
 function workflowExecutors(calls?: string[]): PmsWorkflowExecutorMap {
@@ -273,10 +265,10 @@ function workflowExecutors(calls?: string[]): PmsWorkflowExecutorMap {
       calls?.push(request.capabilityId);
       return createPmsEvidence({ method: "prepareReservationConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "single booking prepare", data: { pendingActionId: "pending_single_booking_1", pendingActionRef: "pending_single_booking_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: request.quantity ?? 1 } });
     },
-    pms_reservation_group_draft_create: () => createPmsEvidence({ method: "createReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "collectingSlots" } }) as never,
-    pms_reservation_group_draft_update: () => createPmsEvidence({ method: "updateReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "quoteReady" } }) as never,
-    pms_reservation_group_quote: () => createPmsEvidence({ method: "quoteReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group quote", data: { quoteRef: "group_quote_1", status: "pricingUnsupported" } }) as never,
-    pms_reservation_group_prepare_confirm: () => createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group prepare", data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: 2 } }) as never,
+    pms_reservation_group_draft_create: () => createPmsEvidence({ method: "createReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "collectingSlots" } }),
+    pms_reservation_group_draft_update: () => createPmsEvidence({ method: "updateReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group draft", data: { groupDraftRef: "group_1", status: "quoteReady" } }),
+    pms_reservation_group_quote: () => createPmsEvidence({ method: "quoteReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group quote", data: { quoteRef: "group_quote_1", status: "pricingUnsupported" } }),
+    pms_reservation_group_prepare_confirm: () => createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group prepare", data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: 2 } }),
     pms_reservation_group_prepare_booking: ({ request }) => {
       calls?.push(request.capabilityId);
       return createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-06T12:00:00.000Z", summary: "group booking prepare", data: { pendingActionId: "pending_group_booking_1", pendingActionRef: "pending_group_booking_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: request.quantity } });

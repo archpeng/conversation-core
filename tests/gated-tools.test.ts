@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  createSafetyAuditEvent,
-  decideToolRequest,
-  type SafetyDecision,
-  type ToolRequest
-} from "../packages/safety-gateway/src/index.js";
-import {
   gatedBash,
   gatedEdit,
   gatedHttp,
@@ -13,11 +7,9 @@ import {
   gatedPmsWorkflowStep,
   gatedRead,
   gatedWrite,
-  runGatedTool,
-  type GatedDecision,
-  type GatedToolRequest,
-  type SafetyGatewayPort
+  runGatedTool
 } from "../packages/gated-tools/src/index.js";
+import { safetyGateway } from "./unified-agent.helpers.js";
 
 const customer = { profile: "customer" as const, id: "guest_1" };
 const admin = { profile: "admin" as const, id: "admin_1" };
@@ -212,17 +204,3 @@ describe("gated tool runner", () => {
     }
   });
 });
-
-function safetyGateway(order: string[]): SafetyGatewayPort {
-  return {
-    decide(request: GatedToolRequest): GatedDecision {
-      order.push(`decide:${request.capabilityId}`);
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      order.push(`audit:${decision.outcome}`);
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      return { id: `audit_${event.capabilityId}_${event.outcome}` };
-    }
-  };
-}

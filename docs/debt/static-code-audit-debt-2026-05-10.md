@@ -4,7 +4,12 @@
 
 This debt register records the static audit findings after the PMS hotel profile and room type catalog work. It is intentionally limited to code clarity, AI readability, Bitter Lesson alignment, compatibility residue, redundancy, and fixture duplication.
 
-Verification at the time of audit:
+Latest repo-local verification after the AGENTS/readability cleanup:
+
+- `pms-agent-v2`: `pnpm build` passed.
+- `pms-agent-v2`: `pnpm test` passed with 28 Vitest files passed / 1 skipped, 190 tests passed / 2 skipped, boundary guard passed, and eval ok=true 21/21 with 22 audit events.
+
+Original verification at the time of audit:
 
 - `pms-agent-v2`: `pnpm build && pnpm test` passed, including 178 tests, boundary guard, and eval 21/21.
 - `pms-platform`: `npm run verify` passed, including 105 tests.
@@ -17,16 +22,18 @@ No blocking correctness bug was found. The new PMS hotel profile and room type c
 
 Severity: medium
 
+Status: resolved locally / bounded by owner module
+
 Owner boundary: `pms-agent-v2` customer degraded loop
 
 Evidence:
 
-- `packages/unified-agent/src/customer-loop.ts:30`
+- `packages/unified-agent/src/customer-fallback-policy.ts:1`
 - `packages/unified-agent/src/session.ts:91`
 
 Finding:
 
-`customer-loop.ts` still contains deterministic regex intent detection for confirmation, booking, availability, room-type catalog, date cues, and follow-up cues. This is currently bounded because `session.ts` only invokes the scaffold when the LLM failed or returned empty output.
+The deterministic degraded fallback intent rules have been moved out of `customer-loop.ts` into `customer-fallback-policy.ts`. This keeps the regex rules visible as fallback policy only; `session.ts` still invokes the scaffold only when the LLM failed or returned empty output.
 
 Bitter Lesson risk:
 
@@ -34,21 +41,24 @@ The degraded scaffold is acceptable as a safety fallback, but it must not grow i
 
 Cleanup direction:
 
-Keep this path minimal. Future business behavior should be released through Pi-native typed tools, PMS evidence, and response synthesis. If fallback coverage must expand, require a failing degradation test and document why the LLM-unavailable path needs it.
+Keep this path minimal. Future business behavior should still be released through Pi-native typed tools, PMS evidence, and response synthesis. If fallback coverage must expand, require a failing degradation test and document why the LLM-unavailable path needs it.
 
 ### DEBT-AI-002 - Output safety and evidence classification are regex-heavy
 
 Severity: medium
 
+Status: resolved locally / bounded by owner module
+
 Owner boundary: `pms-agent-v2` response synthesis / output validation
 
 Evidence:
 
-- `packages/unified-agent/src/response-synthesis.ts:70`
+- `packages/unified-agent/src/response-synthesis-policy.ts:1`
+- `packages/unified-agent/src/response-synthesis.ts:6`
 
 Finding:
 
-`response-synthesis.ts` uses several regex classifiers to detect current PMS facts, mutation claims, and unsafe output. This is a validation boundary rather than a business router, so the current shape is defensible, but the rule density is rising.
+The regex classifiers have been moved out of `response-synthesis.ts` into `response-synthesis-policy.ts` with a boundary note: they are output safety/evidence validation policy, not business routing. The main synthesis path now reads as contract validation and result assembly.
 
 Bitter Lesson risk:
 
@@ -61,6 +71,8 @@ Prefer typed `currentPmsFact`, evidence refs, mutation status, and approval meta
 ### DEBT-AI-003 - `pms-platform` local HTTP handler is too broad
 
 Severity: medium
+
+Status: open external residual
 
 Owner boundary: `pms-platform` local HTTP boundary
 
@@ -85,6 +97,8 @@ Extract route-owner handlers without changing behavior. Candidate slices: health
 
 Severity: medium
 
+Status: resolved locally
+
 Owner boundary: `pms-agent-v2` platform client and eval suite
 
 Evidence:
@@ -92,10 +106,12 @@ Evidence:
 - `packages/pms-platform-client/src/schemas.ts:1`
 - `packages/pms-platform-client/src/client.ts:1`
 - `packages/evals/src/eval-cases.ts:1`
+- `packages/evals/src/eval-cases.pms-helpers.ts:1`
+- `packages/evals/src/eval-cases.tool-planning.ts:1`
 
 Finding:
 
-`schemas.ts` is 581 lines, `client.ts` is 448 lines, and `eval-cases.ts` is 812 lines. The code is still functional and typed, but AI readability is declining. The eval file exceeds the project test discipline threshold that asks files over roughly 500 lines to split by concern.
+The oversized surfaces have been split by owner domain. `schemas.ts` and `client.ts` are compatibility surfaces over domain schema/client modules. `eval-cases.ts` is reduced to 343 lines, with PMS executor fixtures and tool-planning eval cases moved to focused modules.
 
 Bitter Lesson risk:
 
@@ -103,11 +119,13 @@ Oversized typed surfaces invite local duplication and make future agents more li
 
 Cleanup direction:
 
-Split by domain without redesigning behavior. Candidate slices: hotel profile/catalog schema and client methods, availability schema and client methods, reservation workflow schema and client methods, and eval cases grouped by grounding, tool planning, workflow, and catalog behavior.
+Future typed client growth should add or extend the matching domain module instead of growing the compatibility surfaces.
 
 ### DEBT-AI-005 - Old single-tool synthesis path appears unused
 
 Severity: low
+
+Status: resolved locally
 
 Owner boundary: `pms-agent-v2` session evidence synthesis
 
@@ -118,7 +136,7 @@ Evidence:
 
 Finding:
 
-`synthesizeToolResult` appears to be exported but unused. `isAvailabilityEvidence` also appears unused. They look like residue from an older single-tool synthesis path after `session.ts` moved to sequence-based Pi-native tool result handling.
+The unused `synthesizeToolResult` and `isAvailabilityEvidence` exports were confirmed unused and removed from `session-evidence.ts`.
 
 Bitter Lesson risk:
 
@@ -126,11 +144,13 @@ Dead compatibility code makes the active runtime harder to read and increases th
 
 Cleanup direction:
 
-Confirm with `rg` before editing, then delete unused exports and associated imports/tests if no external package consumes them.
+No further repo-local cleanup is needed unless a future public API compatibility requirement appears.
 
 ### DEBT-AI-006 - Small repeated executor fallback helpers and noisy test stubs
 
 Severity: low
+
+Status: resolved locally
 
 Owner boundary: `pms-agent-v2` gated tool registration and tests
 
@@ -142,7 +162,7 @@ Evidence:
 
 Finding:
 
-`notConfiguredExecutor` is duplicated across three modules. Tests also contain many `as never` executor stubs. This does not affect production behavior, but it adds noise and makes test intent harder to scan.
+`notConfiguredExecutor` is centralized in `packages/unified-agent/src/not-configured-executor.ts`. The noisy test stubs have been replaced with typed helper factories where practical, and source/test scans no longer find `as never`, double-cast, or `as Partial<T>` patterns except for the literal prompt text guard.
 
 Bitter Lesson risk:
 
@@ -150,11 +170,13 @@ Small duplication is not the main risk, but repeated local helpers and broad cas
 
 Cleanup direction:
 
-Move the helper to one local owner module or use a small typed test factory for executor maps. Keep production behavior unchanged.
+Keep future test stubs behind the typed helper factories instead of local casts.
 
 ### DEBT-AI-007 - Sample hotel room-type mapping is duplicated across platform fixtures
 
 Severity: low
+
+Status: open external residual
 
 Owner boundary: `pms-platform` sample hotel fixture/provisioning
 
@@ -174,4 +196,3 @@ Duplicated fixture truth can drift and create confusing catalog/eval mismatches,
 Cleanup direction:
 
 Consolidate the sample hotel mapping into one fixture owner and import it from both seed/provisioning paths, or generate both from a single declarative fixture.
-

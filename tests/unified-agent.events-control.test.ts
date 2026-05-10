@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
-import { createUnifiedAgentSession, runAgentTurn, type PmsReadExecutorMap, type PmsWorkflowExecutorMap, type UnifiedAgentTurnEvent } from "../packages/unified-agent/src/index.js";
-import { baseTurn, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithToolCalls, safetyGateway } from "./unified-agent.helpers.js";
+import { createUnifiedAgentSession, runAgentTurn, type UnifiedAgentTurnEvent } from "../packages/unified-agent/src/index.js";
+import { baseTurn, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithToolCalls, pmsReadExecutors, pmsWorkflowExecutors, safetyGateway } from "./unified-agent.helpers.js";
 
 describe("unified Agent Pi-native event control", () => {
   it("emits redacted Pi-native planner, tool, and final result events", async () => {
@@ -79,36 +79,18 @@ function availabilityEvidence(summary: string) {
   });
 }
 
-function readExecutors(evidence: ReturnType<typeof availabilityEvidence>): PmsReadExecutorMap {
-  return {
-    pms_hotel_profile: () => evidence as never,
-    pms_room_type_catalog: () => evidence as never,
-    pms_availability_search: () => evidence,
-    pms_inventory_summary: () => evidence as never,
-    pms_room_reservation_context: () => evidence as never,
-    pms_reservation_lookup: () => evidence as never,
-    pms_get_room: () => evidence as never,
-    pms_today_arrivals: () => evidence as never,
-    pms_today_departures: () => evidence as never,
-    pms_pending_action_status: () => evidence as never
-  };
+function readExecutors(evidence: ReturnType<typeof availabilityEvidence>) {
+  return pmsReadExecutors({ pms_availability_search: () => evidence });
 }
 
-function workflowExecutors(): PmsWorkflowExecutorMap {
-  return {
-    pms_reservation_draft_create: () => undefined as never,
-    pms_reservation_draft_update: () => undefined as never,
-    pms_reservation_quote: () => undefined as never,
+function workflowExecutors() {
+  return pmsWorkflowExecutors({
     pms_reservation_prepare_confirm: () => createPmsEvidence({
       method: "prepareReservationConfirm",
       tenantId: "tenant_1",
       fetchedAt: "2026-05-06T12:00:00.000Z",
       summary: "prepare",
       data: { pendingActionId: "pending_secret_1", confirmationMode: "typedCardOnly", mutationStatus: "none" }
-    }),
-    pms_reservation_group_draft_create: () => undefined as never,
-    pms_reservation_group_draft_update: () => undefined as never,
-    pms_reservation_group_quote: () => undefined as never,
-    pms_reservation_group_prepare_confirm: () => undefined as never
-  };
+    })
+  });
 }

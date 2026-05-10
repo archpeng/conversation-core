@@ -28,6 +28,7 @@ import type {
 } from "@pms-agent-v2/pms-platform-client";
 import { generatePmsSafeReadTools } from "./pms-capability-tools.js";
 import { generatePmsWorkflowTools } from "./pms-workflow-tools.js";
+import { notConfiguredExecutor } from "./not-configured-executor.js";
 import type { UnifiedAgentProfile } from "./profile.js";
 import type { AgentToolResult, GatedToolDefinition } from "./pi-session.js";
 import type { TSchema } from "typebox";
@@ -188,12 +189,6 @@ function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
     && typeof record.summary === "string"
     && source?.system === "pms-platform"
     && typeof source?.method === "string";
-}
-
-function notConfiguredExecutor<T = unknown>(name: string): GatedToolExecutor<T> {
-  return () => {
-    throw new Error(`Gated tool executor is not configured: ${name}`);
-  };
 }
 
 function optionalText(value: unknown): string | undefined {

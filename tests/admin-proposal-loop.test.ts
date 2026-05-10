@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService } from "../apps/agent-service/src/index.js";
-import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
 import { createUnifiedAgentSession, runAgentTurn, type AgentSessionFactory } from "../packages/unified-agent/src/index.js";
 import type { FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
-import type { GatedDecision, GatedToolExecutor, GatedToolRequest, SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
+import type { GatedToolExecutor } from "../packages/gated-tools/src/index.js";
+import { auditRecordingGateway } from "./unified-agent.helpers.js";
 
 const adminTurn: FeishuTurnInput = {
   channel: "feishu",
@@ -119,16 +119,6 @@ const fakeCreateAgentSession: AgentSessionFactory = async () => ({
   }
 });
 
-function safetyGateway(): SafetyGatewayPort {
-  let auditIndex = 0;
-  return {
-    decide(request: GatedToolRequest): GatedDecision {
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      auditIndex += 1;
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      return { id: `audit_${event.capabilityId}_${event.outcome}_${auditIndex}` };
-    }
-  };
+function safetyGateway() {
+  return auditRecordingGateway([]);
 }

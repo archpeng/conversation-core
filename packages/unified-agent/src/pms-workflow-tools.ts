@@ -8,6 +8,7 @@ import { PmsPlatformRejectedError, isPmsWorkflowRejectedResult, type PmsWorkflow
 import type { TSchema } from "typebox";
 import type { AgentToolResult, GatedToolDefinition } from "./pi-session.js";
 import type { UnifiedAgentToolExecutors } from "./tool-registration.js";
+import { notConfiguredExecutor } from "./not-configured-executor.js";
 
 export const PMS_SAFE_WORKFLOW_TOOLS = [
   "pms_reservation_draft_create",
@@ -332,10 +333,4 @@ function isSelection(value: unknown): value is NonNullable<GatedToolRequest["sel
     && typeof record.selectedCandidateRef === "string"
     && (record.roomTypeId === undefined || typeof record.roomTypeId === "string")
     && (record.roomType === undefined || typeof record.roomType === "string");
-}
-
-function notConfiguredExecutor<T = unknown>(name: string): GatedToolExecutor<T> {
-  return () => {
-    throw new Error(`Gated tool executor is not configured: ${name}`);
-  };
 }

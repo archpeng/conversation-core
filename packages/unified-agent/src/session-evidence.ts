@@ -1,11 +1,9 @@
 import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
-import type { AvailabilitySearchResult, PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
+import type { PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
 import type { ContextBundle } from "./context-bundle.js";
-import { promptAssistantText } from "./pi-io.js";
 import type { AgentToolResult } from "./pi-session.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
-import { evidenceReplyPrompt } from "./session-turn-prompt.js";
 import type { RunAgentTurnOptions, UnifiedAgentSession } from "./session-types.js";
 
 export type PlannedAgentResult = {
@@ -13,23 +11,6 @@ export type PlannedAgentResult = {
   evidenceRefs?: string[];
   pendingActionRefs?: string[];
 };
-
-export async function synthesizeToolResult(session: UnifiedAgentSession, turn: FeishuTurnInput, toolResult: AgentToolResult<GatedToolResult<unknown>>, context: ContextBundle, options: RunAgentTurnOptions): Promise<PlannedAgentResult> {
-  const details = toolResult.details as Record<string, unknown>;
-  if (details.outcome === "allow" && isPmsEvidence(details.value)) {
-    const evidence = details.value;
-    const approval = synthesizePrepareConfirmApproval(evidence);
-    if (approval) return approval;
-
-    const llmReply = await promptAssistantText(session.piSession, evidenceReplyPrompt(turn, evidence));
-    const synthesized = synthesizeEvidenceTextReply(llmReply, evidence, context, options);
-    if (synthesized) return synthesized;
-    return fallbackEvidenceTextReply(evidence, context, options);
-  }
-
-  const text = toolResult.content.map((item) => item.type === "text" ? item.text : "").filter(Boolean).join("\n").trim() || "Gated action completed.";
-  return { result: synthesizeTextReply({ text, context }).result };
-}
 
 export function synthesizeEvidenceTextReply(text: string, evidence: PmsEvidence<unknown>, context: ContextBundle, options: RunAgentTurnOptions): PlannedAgentResult | undefined {
   return synthesizeEvidenceSequenceTextReply(text, [evidence], context, options);
@@ -125,10 +106,4 @@ export function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
     && typeof evidence.fetchedAt === "string"
     && evidence.scope !== undefined
     && "data" in evidence;
-}
-
-export function isAvailabilityEvidence(value: PmsEvidence<unknown> | undefined): value is PmsEvidence<AvailabilitySearchResult> {
-  if (!value || value.source.method !== "searchAvailability") return false;
-  const data = value.data as Record<string, unknown> | undefined;
-  return Boolean(data && Array.isArray(data.rooms));
 }

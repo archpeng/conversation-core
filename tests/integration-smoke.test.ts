@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createAgentService, type AgentServiceResponse } from "../apps/agent-service/src/index.js";
 import { isAgentResult, type AgentResult, type FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
-import { gatedBash, type GatedDecision, type GatedToolExecutor, type GatedToolRequest, type SafetyGatewayPort } from "../packages/gated-tools/src/index.js";
+import { gatedBash, type GatedToolExecutor, type GatedToolRequest } from "../packages/gated-tools/src/index.js";
 import { createPmsEvidence, type AvailabilitySearchResult, type ReservationConfirmPreparation } from "../packages/pms-platform-client/src/index.js";
-import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "../packages/safety-gateway/src/index.js";
 import { createUnifiedAgentSession, runAgentTurn, type AgentSessionFactory, type PmsReadExecutorMap, type PmsWorkflowExecutorMap } from "../packages/unified-agent/src/index.js";
-import { fakeCreateAgentSessionWithToolCalls } from "./unified-agent.helpers.js";
+import { auditRecordingGateway, fakeCreateAgentSessionWithToolCalls, pmsReadExecutors, pmsWorkflowExecutors } from "./unified-agent.helpers.js";
 
 const baseTurn: FeishuTurnInput = {
   channel: "feishu",
@@ -23,7 +22,7 @@ describe("local MVP integration smoke", () => {
     const writes: WrittenArtifact[] = [];
     const pmsCalls: string[] = [];
     const confirmCalls: string[] = [];
-    const gateway = safetyGateway(auditEvents);
+    const gateway = auditRecordingGateway(auditEvents);
     const service = createAgentService({
       gateway,
       createAgentSession: fakeCreateAgentSession,
@@ -170,18 +169,7 @@ function localPmsReadExecutors(calls: string[]): PmsReadExecutorMap {
       summary: "local availability smoke"
     });
   };
-  return {
-    pms_hotel_profile: read as never,
-    pms_room_type_catalog: read as never,
-    pms_availability_search: read,
-    pms_inventory_summary: read as never,
-    pms_room_reservation_context: read as never,
-    pms_reservation_lookup: read as never,
-    pms_get_room: read as never,
-    pms_today_arrivals: read as never,
-    pms_today_departures: read as never,
-    pms_pending_action_status: read as never
-  };
+  return pmsReadExecutors({ pms_availability_search: read });
 }
 
 function localWorkflowExecutors(calls: string[]): PmsWorkflowExecutorMap {
@@ -193,16 +181,7 @@ function localWorkflowExecutors(calls: string[]): PmsWorkflowExecutorMap {
       summary: "local prepare-confirm smoke"
     });
   };
-  return {
-    pms_reservation_draft_create: prepare as never,
-    pms_reservation_draft_update: prepare as never,
-    pms_reservation_quote: prepare as never,
-    pms_reservation_prepare_confirm: prepare,
-    pms_reservation_group_draft_create: prepare as never,
-    pms_reservation_group_draft_update: prepare as never,
-    pms_reservation_group_quote: prepare as never,
-    pms_reservation_group_prepare_confirm: prepare as never
-  };
+  return pmsWorkflowExecutors({ pms_reservation_prepare_confirm: prepare });
 }
 
 function writeRecorder(writes: WrittenArtifact[]): GatedToolExecutor<{ path: string }> {
@@ -227,16 +206,3 @@ const fakeCreateAgentSession: AgentSessionFactory = async () => ({
     async prompt() {}
   }
 });
-
-function safetyGateway(auditEvents: string[]): SafetyGatewayPort {
-  return {
-    decide(request: GatedToolRequest): GatedDecision {
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      auditEvents.push(`${event.capabilityId}:${event.outcome}`);
-      return { id: `audit_${event.capabilityId}_${event.outcome}_${auditEvents.length}` };
-    }
-  };
-}

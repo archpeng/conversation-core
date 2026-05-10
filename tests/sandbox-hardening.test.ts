@@ -1,19 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  createSafetyAuditEvent,
-  decideToolRequest,
-  type SafetyDecision,
-  type ToolRequest
-} from "../packages/safety-gateway/src/index.js";
-import {
   gatedBash,
   gatedEdit,
   gatedRead,
-  gatedWrite,
-  type GatedDecision,
-  type GatedToolRequest,
-  type SafetyGatewayPort
+  gatedWrite
 } from "../packages/gated-tools/src/index.js";
+import { decideToolRequest } from "../packages/safety-gateway/src/index.js";
+import { safetyGateway } from "./unified-agent.helpers.js";
 
 const admin = { profile: "admin" as const, id: "admin_1" };
 const tenantId = "tenant_1";
@@ -165,7 +158,7 @@ describe("sandbox and file hardening", () => {
       });
 
       expect(result).toMatchObject({ outcome: "deny" });
-      expect(result.decision.reasons[0]).toMatchObject({ constraintId: "sandbox_command_allowlist" });
+      expect(result.decision.reasons[0]).toMatchObject({ code: "sandbox_command_allowlist" });
       expect(calls).toEqual([]);
     }
   );
@@ -185,19 +178,7 @@ describe("sandbox and file hardening", () => {
     });
 
     expect(result).toMatchObject({ outcome: "deny" });
-    expect(result.decision.reasons[0]).toMatchObject({ constraintId: "sandbox_workspace_required" });
+    expect(result.decision.reasons[0]).toMatchObject({ code: "sandbox_workspace_required" });
     expect(calls).toEqual([]);
   });
 });
-
-function safetyGateway(): SafetyGatewayPort {
-  return {
-    decide(request: GatedToolRequest): GatedDecision {
-      return decideToolRequest(request as ToolRequest) as SafetyDecision as GatedDecision;
-    },
-    audit(decision: GatedDecision) {
-      const event = createSafetyAuditEvent(decision as SafetyDecision);
-      return { id: `audit_${event.capabilityId}_${event.outcome}` };
-    }
-  };
-}

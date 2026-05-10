@@ -85,9 +85,9 @@ describe("agent service runtime wiring", () => {
       PMS_AGENT_PI_MODEL_ID: "missing-model-for-test",
       PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
     });
-    const factory = createRuntimePiSessionFactory(config, (async () => ({ session: { async prompt() {} } })) as never);
+    const factory = createRuntimePiSessionFactory(config, async () => ({ session: { async prompt() {} } }));
 
-    await expect(factory({ cwd: config.cwd, tools: [], customTools: [] } as never))
+    await expect(factory({ cwd: config.cwd, tools: [], customTools: [] }))
       .rejects.toThrow("model_not_resolved: Pi ModelRegistry could not resolve openai/missing-model-for-test");
   });
 

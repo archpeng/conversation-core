@@ -4,6 +4,7 @@ import type { AvailabilitySearchResult, PmsEvidence, RoomAvailability, RoomTypeC
 import type { GatedToolDefinition } from "./pi-session.js";
 import type { RedactedSessionState } from "./continuity.js";
 import { sessionSlotValue } from "./continuity.js";
+import { detectCustomerFallbackIntent, hasDateCue, hasFollowUpEvidenceCue, hasRoomTypeCue } from "./customer-fallback-policy.js";
 
 export type CustomerLoopResult = {
   result: AgentResult;
@@ -11,30 +12,18 @@ export type CustomerLoopResult = {
   pendingActionRefs?: string[];
 };
 
-type Intent = "availability" | "room_type_catalog" | "prepare_confirm" | "natural_confirm" | "none";
-
 export async function runCustomerPmsLoop(input: {
   turn: FeishuTurnInput;
   tools: readonly GatedToolDefinition[];
   state: RedactedSessionState;
 }): Promise<CustomerLoopResult | undefined> {
-  const intent = detectIntent(input.turn.message.text, input.state);
+  const intent = detectCustomerFallbackIntent(input.turn.message.text, input.state);
 
   if (intent === "room_type_catalog") return roomTypeCatalogReply(input.tools);
   if (intent === "availability") return availabilityReply(input.turn, input.tools, input.state);
   if (intent === "prepare_confirm") return prepareConfirmReply(input.turn, input.tools);
   if (intent === "natural_confirm") return naturalConfirmReply(input.turn, input.state);
   return undefined;
-}
-
-function detectIntent(message: string, state: RedactedSessionState): Intent {
-  const text = message.toLowerCase();
-  if (/确认|confirm/.test(text)) return "natural_confirm";
-  if (/预订|预定|reserve|book/.test(text)) return "prepare_confirm";
-  if (hasRoomTypeCatalogCue(message) && !hasDateCue(message)) return "room_type_catalog";
-  if (/有房|空房|availability|available|room/.test(text)) return "availability";
-  if (state.evidenceRefs.length > 0 && /继续|那|明天|tomorrow|follow/.test(text)) return "availability";
-  return "none";
 }
 
 async function roomTypeCatalogReply(tools: readonly GatedToolDefinition[]): Promise<CustomerLoopResult> {
@@ -140,22 +129,6 @@ function approvalCard(tenantId: string, pendingActionId: string, expiresAt?: str
     confirmLabel: "确认",
     cancelLabel: "取消"
   };
-}
-
-function hasFollowUpEvidenceCue(message: string, state: RedactedSessionState): boolean {
-  return state.evidenceRefs.length > 0 && /继续|那|明天|tomorrow|follow/i.test(message);
-}
-
-function hasDateCue(message: string): boolean {
-  return /\d{4}-\d{2}-\d{2}|今天|明天|后天|today|tomorrow/.test(message);
-}
-
-function hasRoomTypeCue(message: string): boolean {
-  return /房型|大床|双床|套房|king|twin|suite|room type/i.test(message);
-}
-
-function hasRoomTypeCatalogCue(message: string): boolean {
-  return /有哪些房型|有什么房型|房型.*(有哪些|有什么|列表|目录)|room types?/i.test(message);
 }
 
 function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {

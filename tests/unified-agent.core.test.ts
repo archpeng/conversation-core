@@ -6,12 +6,12 @@ import {
   PMS_SAFE_WORKFLOW_TOOLS,
   registerGatedTools,
   runAgentTurn,
-  type AgentSessionFactoryOptions,
-  type PmsReadExecutorMap
+  type AgentSessionFactoryOptions
 } from "../packages/unified-agent/src/index.js";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
+import type { AvailabilitySearchResult } from "../packages/pms-platform-client/src/index.js";
 import type { FeishuActorRole, FeishuTurnInput } from "../packages/adapter-contracts/src/index.js";
-import { baseTurn, fakeCreateAgentSession, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithAssistantTextSequence, fakeCreateAgentSessionWithToolCalls, safetyGateway } from "./unified-agent.helpers.js";
+import { baseTurn, fakeCreateAgentSession, fakeCreateAgentSessionWithAssistantText, fakeCreateAgentSessionWithAssistantTextSequence, fakeCreateAgentSessionWithToolCalls, pmsReadExecutors, safetyGateway } from "./unified-agent.helpers.js";
 
 const customerRegisteredToolNames = [
   ...PMS_SAFE_READ_TOOLS,
@@ -108,24 +108,15 @@ describe("unified Agent runtime", () => {
       actor: { profile: "customer", id: "customer_1" },
       tenantId: "tenant_1",
       executors: {
-        pmsReadExecutors: {
-          pms_hotel_profile: () => undefined as never,
-          pms_room_type_catalog: () => undefined as never,
-          pms_availability_search: () => createPmsEvidence({
+        pmsReadExecutors: pmsReadExecutors({
+          pms_availability_search: () => createPmsEvidence<AvailabilitySearchResult & { available: boolean }>({
           method: "searchAvailability",
           tenantId: "tenant_1",
           fetchedAt: "2026-05-06T12:00:00.000Z",
           summary: "availability search summary",
-          data: { available: true }
-          }),
-          pms_inventory_summary: () => undefined as never,
-          pms_room_reservation_context: () => undefined as never,
-          pms_reservation_lookup: () => undefined as never,
-          pms_get_room: () => undefined as never,
-          pms_today_arrivals: () => undefined as never,
-          pms_today_departures: () => undefined as never,
-          pms_pending_action_status: () => undefined as never
-        }
+          data: { rooms: [], available: true }
+          })
+        })
       }
     });
 
@@ -158,18 +149,7 @@ describe("unified Agent runtime", () => {
       gateway: safetyGateway([]),
       actor: { profile: "customer", id: "customer_1" },
       tenantId: "tenant_1",
-      executors: { pmsReadExecutors: {
-        pms_hotel_profile: () => evidence as never,
-        pms_room_type_catalog: () => evidence as never,
-        pms_availability_search: () => evidence,
-        pms_inventory_summary: () => evidence as never,
-        pms_room_reservation_context: () => evidence as never,
-        pms_reservation_lookup: () => evidence as never,
-        pms_get_room: () => evidence as never,
-        pms_today_arrivals: () => evidence as never,
-        pms_today_departures: () => evidence as never,
-        pms_pending_action_status: () => evidence as never
-      } }
+      executors: { pmsReadExecutors: pmsReadExecutors({ pms_availability_search: () => evidence }) }
     });
 
     const read = tools.find((tool) => tool.name === "pms_availability_search");
@@ -353,7 +333,7 @@ describe("unified Agent runtime", () => {
           text: `本酒店房型：花园别墅 2、花园套房 1。evidenceRefs=${evidence.evidenceRef}`
         }
       ], prompts),
-      executors: { pmsReadExecutors: readExecutors(evidence) }
+      executors: { pmsReadExecutors: pmsReadExecutors({ pms_room_type_catalog: () => evidence }) }
     });
 
     const result = await runAgentTurn(session, { ...baseTurn, message: { text: "有哪些房型" } });
@@ -381,21 +361,4 @@ describe("unified Agent runtime", () => {
 
     expect(result).toEqual({ type: "text", text: `PMS 证据显示有 1 个可订候选。evidenceRefs=${evidence.evidenceRef}`, evidenceRefs: [evidence.evidenceRef] });
   });
-
-
 });
-
-function readExecutors(evidence: ReturnType<typeof createPmsEvidence>): PmsReadExecutorMap {
-  return {
-    pms_hotel_profile: () => evidence as never,
-    pms_room_type_catalog: () => evidence as never,
-    pms_availability_search: () => evidence as never,
-    pms_inventory_summary: () => evidence as never,
-    pms_room_reservation_context: () => evidence as never,
-    pms_reservation_lookup: () => evidence as never,
-    pms_get_room: () => evidence as never,
-    pms_today_arrivals: () => evidence as never,
-    pms_today_departures: () => evidence as never,
-    pms_pending_action_status: () => evidence as never
-  };
-}

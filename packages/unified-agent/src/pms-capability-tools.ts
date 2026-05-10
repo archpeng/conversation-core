@@ -8,6 +8,7 @@ import type { GatedToolDefinition, AgentToolResult } from "./pi-session.js";
 import type { TSchema } from "typebox";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { UnifiedAgentToolExecutors } from "./tool-registration.js";
+import { notConfiguredExecutor } from "./not-configured-executor.js";
 
 export const PMS_SAFE_READ_TOOLS = [
   "pms_hotel_profile",
@@ -306,12 +307,6 @@ function isPmsEvidence(
     source?.system === "pms-platform" &&
     typeof source?.method === "string"
   );
-}
-
-function notConfiguredExecutor<T = unknown>(name: string): GatedToolExecutor<T> {
-  return () => {
-    throw new Error(`Gated tool executor is not configured: ${name}`);
-  };
 }
 
 function optionalText(value: unknown): string | undefined {
