@@ -1,4 +1,5 @@
 import { asRecord, optionalStringArray, requireNonEmptyString, requireOneOf, requireOptionalBoolean, requireOptionalString, type Validation } from "./field-checks.js";
+import { mobileActorRoles, type MobileActorRole } from "./mobile-turn.js";
 import { parseObjectRefs, type ObjectRef } from "./object-ref.js";
 
 export const mutationStatuses = ["none", "draftOnly", "awaitingConfirmation", "committed", "rejected", "expired", "failed"] as const;
@@ -15,6 +16,12 @@ export type ActionCardAction = {
   kind: ActionCardActionKind;
   disabled?: boolean;
   confirmationRequired?: boolean;
+};
+
+export type ActionCardActor = {
+  role: MobileActorRole;
+  id: string;
+  displayName?: string;
 };
 
 export type ActionCardOperationRef = {
@@ -54,6 +61,7 @@ export type ActionCard = {
   confirmationMode: ConfirmationMode;
   evidenceRefs?: string[];
   auditRefs?: string[];
+  executedBy?: ActionCardActor;
   objectRefs?: ObjectRef[];
   operationRef?: ActionCardOperationRef;
   actions: ActionCardAction[];
@@ -93,6 +101,7 @@ function parseActionCard(input: unknown, field: string, issues: string[]): Actio
   requireOneOf(value.confirmationMode, confirmationModes, `${field}.confirmationMode`, issues);
   const evidenceRefs = optionalStringArray(value.evidenceRefs, `${field}.evidenceRefs`, issues);
   const auditRefs = optionalStringArray(value.auditRefs, `${field}.auditRefs`, issues);
+  const executedBy = parseActor(value.executedBy, `${field}.executedBy`, issues);
   const objectRefs = parseObjectRefs(value.objectRefs, `${field}.objectRefs`, issues);
   const operationRef = parseOperationRef(value.operationRef, `${field}.operationRef`, issues);
   const actions = parseActions(value.actions, `${field}.actions`, issues);
@@ -105,9 +114,28 @@ function parseActionCard(input: unknown, field: string, issues: string[]): Actio
     confirmationMode: value.confirmationMode as ConfirmationMode,
     ...(evidenceRefs ? { evidenceRefs } : {}),
     ...(auditRefs ? { auditRefs } : {}),
+    ...(executedBy ? { executedBy } : {}),
     ...(objectRefs ? { objectRefs } : {}),
     ...(operationRef ? { operationRef } : {}),
     actions
+  };
+}
+
+function parseActor(input: unknown, field: string, issues: string[]): ActionCardActor | undefined {
+  if (input === undefined) return undefined;
+  const value = asRecord(input);
+  if (!value) {
+    issues.push(`${field} must be an object when present`);
+    return undefined;
+  }
+  requireOneOf(value.role, mobileActorRoles, `${field}.role`, issues);
+  requireNonEmptyString(value.id, `${field}.id`, issues);
+  requireOptionalString(value.displayName, `${field}.displayName`, issues);
+  if (typeof value.role !== "string" || !mobileActorRoles.includes(value.role as MobileActorRole) || typeof value.id !== "string") return undefined;
+  return {
+    role: value.role as MobileActorRole,
+    id: value.id,
+    ...(typeof value.displayName === "string" ? { displayName: value.displayName } : {})
   };
 }
 

@@ -7,7 +7,7 @@ State: `ACTIVE`
 ## Current Stage
 
 - Stage: `R5/R6/R7/A1`
-- Status: `implemented_reviewed`
+- Status: `closeout_implementation_in_progress`
 - Owner boundary: reservation workflow cards, explicit action execution, retrospective review, mobile session boundary
 
 ## Completed In This Slice
@@ -21,23 +21,23 @@ State: `ACTIVE`
 - Added reservation workflow contracts, Product Gateway workflow routes, pending-action status readback, and mobile reservation workflow cards.
 - Extended action cards with typed PMS operation refs and Product Gateway execution through `executeTypedOperation`.
 - Added review action list/detail readback with task, evidence, safety audit, PMS audit, actor, and timestamp traceability.
-- Added gateway-issued mobile session readback and action execution tenant/property/role checks.
+- Hardened gateway-issued mobile sessions so action execution authorizes against server-side session binding instead of browser-supplied actor/scope.
 - Added product-contract, PMS client, gateway workflow, review, session, and RBAC tests.
 
 ## Gate Evidence
 
-- `pnpm build`: passed on 2026-05-11.
-- `pnpm test`: passed on 2026-05-11 with 33 passed / 1 skipped test files, 221 passed / 2 skipped tests, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
-- AI-coder readiness scan completed on 2026-05-11; no test files exceed 500 lines and all touched source files remain below 350 lines.
+- `pnpm build`: passed on 2026-05-12.
+- Targeted workflow/contract tests passed on 2026-05-12.
+- Full `pnpm test`: pending rerun after closeout edits.
 
 ## Next Stage
 
 - Stage: `implementation-review-closeout`
 - Status: `pending`
-- Focus: optional human review, commit, and plan-pack archive/closeout.
+- Focus: rerun full gates, archive plan pack, create closeout artifact, and commit.
 
 ## Residual Risks
 
-- `apps/mobile-web/src/shared/api/client.ts` is now a 270-line API owner and should be split before it approaches the 350-line module budget.
-- `tests/product-gateway.test.ts` is 453 lines but remains below the 500-line test split threshold; new workflow coverage was added in `tests/product-gateway-workflows.test.ts`.
-- Gateway session route currently issues a deterministic staff session from gateway config; production hardening may later replace this with real identity-provider session validation.
+- `apps/mobile-web/src/shared/api/client.ts` is now a 298-line API owner and should be split before it approaches the 350-line module budget.
+- `tests/product-gateway.test.ts` remains below the 500-line test split threshold; new workflow coverage lives in `tests/product-gateway-workflows.test.ts`.
+- Gateway session route now uses server-side session binding, but production hardening may later replace this with real identity-provider session validation.

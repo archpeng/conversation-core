@@ -97,9 +97,14 @@ function reviewStatus(value: unknown): ReviewActionStatus | undefined {
   return reviewActionStatuses.find((status) => status === value);
 }
 
-function actorFromTask(task: AgentTask): { actor: { role: string; id: string } } | Record<string, never> {
-  const actorMessage = task.messages?.find((message) => message.startsWith("Actor "));
-  const match = /^Actor ([^:]+):([^ ]+) executed typed card\.$/.exec(actorMessage ?? "");
-  if (!match || !match[1] || !match[2]) return {};
-  return { actor: { role: match[1], id: match[2] } };
+function actorFromTask(task: AgentTask): { actor: { role: string; id: string; displayName?: string } } | Record<string, never> {
+  const actor = task.actionCards?.find((card) => card.executedBy)?.executedBy;
+  if (!actor) return {};
+  return {
+    actor: {
+      role: actor.role,
+      id: actor.id,
+      ...(actor.displayName ? { displayName: actor.displayName } : {})
+    }
+  };
 }

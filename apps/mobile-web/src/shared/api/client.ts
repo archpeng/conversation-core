@@ -55,6 +55,12 @@ export type ShiftSummary = {
   };
 };
 
+export type PendingActionStatusReadback = {
+  pendingActionId: string;
+  status: string;
+  evidenceRefs: string[];
+};
+
 export class ProductGatewayClient {
   private readonly baseUrl: string;
   private readonly token?: string;
@@ -157,6 +163,17 @@ export class ProductGatewayClient {
     return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}/prepare-confirm`, "POST", input);
   }
 
+  async getPendingActionStatus(input: { tenantId: string; pendingActionId: string; cardPayloadRef?: string }): Promise<PendingActionStatusReadback> {
+    const query = new URLSearchParams({
+      tenantId: input.tenantId,
+      ...(input.cardPayloadRef ? { cardPayloadRef: input.cardPayloadRef } : {})
+    });
+    const payload = await this.request(`/api/pending-actions/${encodeURIComponent(input.pendingActionId)}/status?${query.toString()}`, { method: "GET" });
+    const status = parsePendingActionStatusReadback(payload);
+    if (!status) throw new Error("Invalid pending action status response.");
+    return status;
+  }
+
   async listReviewActions(status?: string): Promise<ReviewActionSummary[]> {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
     const payload = await this.request(`/api/review/actions${query}`, { method: "GET" });
@@ -235,6 +252,17 @@ function parseShiftSummary(payload: unknown): ShiftSummary | undefined {
     ...(typeof summary.latestTaskAt === "string" ? { latestTaskAt: summary.latestTaskAt } : {}),
     ...parsePmsAuditRefs(summary.pmsAuditRefs),
     ...parseSafetyAudits(summary.safetyAudits)
+  };
+}
+
+function parsePendingActionStatusReadback(payload: unknown): PendingActionStatusReadback | undefined {
+  const record = asRecord(payload);
+  if (!record || record.ok !== true || typeof record.pendingActionId !== "string" || typeof record.status !== "string" || !Array.isArray(record.evidenceRefs)) return undefined;
+  const evidenceRefs = record.evidenceRefs.filter((item): item is string => typeof item === "string");
+  return {
+    pendingActionId: record.pendingActionId,
+    status: record.status,
+    evidenceRefs
   };
 }
 

@@ -1,6 +1,7 @@
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AgentTask, MobileSession } from "@pms-agent-v2/product-contracts";
-import { ProductGatewayClient, defaultScope } from "../../shared/api/client.js";
+import { ProductGatewayClient, defaultScope, type PendingActionStatusReadback } from "../../shared/api/client.js";
 import { Button } from "../../shared/components/ui/button.js";
 import { Card, CardText, CardTitle } from "../../shared/components/ui/card.js";
 import { Input } from "../../shared/components/ui/input.js";
@@ -25,6 +26,8 @@ export function ReservationWorkflowView({ session, onTask }: ReservationWorkflow
   const [groupDraftRef, setGroupDraftRef] = useState("");
   const [groupQuoteRef, setGroupQuoteRef] = useState("");
   const [roomSelections, setRoomSelections] = useState("room_1,room_2");
+  const [pendingAction, setPendingAction] = useState<{ pendingActionId: string; cardPayloadRef?: string }>();
+  const [pendingStatus, setPendingStatus] = useState<PendingActionStatusReadback>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
@@ -38,6 +41,24 @@ export function ReservationWorkflowView({ session, onTask }: ReservationWorkflow
       onTask(task);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Reservation workflow failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshPendingStatus() {
+    if (!pendingAction) return;
+    setLoading(true);
+    setError(undefined);
+    try {
+      if (!session) throw new Error("Mobile session is not ready.");
+      setPendingStatus(await client.getPendingActionStatus({
+        tenantId: session.tenantId,
+        pendingActionId: pendingAction.pendingActionId,
+        ...(pendingAction.cardPayloadRef ? { cardPayloadRef: pendingAction.cardPayloadRef } : {})
+      }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Pending action status refresh failed.");
     } finally {
       setLoading(false);
     }
@@ -76,7 +97,8 @@ export function ReservationWorkflowView({ session, onTask }: ReservationWorkflow
             (task) => setQuoteRef(suffix(task.id, "reservation_single_quote_"))
           )}>Quote</Button>
           <Button disabled={loading || !draftRef || !quoteRef} onClick={() => run(
-            () => client.prepareSingleReservationConfirm(draftRef, { tenantId: session?.tenantId ?? scope.tenantId, quoteRef })
+            () => client.prepareSingleReservationConfirm(draftRef, { tenantId: session?.tenantId ?? scope.tenantId, quoteRef }),
+            (task) => rememberPendingAction(task, setPendingAction, setPendingStatus)
           )}>Prepare</Button>
         </div>
       ) : (
@@ -93,13 +115,32 @@ export function ReservationWorkflowView({ session, onTask }: ReservationWorkflow
             (task) => setGroupQuoteRef(suffix(task.id, "reservation_group_quote_"))
           )}>Quote</Button>
           <Button disabled={loading || !groupDraftRef || !groupQuoteRef} onClick={() => run(
-            () => client.prepareGroupReservationConfirm(groupDraftRef, { tenantId: session?.tenantId ?? scope.tenantId, quoteRef: groupQuoteRef })
+            () => client.prepareGroupReservationConfirm(groupDraftRef, { tenantId: session?.tenantId ?? scope.tenantId, quoteRef: groupQuoteRef }),
+            (task) => rememberPendingAction(task, setPendingAction, setPendingStatus)
           )}>Prepare</Button>
         </div>
       )}
+      {pendingAction ? (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border bg-neutral-50 px-3 py-2 text-sm">
+          <div>
+            <div className="font-medium text-ink">{pendingStatus?.status ?? "awaiting refresh"}</div>
+            <div className="text-xs text-muted">{pendingAction.pendingActionId}</div>
+          </div>
+          <Button onClick={refreshPendingStatus} disabled={loading} aria-label="Refresh pending action status">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : null}
       {error ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
     </Card>
   );
+}
+
+function rememberPendingAction(task: AgentTask, setPendingAction: (value: { pendingActionId: string; cardPayloadRef?: string }) => void, setPendingStatus: (value: PendingActionStatusReadback | undefined) => void) {
+  const operationRef = task.actionCards?.find((card) => card.operationRef?.type === "pmsPendingAction")?.operationRef;
+  if (operationRef?.type !== "pmsPendingAction") return;
+  setPendingAction({ pendingActionId: operationRef.pendingActionId, cardPayloadRef: operationRef.cardPayloadRef });
+  setPendingStatus(undefined);
 }
 
 function selections(input: string) {

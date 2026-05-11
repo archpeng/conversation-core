@@ -23,6 +23,7 @@ export {
   parseActionCards,
   type ActionCard,
   type ActionCardAction,
+  type ActionCardActor,
   type ActionCardActionKind,
   type ActionCardOperationRef,
   type ConfirmationMode,

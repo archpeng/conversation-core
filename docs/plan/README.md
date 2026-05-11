@@ -2,22 +2,22 @@
 
 ## Active Pack
 
-- `agent-first-mobile-r1-r7-v1-2026-05-11`
+- none
 
 ## Current Active Slice
 
-- `R5` / `R6` / `R7` / `A1` implemented; implementation review complete
+- none
 
 ## Intended Handoff
 
-- Ready for final human review or pack closeout/archive.
+- No active handoff.
 
 ## Status
 
-- Active state: `ACTIVE`
-- Active triplet: `agent-first-mobile-r1-r7-v1-2026-05-11`
-- Latest gate: `pnpm build` passed; `pnpm test` passed with 33 Vitest files passed / 1 skipped, 221 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
-- Latest closed pack: `pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11`
+- Active state: `PACK_COMPLETE`
+- Active triplet: none
+- Latest gate: `pnpm build` passed; `pnpm test` passed with 33 Vitest files passed / 1 skipped, 225 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
+- Latest closed pack: `agent-first-mobile-r1-r7-v1-2026-05-11`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
 
@@ -25,23 +25,22 @@
 
 Closed pack archive:
 
-- `docs/plan-archive/pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11/`
+- `docs/plan-archive/agent-first-mobile-r1-r7-v1-2026-05-11/`
 
 Closed pack result:
 
-- Runtime Safety audit persists JSONL events with unique IDs
-- Catalog-backed room-type misses now keep `searchAvailability` evidence semantics
-- Added `guard:ai-readiness` for line budgets and risky type patterns
-- Extracted `workspace-tools` audit, active-skills, error, and skill-proposal owner modules
-- Refreshed architecture/test/eval statistics
+- Agent-first mobile R1-R7 completed through read objects, reservation workflow, typed operations, review detail, and gateway-issued session binding
+- Product Gateway action execution authorizes from server-side session binding
+- Mobile Review exposes task/evidence/safety/PMS audit refs for retrospective traceability
+- Plan pack archived with 2026-05-12 build/test gate evidence
 
 Closeout artifact:
 
-- `docs/plan-archive/pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11/pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11_CLOSEOUT.md`
+- `docs/plan-archive/agent-first-mobile-r1-r7-v1-2026-05-11/agent-first-mobile-r1-r7-v1-2026-05-11_CLOSEOUT.md`
 
 Successor pack:
 
-- `docs/plan/agent-first-mobile-r1-r7-v1-2026-05-11_PLAN.md`
+- none
 
 ## Parser Scope Contract
 

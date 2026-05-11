@@ -99,8 +99,25 @@ export function ReviewView() {
             <Metric label="Cards" value={detail.task.actionCards?.length ?? 0} />
           </div>
           {detail.actor ? <CardText className="mt-3">Actor {detail.actor.role}:{detail.actor.id}</CardText> : null}
+          <RefList title="Evidence" refs={detail.evidenceRefs} />
+          <RefList title="Safety audit" refs={detail.safetyAuditRefs} />
+          <RefList title="PMS audit" refs={detail.pmsAuditRefs} />
         </Card>
       ) : null}
+    </div>
+  );
+}
+
+function RefList({ title, refs }: { title: string; refs: string[] }) {
+  if (refs.length === 0) return null;
+  return (
+    <div className="mt-3 space-y-1">
+      <div className="text-xs font-medium text-muted">{title}</div>
+      {refs.map((ref) => (
+        <div key={ref} className="break-all rounded-md border border-border bg-neutral-50 px-2 py-1 text-xs text-ink">
+          {ref}
+        </div>
+      ))}
     </div>
   );
 }

@@ -179,11 +179,12 @@ describe("product gateway service", () => {
     }));
     const createdBody = created.body as { task: { id: string; actionCards: { id: string }[] } };
     const cardId = createdBody.task.actionCards[0].id;
+    const session = await issuedSession(service);
     const executed = await service.handle(request("POST", `/api/tasks/${createdBody.task.id}/action-cards/${cardId}/actions/confirm`, {
-      sessionId: "mobile_session_1",
-      tenantId: "tenant_1",
-      propertyId: "property_small_hotel",
-      actor: { role: "staff", id: "staff_1" }
+      sessionId: session.sessionId,
+      tenantId: session.tenantId,
+      propertyId: session.propertyId,
+      actor: session.actor
     }));
 
     expect(executed.status).toBe(200);
@@ -219,11 +220,12 @@ describe("product gateway service", () => {
       receivedAt: "2026-05-11T08:00:00.000Z"
     }));
     const createdBody = created.body as { task: { id: string; actionCards: { id: string }[] } };
+    const session = await issuedSession(service);
     await service.handle(request("POST", `/api/tasks/${createdBody.task.id}/action-cards/${createdBody.task.actionCards[0].id}/actions/confirm`, {
-      sessionId: "mobile_session_1",
-      tenantId: "tenant_1",
-      propertyId: "property_small_hotel",
-      actor: { role: "staff", id: "staff_1" }
+      sessionId: session.sessionId,
+      tenantId: session.tenantId,
+      propertyId: session.propertyId,
+      actor: session.actor
     }));
 
     const review = await service.handle(request("GET", "/api/review/shift-summary"));
@@ -249,6 +251,11 @@ function request(method: string, path: string, body?: unknown, headers: Record<s
     headers,
     body
   };
+}
+
+async function issuedSession(service: ReturnType<typeof createProductGatewayService>) {
+  const response = await service.handle(request("GET", "/api/session/current"));
+  return (response.body as { session: { sessionId: string; tenantId: string; propertyId: string; actor: { role: "staff"; id: string; displayName?: string } } }).session;
 }
 
 function fakeAgentClient(): AgentClient {

@@ -1,4 +1,5 @@
 import type { AgentResult } from "@pms-agent-v2/adapter-contracts";
+import { pmsTypedOperationKinds } from "@pms-agent-v2/product-contracts";
 import type { ActionCard, AgentTask, ObjectRef, PmsTypedOperationKind } from "@pms-agent-v2/product-contracts";
 import type { HotelProfileResult, InventorySummaryResult, PmsEvidence, RoomTypeCatalogResult, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";
 
@@ -147,9 +148,37 @@ export function todayReadTasks(input: {
       timestamp,
       evidenceRefs: [input.inventory.evidenceRef],
       objectRefs: [propertyRef],
-      messages: input.inventory.data.roomTypes?.map((item) => `${item.roomType}: ${item.total} 间`)
+      messages: input.inventory.data.roomTypes?.map((item) => `${item.roomType}: ${item.total} 间`),
+      actionCards: operationalCards(input.tenantId, input.propertyId, input.businessDate)
     })
   ];
+}
+
+const typedOperationDefinitions: Record<PmsTypedOperationKind, { title: string; target: "reservation" | "propertyDay" }> = {
+  check_in: { title: "办理入住", target: "reservation" },
+  check_out: { title: "办理退房", target: "reservation" },
+  housekeeping_done: { title: "标记清洁完成", target: "propertyDay" },
+  housekeeping_inspection: { title: "提交查房", target: "propertyDay" },
+  housekeeping_rework: { title: "发起返工", target: "propertyDay" },
+  maintenance_report: { title: "报修", target: "propertyDay" },
+  maintenance_done: { title: "维修完成", target: "propertyDay" },
+  maintenance_restore_sellable: { title: "恢复可售", target: "propertyDay" }
+};
+
+const operationalOperationKinds = pmsTypedOperationKinds.filter((operation) => typedOperationDefinitions[operation].target === "propertyDay");
+
+function operationalCards(tenantId: string, propertyId: string, businessDate: string): ActionCard[] {
+  return operationalOperationKinds.map((operation) => {
+    const definition = typedOperationDefinitions[operation];
+    return typedOperationCard({
+      tenantId,
+      propertyId,
+      operation,
+      targetRef: `${propertyId}:${businessDate}:${operation}`,
+      title: definition.title,
+      summary: `${businessDate} · ${propertyId}`
+    });
+  });
 }
 
 function typedOperationCard(input: { tenantId: string; propertyId: string; operation: PmsTypedOperationKind; targetRef: string; title: string; summary: string }): ActionCard {

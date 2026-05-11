@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
 import { createProductGatewayService } from "../apps/product-gateway/src/index.js";
+import { todayReadTasks } from "../apps/product-gateway/src/task-builders.js";
 import { createTaskLedger } from "../apps/product-gateway/src/task-ledger.js";
 import type { AgentClient } from "../apps/product-gateway/src/clients/agent-client.js";
 import type { ProductGatewayConfig, ProductGatewayPmsClient, ProductGatewayRequest } from "../apps/product-gateway/src/types.js";
+import { pmsTypedOperationKinds } from "../packages/product-contracts/src/index.js";
 import type { AgentTask } from "../packages/product-contracts/src/index.js";
 
 const config: ProductGatewayConfig = {
@@ -64,6 +66,37 @@ describe("product gateway reservation workflows and typed operations", () => {
     expect(fakePmsClient().confirmPendingAction).toBeTypeOf("function");
   });
 
+  it("reads pending-action status from PMS evidence", async () => {
+    const service = createProductGatewayService(config, { agentClient: fakeAgentClient(), pmsClient: fakePmsClient() });
+
+    const status = await service.handle(request("GET", "/api/pending-actions/pending_single_1/status?tenantId=tenant_1&cardPayloadRef=card_single_1"));
+
+    expect(status.body).toMatchObject({
+      ok: true,
+      status: "awaitingConfirmation",
+      pendingActionId: "pending_single_1",
+      evidenceRefs: ["pms_ev_tenant_1_pendingActionStatus_1778457600000"]
+    });
+  });
+
+  it("generates typed PMS operation cards for the full operation set", () => {
+    const tasks = todayReadTasks({
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
+      businessDate: "2026-05-11",
+      now: new Date("2026-05-11T00:00:00.000Z"),
+      arrivals: createPmsEvidence({ method: "todayArrivals", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { arrivals: [{ reservationCode: "RES-ARR", roomId: "room_1", guestName: "李女士", status: "dueIn" }] }, summary: "arrivals" }),
+      departures: createPmsEvidence({ method: "todayDepartures", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { departures: [{ reservationCode: "RES-DEP", roomId: "room_2", guestName: "王先生", status: "dueOut" }] }, summary: "departures" }),
+      inventory: createPmsEvidence({ method: "inventorySummary", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { dates: [{ date: "2026-05-11", total: 10, available: 5, reserved: 3, blocked: 1, occupied: 1 }], roomTypes: [{ roomType: "suite", total: 2 }] }, summary: "inventory" })
+    });
+
+    const operations = tasks.flatMap((task) => task.actionCards ?? [])
+      .flatMap((card) => card.operationRef?.type === "pmsOperation" ? [card.operationRef.operation] : []);
+
+    expect(new Set(operations)).toEqual(new Set(pmsTypedOperationKinds));
+    expect(operations).toHaveLength(pmsTypedOperationKinds.length);
+  });
+
   it("executes typed PMS operations only from scoped action cards", async () => {
     const task = typedOperationTask("check_in", "RES-001");
     const service = createProductGatewayService(config, {
@@ -82,7 +115,8 @@ describe("product gateway reservation workflows and typed operations", () => {
       message: { text: "确认入住" },
       receivedAt: "2026-05-11T08:00:00.000Z"
     }));
-    const executed = await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput("staff")));
+    const sessionId = await issuedSessionId(service);
+    const executed = await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput(sessionId, "staff")));
 
     expect(textTurn.body).toMatchObject({ ok: true, task: { status: "read_only" } });
     expect(executed.body).toMatchObject({
@@ -96,18 +130,48 @@ describe("product gateway reservation workflows and typed operations", () => {
     });
   });
 
-  it("rejects wrong scope or role before PMS mutation execution", async () => {
+  it("rejects unissued sessions before PMS mutation execution", async () => {
+    const service = createProductGatewayService(config, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient(),
+      tasks: createTaskLedger([typedOperationTask("check_in", "RES-001")])
+    });
+
+    const rejected = await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput("session_1", "staff")));
+
+    expect(rejected).toMatchObject({ status: 401, body: { ok: false, code: "unauthorized" } });
+  });
+
+  it("rejects forged manager roles by authorizing the gateway-issued session actor", async () => {
     const service = createProductGatewayService(config, {
       agentClient: fakeAgentClient(),
       pmsClient: fakePmsClient(),
       tasks: createTaskLedger([typedOperationTask("maintenance_restore_sellable", "room_1")])
     });
+    const sessionId = await issuedSessionId(service);
 
-    const wrongTenant = await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", { ...actionInput("staff"), tenantId: "tenant_2" }));
-    const wrongRole = await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput("customer")));
+    const forgedManager = await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput(sessionId, "manager")));
+
+    expect(forgedManager).toMatchObject({ status: 403, body: { ok: false, code: "forbidden" } });
+  });
+
+  it("rejects action execution when the issued session binding has the wrong tenant or property", async () => {
+    const tenantService = createProductGatewayService({ ...config, defaultTenantId: "tenant_2" }, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient(),
+      tasks: createTaskLedger([typedOperationTask("check_in", "RES-001")])
+    });
+    const propertyService = createProductGatewayService({ ...config, defaultPropertyId: "property_other" }, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient(),
+      tasks: createTaskLedger([typedOperationTask("check_in", "RES-001")])
+    });
+
+    const wrongTenant = await tenantService.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput(await issuedSessionId(tenantService), "staff")));
+    const wrongProperty = await propertyService.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput(await issuedSessionId(propertyService), "staff")));
 
     expect(wrongTenant).toMatchObject({ status: 403, body: { ok: false, code: "forbidden" } });
-    expect(wrongRole).toMatchObject({ status: 403, body: { ok: false, code: "forbidden" } });
+    expect(wrongProperty).toMatchObject({ status: 403, body: { ok: false, code: "forbidden" } });
   });
 
   it("returns gateway-issued session and review action detail with evidence and audits", async () => {
@@ -121,7 +185,7 @@ describe("product gateway reservation workflows and typed operations", () => {
     });
 
     const session = await service.handle(request("GET", "/api/session/current"));
-    await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput("staff")));
+    await service.handle(request("POST", "/api/tasks/task_checkin/action-cards/card_checkin/actions/confirm", actionInput(readSessionId(session.body), "staff")));
     const actions = await service.handle(request("GET", "/api/review/actions?status=committed"));
     const detail = await service.handle(request("GET", "/api/review/actions/task_checkin"));
 
@@ -132,7 +196,7 @@ describe("product gateway reservation workflows and typed operations", () => {
       ok: true,
       action: {
         taskId: "task_checkin",
-        actor: { role: "staff", id: "staff_1" },
+        actor: { role: "staff", id: "mobile_staff_1" },
         pmsAuditRefs: ["audit_check_in_1"],
         safetyAuditRefs: ["safety_1"]
       }
@@ -151,9 +215,28 @@ function request(method: string, target: string, body?: unknown): ProductGateway
   };
 }
 
-function actionInput(role: "staff" | "customer" | "manager" | "admin") {
+async function issuedSessionId(service: ReturnType<typeof createProductGatewayService>): Promise<string> {
+  const response = await service.handle(request("GET", "/api/session/current"));
+  return readSessionId(response.body);
+}
+
+function readSessionId(body: unknown): string {
+  if (!isSessionBody(body)) throw new Error("expected session response body");
+  return body.session.sessionId;
+}
+
+function isSessionBody(body: unknown): body is { session: { sessionId: string } } {
+  if (!body || typeof body !== "object") return false;
+  const record = body as Record<string, unknown>;
+  const session = record.session;
+  if (!session || typeof session !== "object") return false;
+  const sessionRecord = session as Record<string, unknown>;
+  return typeof sessionRecord.sessionId === "string";
+}
+
+function actionInput(sessionId: string, role: "staff" | "customer" | "manager" | "admin") {
   return {
-    sessionId: "session_1",
+    sessionId,
     tenantId: "tenant_1",
     propertyId: "property_small_hotel",
     actor: { role, id: role === "customer" ? "customer_1" : "staff_1" }
@@ -208,7 +291,7 @@ function fakePmsClient(): ProductGatewayPmsClient {
     updateReservationGroupDraft: async () => createPmsEvidence({ method: "updateReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { groupDraftRef: "group_draft_1", status: "quoteReady" }, summary: "group update" }),
     quoteReservationGroupDraft: async () => createPmsEvidence({ method: "quoteReservationGroupDraft", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { quoteRef: "quote_group_1", status: "pricingUnsupported" }, summary: "group quote" }),
     prepareReservationGroupConfirm: async () => createPmsEvidence({ method: "prepareReservationGroupConfirm", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", cardPayloadRef: "card_group_1", quoteRef: "quote_group_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: 2 }, summary: "group prepare" }),
-    pendingActionStatus: async () => createPmsEvidence({ method: "pendingActionStatus", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { pendingActionId: "pending_1", status: "awaitingConfirmation" }, summary: "pending" }),
+    pendingActionStatus: async (input) => createPmsEvidence({ method: "pendingActionStatus", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { pendingActionId: input.pendingActionId, status: "awaitingConfirmation" }, summary: "pending" }),
     confirmPendingAction: async () => createPmsEvidence({ method: "confirmPendingAction", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { pendingActionId: "pending_1", status: "confirmed", mutationStatus: "committed", idempotencyStatus: "confirmed", auditRefs: ["audit_pending_confirm_1"] }, summary: "confirm" }),
     cancelPendingAction: async () => createPmsEvidence({ method: "cancelPendingAction", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { pendingActionId: "pending_1", status: "cancelled", mutationStatus: "none", idempotencyStatus: "cancelled", auditRefs: ["audit_pending_cancel_1"] }, summary: "cancel" }),
     executeTypedOperation: async (input) => createPmsEvidence({ method: "executeTypedOperation", tenantId: "tenant_1", fetchedAt: "2026-05-11T00:00:00.000Z", data: { operation: input.operation, targetRef: input.targetRef, status: "confirmed", mutationStatus: "committed", idempotencyStatus: "confirmed", auditRefs: [`audit_${input.operation}_1`] }, summary: "typed operation" })

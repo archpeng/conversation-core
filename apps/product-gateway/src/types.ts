@@ -1,4 +1,4 @@
-import type { AgentTask, ProductApiError } from "@pms-agent-v2/product-contracts";
+import type { AgentTask, MobileActorRole, ProductApiError } from "@pms-agent-v2/product-contracts";
 import type { PmsPlatformClient } from "@pms-agent-v2/pms-platform-client";
 
 export type ProductGatewayConfig = {
@@ -36,6 +36,23 @@ export type TaskLedger = {
   get(taskId: string): AgentTask | undefined;
 };
 
+export type MobileSessionBinding = {
+  sessionId: string;
+  tenantId: string;
+  propertyId: string;
+  actor: {
+    role: MobileActorRole;
+    id: string;
+    displayName?: string;
+  };
+  expiresAt: string;
+};
+
+export type SessionBindingRegistry = {
+  issue(binding: MobileSessionBinding): MobileSessionBinding;
+  get(sessionId: string): MobileSessionBinding | undefined;
+};
+
 export type ProductGatewayPmsClient = Pick<
   PmsPlatformClient,
   | "hotelProfile"
@@ -64,6 +81,7 @@ export type ProductGatewayPmsClient = Pick<
 export type ProductRouteContext = {
   config: ProductGatewayConfig;
   tasks: TaskLedger;
+  sessions?: SessionBindingRegistry;
 };
 
 export class ProductGatewayRouteError extends Error {

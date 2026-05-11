@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -b",
     "start": "node dist/main.js",
-    "test": "vitest run --root ../.. tests/product-gateway.test.ts"
+    "test": "vitest run --root ../.. tests/product-gateway.test.ts tests/product-gateway-workflows.test.ts"
   },
   "dependencies": {
     "@pms-agent-v2/adapter-contracts": "workspace:*",
