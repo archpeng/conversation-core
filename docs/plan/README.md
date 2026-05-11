@@ -2,21 +2,21 @@
 
 ## Active Pack
 
-- none
+- `agent-first-mobile-r1-r7-v1-2026-05-11`
 
 ## Current Active Slice
 
-- none
+- `C0` implemented; `R5` pending
 
 ## Intended Handoff
 
-- No active handoff.
+- Continue with `R5` reservation workflow UI using `docs/plan/agent-first-mobile-r1-r7-v1-2026-05-11_PLAN.md`.
 
 ## Status
 
-- Active state: `PACK_COMPLETE`
-- Active triplet: none
-- Latest gate: `pnpm build` passed; `pnpm test` passed with 29 Vitest files passed / 1 skipped, 197 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
+- Active state: `ACTIVE`
+- Active triplet: `agent-first-mobile-r1-r7-v1-2026-05-11`
+- Latest gate: `pnpm build` passed; `pnpm test` passed with 32 Vitest files passed / 1 skipped, 215 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
 - Latest closed pack: `pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
@@ -41,7 +41,7 @@ Closeout artifact:
 
 Successor pack:
 
-- none
+- `docs/plan/agent-first-mobile-r1-r7-v1-2026-05-11_PLAN.md`
 
 ## Parser Scope Contract
 

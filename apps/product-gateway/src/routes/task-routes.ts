@@ -7,12 +7,14 @@ export async function handleTaskListRoute(context: ProductRouteContext, pmsClien
   if (!scope.ok) return json(400, scope.error);
 
   try {
-    const [arrivals, departures, inventory] = await Promise.all([
+    const [profile, catalog, arrivals, departures, inventory] = await Promise.all([
+      pmsClient.hotelProfile({ tenantId: scope.tenantId, propertyId: scope.propertyId }),
+      pmsClient.roomTypeCatalog({ tenantId: scope.tenantId, propertyId: scope.propertyId }),
       pmsClient.todayArrivals({ tenantId: scope.tenantId, businessDate: scope.businessDate }),
       pmsClient.todayDepartures({ tenantId: scope.tenantId, businessDate: scope.businessDate }),
       pmsClient.inventorySummary({ tenantId: scope.tenantId, propertyId: scope.propertyId, startDate: scope.businessDate, endDate: scope.businessDate })
     ]);
-    const tasks = todayReadTasks({ tenantId: scope.tenantId, propertyId: scope.propertyId, businessDate: scope.businessDate, arrivals, departures, inventory });
+    const tasks = todayReadTasks({ tenantId: scope.tenantId, propertyId: scope.propertyId, businessDate: scope.businessDate, profile, catalog, arrivals, departures, inventory });
     for (const task of tasks) context.tasks.add(task);
     return json(200, { ok: true, tasks: context.tasks.list() });
   } catch {

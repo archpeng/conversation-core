@@ -4,9 +4,13 @@ import {
   validateActionCardExecutionInput,
   validateActionCardExecutionResponse,
   validateAgentTask,
+  validateAvailabilityObjectResponse,
   validateMobileAgentResponse,
   validateMobileAgentTurnInput,
+  validateObjectRef,
   validateProductApiError,
+  validateReservationObjectResponse,
+  validateRoomObjectResponse,
   validateTaskListResponse
 } from "../packages/product-contracts/src/index.js";
 
@@ -88,5 +92,45 @@ describe("product contracts", () => {
     expect(validateActionCardExecutionInput(input)).toEqual({ ok: true, value: input });
     expect(validateActionCardExecutionInput({ actor: { role: "owner", id: "staff_1" } })).toMatchObject({ ok: false });
     expect(validateActionCardExecutionResponse({ ok: true, task })).toEqual({ ok: true, value: { ok: true, task } });
+  });
+
+  it("validates read object responses for room, reservation, and availability", () => {
+    const room = {
+      ok: true,
+      object: {
+        ref: { kind: "room", id: "room_1", evidenceRefs: ["pms_ev_room"] },
+        status: "available",
+        roomType: "花园套房",
+        reservationRefs: [],
+        blockRefs: [],
+        evidenceRefs: ["pms_ev_room"]
+      }
+    };
+    const reservation = {
+      ok: true,
+      object: {
+        ref: { kind: "reservation", id: "RES-001", evidenceRefs: ["pms_ev_reservation"] },
+        status: "confirmed",
+        roomId: "room_1",
+        evidenceRefs: ["pms_ev_reservation"]
+      }
+    };
+    const availability = {
+      ok: true,
+      object: {
+        ref: { kind: "availability", id: "property_small_hotel:2026-05-11:2026-05-12" },
+        checkInDate: "2026-05-11",
+        checkOutDate: "2026-05-12",
+        rooms: [{ roomId: "room_1", roomNumber: "1001", roomType: "花园套房", available: true }],
+        availableRoomTypes: [{ roomType: "花园套房", count: 1 }],
+        evidenceRefs: ["pms_ev_availability"]
+      }
+    };
+
+    expect(validateObjectRef(availability.object.ref)).toMatchObject({ ok: true });
+    expect(validateRoomObjectResponse(room)).toEqual({ ok: true, value: room });
+    expect(validateReservationObjectResponse(reservation)).toEqual({ ok: true, value: reservation });
+    expect(validateAvailabilityObjectResponse(availability)).toEqual({ ok: true, value: availability });
+    expect(validateAvailabilityObjectResponse({ ...availability, object: { ...availability.object, rooms: "mock" } })).toMatchObject({ ok: false });
   });
 });

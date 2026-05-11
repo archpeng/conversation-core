@@ -26,6 +26,26 @@ export async function handleRoomObjectRoute(context: ProductRouteContext, pmsCli
   }
 }
 
+export async function handleReservationObjectRoute(context: ProductRouteContext, pmsClient: ProductGatewayPmsClient, request: ProductGatewayRequest, reservationId: string): Promise<ProductGatewayResponse> {
+  const tenantId = request.query.get("tenantId") ?? context.config.defaultTenantId;
+  if (!tenantId) return json(400, productError("invalid_request", "tenantId is required for reservation lookup."));
+
+  try {
+    const evidence = await pmsClient.getReservation({ tenantId, reservationId });
+    return json(200, {
+      ok: true,
+      object: {
+        ref: { kind: "reservation", id: evidence.data.reservationId, label: evidence.data.reservationId, evidenceRefs: [evidence.evidenceRef] },
+        status: evidence.data.status,
+        ...(evidence.data.roomId ? { roomId: evidence.data.roomId } : {}),
+        evidenceRefs: [evidence.evidenceRef]
+      }
+    });
+  } catch {
+    return json(502, productError("backend_unavailable", "PMS Platform reservation read model is unavailable."));
+  }
+}
+
 function json(status: number, body: unknown): ProductGatewayResponse {
   return { status, headers: { "content-type": "application/json" }, body };
 }

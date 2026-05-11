@@ -1,6 +1,6 @@
 import type { AgentResult } from "@pms-agent-v2/adapter-contracts";
 import type { AgentTask, ObjectRef } from "@pms-agent-v2/product-contracts";
-import type { InventorySummaryResult, PmsEvidence, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";
+import type { HotelProfileResult, InventorySummaryResult, PmsEvidence, RoomTypeCatalogResult, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";
 
 export function taskFromAgentResult(result: AgentResult, now = new Date()): AgentTask {
   const timestamp = now.toISOString();
@@ -71,11 +71,35 @@ export function todayReadTasks(input: {
   arrivals: PmsEvidence<TodayArrivalsResult>;
   departures: PmsEvidence<TodayDeparturesResult>;
   inventory: PmsEvidence<InventorySummaryResult>;
+  profile?: PmsEvidence<HotelProfileResult>;
+  catalog?: PmsEvidence<RoomTypeCatalogResult>;
   now?: Date;
 }): AgentTask[] {
   const timestamp = (input.now ?? new Date()).toISOString();
   const propertyRef: ObjectRef = { kind: "property", id: input.propertyId, label: input.propertyId };
   return [
+    ...(input.profile ? [baseTask({
+      id: `task_profile_${input.propertyId}`,
+      title: "酒店概况",
+      summary: `${input.profile.data.propertyName} · ${input.profile.data.roomTotal} 间房 · ${input.profile.data.status}`,
+      source: "pms",
+      status: "read_only",
+      timestamp,
+      evidenceRefs: [input.profile.evidenceRef],
+      objectRefs: [propertyRef],
+      messages: [`时区 ${input.profile.data.timeZone}`, `房型 ${input.profile.data.roomTypes.length} 类`]
+    })] : []),
+    ...(input.catalog ? [baseTask({
+      id: `task_room_types_${input.propertyId}`,
+      title: "房型目录",
+      summary: `${input.catalog.data.roomTypes.length} 类房型。${codes(input.catalog.data.roomTypes.map((item) => item.displayName))}`,
+      source: "pms",
+      status: "read_only",
+      timestamp,
+      evidenceRefs: [input.catalog.evidenceRef],
+      objectRefs: [propertyRef, ...input.catalog.data.roomTypes.map((item): ObjectRef => ({ kind: "roomType", id: item.roomTypeId, label: item.displayName }))],
+      messages: input.catalog.data.roomTypes.map((item) => `${item.displayName}: ${item.roomCount} 间 · ${item.status}`)
+    })] : []),
     baseTask({
       id: `task_arrivals_${input.businessDate}`,
       title: "今日到店",

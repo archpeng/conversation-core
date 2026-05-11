@@ -38,7 +38,17 @@ export type TaskLedger = {
 
 export type ProductGatewayPmsClient = Pick<
   PmsPlatformClient,
-  "getRoom" | "inventorySummary" | "roomReservationContext" | "todayArrivals" | "todayDepartures" | "confirmPendingAction" | "cancelPendingAction"
+  | "hotelProfile"
+  | "roomTypeCatalog"
+  | "searchAvailability"
+  | "getRoom"
+  | "getReservation"
+  | "inventorySummary"
+  | "roomReservationContext"
+  | "todayArrivals"
+  | "todayDepartures"
+  | "confirmPendingAction"
+  | "cancelPendingAction"
 >;
 
 export type ProductRouteContext = {

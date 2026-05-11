@@ -1,14 +1,20 @@
 import {
   productError,
   validateActionCardExecutionResponse,
+  validateAvailabilityObjectResponse,
   validateMobileAgentResponse,
   validateProductApiError,
+  validateReservationObjectResponse,
+  validateRoomObjectResponse,
   validateTaskListResponse,
   type ActionCardExecutionInput,
   type AgentTask,
+  type AvailabilityReadObject,
   type MobileAgentResponse,
   type MobileAgentTurnInput,
   type ProductApiError,
+  type ReservationReadObject,
+  type RoomReadObject,
   type TaskListResponse
 } from "@pms-agent-v2/product-contracts";
 
@@ -16,15 +22,6 @@ export type GatewayScope = {
   tenantId: string;
   propertyId: string;
   businessDate: string;
-};
-
-export type RoomObject = {
-  ref: { kind: "room"; id: string; label?: string; evidenceRefs?: string[] };
-  status: string;
-  roomType: string;
-  reservationRefs: string[];
-  blockRefs: string[];
-  evidenceRefs: string[];
 };
 
 export type ShiftSummary = {
@@ -70,12 +67,36 @@ export class ProductGatewayClient {
     return result.value;
   }
 
-  async getRoom(roomId: string, scope: Pick<GatewayScope, "tenantId" | "businessDate">): Promise<RoomObject> {
+  async getRoom(roomId: string, scope: Pick<GatewayScope, "tenantId" | "businessDate">): Promise<RoomReadObject> {
     const query = new URLSearchParams(scope);
     const payload = await this.request(`/api/objects/rooms/${encodeURIComponent(roomId)}?${query.toString()}`, { method: "GET" });
-    const object = parseRoomObject(payload);
-    if (!object) throw new Error("Invalid room object response.");
-    return object;
+    const result = validateRoomObjectResponse(payload);
+    if (!result.ok) throw new Error(`Invalid room object response: ${result.issues.join("; ")}`);
+    return result.value.object;
+  }
+
+  async getReservation(reservationId: string, scope: Pick<GatewayScope, "tenantId">): Promise<ReservationReadObject> {
+    const query = new URLSearchParams(scope);
+    const payload = await this.request(`/api/objects/reservations/${encodeURIComponent(reservationId)}?${query.toString()}`, { method: "GET" });
+    const result = validateReservationObjectResponse(payload);
+    if (!result.ok) throw new Error(`Invalid reservation object response: ${result.issues.join("; ")}`);
+    return result.value.object;
+  }
+
+  async searchAvailability(input: GatewayScope & { checkInDate: string; checkOutDate: string; roomType?: string; quantity?: number }): Promise<AvailabilityReadObject> {
+    const query = new URLSearchParams({
+      tenantId: input.tenantId,
+      propertyId: input.propertyId,
+      businessDate: input.businessDate,
+      checkInDate: input.checkInDate,
+      checkOutDate: input.checkOutDate,
+      ...(input.roomType ? { roomType: input.roomType } : {}),
+      ...(input.quantity ? { quantity: String(input.quantity) } : {})
+    });
+    const payload = await this.request(`/api/availability/search?${query.toString()}`, { method: "GET" });
+    const result = validateAvailabilityObjectResponse(payload);
+    if (!result.ok) throw new Error(`Invalid availability response: ${result.issues.join("; ")}`);
+    return result.value.object;
   }
 
   async getShiftSummary(): Promise<ShiftSummary> {
@@ -128,27 +149,6 @@ function productGatewayError(payload: unknown): Error {
   return new Error(body.message);
 }
 
-function parseRoomObject(payload: unknown): RoomObject | undefined {
-  const record = asRecord(payload);
-  const object = asRecord(record?.object);
-  const ref = asRecord(object?.ref);
-  if (!record || record.ok !== true || !object || !ref) return undefined;
-  if (ref.kind !== "room" || typeof ref.id !== "string" || typeof object.status !== "string" || typeof object.roomType !== "string") return undefined;
-  return {
-    ref: {
-      kind: "room",
-      id: ref.id,
-      ...(typeof ref.label === "string" ? { label: ref.label } : {}),
-      evidenceRefs: stringArray(ref.evidenceRefs)
-    },
-    status: object.status,
-    roomType: object.roomType,
-    reservationRefs: stringArray(object.reservationRefs),
-    blockRefs: stringArray(object.blockRefs),
-    evidenceRefs: stringArray(object.evidenceRefs)
-  };
-}
-
 function parseShiftSummary(payload: unknown): ShiftSummary | undefined {
   const record = asRecord(payload);
   const summary = asRecord(record?.summary);
@@ -194,8 +194,4 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }

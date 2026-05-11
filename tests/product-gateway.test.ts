@@ -74,6 +74,8 @@ describe("product gateway service", () => {
     expect(response.body).toMatchObject({
       ok: true,
       tasks: expect.arrayContaining([
+        expect.objectContaining({ title: "酒店概况", status: "read_only", evidenceRefs: ["pms_ev_tenant_1_hotelProfile_1778457600000"] }),
+        expect.objectContaining({ title: "房型目录", status: "read_only", evidenceRefs: ["pms_ev_tenant_1_roomTypeCatalog_1778457600000"] }),
         expect.objectContaining({ title: "今日到店", status: "read_only", evidenceRefs: ["pms_ev_tenant_1_todayArrivals_1778457600000"] }),
         expect.objectContaining({ title: "今日离店", status: "read_only" }),
         expect.objectContaining({ title: "今日库存", status: "read_only" })
@@ -83,12 +85,16 @@ describe("product gateway service", () => {
 
   it("returns backend_unavailable instead of mock data when PMS is down", async () => {
     const pmsClient: ProductGatewayPmsClient = {
+      hotelProfile: fakePmsClient().hotelProfile,
+      roomTypeCatalog: fakePmsClient().roomTypeCatalog,
+      searchAvailability: fakePmsClient().searchAvailability,
       todayArrivals: async () => {
         throw new Error("down");
       },
       todayDepartures: fakePmsClient().todayDepartures,
       inventorySummary: fakePmsClient().inventorySummary,
       getRoom: fakePmsClient().getRoom,
+      getReservation: fakePmsClient().getReservation,
       roomReservationContext: fakePmsClient().roomReservationContext,
       confirmPendingAction: fakePmsClient().confirmPendingAction,
       cancelPendingAction: fakePmsClient().cancelPendingAction
@@ -102,6 +108,37 @@ describe("product gateway service", () => {
 
     expect(response.status).toBe(502);
     expect(response.body).toEqual({ ok: false, code: "backend_unavailable", message: "PMS Platform read model is unavailable." });
+  });
+
+  it("returns reservation and availability read objects from PMS evidence", async () => {
+    const service = createProductGatewayService(config, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient()
+    });
+
+    const reservation = await service.handle(request("GET", "/api/objects/reservations/RES-001?tenantId=tenant_1"));
+    const availability = await service.handle(request("GET", "/api/availability/search?tenantId=tenant_1&propertyId=property_small_hotel&checkInDate=2026-05-11&checkOutDate=2026-05-12"));
+
+    expect(reservation.status).toBe(200);
+    expect(reservation.body).toMatchObject({
+      ok: true,
+      object: {
+        ref: { kind: "reservation", id: "RES-001" },
+        status: "confirmed",
+        roomId: "room_1",
+        evidenceRefs: ["pms_ev_tenant_1_getReservation_1778457600000"]
+      }
+    });
+    expect(availability.status).toBe(200);
+    expect(availability.body).toMatchObject({
+      ok: true,
+      object: {
+        ref: { kind: "availability", id: "property_small_hotel:2026-05-11:2026-05-12" },
+        rooms: [expect.objectContaining({ roomId: "room_1", roomType: "花园套房", available: true })],
+        availableRoomTypes: [{ roomType: "花园套房", count: 1 }],
+        evidenceRefs: ["pms_ev_tenant_1_searchAvailability_1778457600000"]
+      }
+    });
   });
 
   it("calls the mobile-native agent route without Feishu-shaped gateway adaptation", async () => {
@@ -206,10 +243,11 @@ describe("product gateway service", () => {
 });
 
 function request(method: string, path: string, body?: unknown, headers: Record<string, string | undefined> = { authorization: "Bearer product-token" }) {
+  const url = new URL(path, "https://product.local");
   return {
     method,
-    path,
-    query: new URLSearchParams(),
+    path: url.pathname,
+    query: url.searchParams,
     headers,
     body
   };
@@ -250,6 +288,40 @@ function fakeApprovalAgentClient(): AgentClient {
 
 function fakePmsClient(): ProductGatewayPmsClient {
   return {
+    hotelProfile: async () => createPmsEvidence({
+      method: "hotelProfile",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: {
+        propertyId: "property_small_hotel",
+        propertyName: "样板酒店",
+        timeZone: "Asia/Shanghai",
+        status: "active",
+        roomTotal: 10,
+        roomTypes: [{ roomTypeId: "room-type-suite", code: "suite", displayName: "花园套房", roomCount: 4, status: "active" }]
+      },
+      summary: "Hotel profile."
+    }),
+    roomTypeCatalog: async () => createPmsEvidence({
+      method: "roomTypeCatalog",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: {
+        propertyId: "property_small_hotel",
+        roomTypes: [{ roomTypeId: "room-type-suite", code: "suite", displayName: "花园套房", roomCount: 4, status: "active" }]
+      },
+      summary: "Room type catalog."
+    }),
+    searchAvailability: async () => createPmsEvidence({
+      method: "searchAvailability",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: {
+        rooms: [{ roomId: "room_1", roomNumber: "1001", roomType: "花园套房", available: true }],
+        availableRoomTypes: [{ roomType: "花园套房", count: 1 }]
+      },
+      summary: "Availability facts."
+    }),
     todayArrivals: async () => createPmsEvidence({
       method: "todayArrivals",
       tenantId: "tenant_1",
@@ -280,6 +352,13 @@ function fakePmsClient(): ProductGatewayPmsClient {
       fetchedAt: "2026-05-11T00:00:00.000Z",
       data: { roomId: "room_1", roomType: "花园套房", status: "available" },
       summary: "Room facts."
+    }),
+    getReservation: async () => createPmsEvidence({
+      method: "getReservation",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { reservationId: "RES-001", status: "confirmed", roomId: "room_1" },
+      summary: "Reservation facts."
     }),
     roomReservationContext: async () => createPmsEvidence({
       method: "roomReservationContext",

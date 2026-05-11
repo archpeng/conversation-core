@@ -51,6 +51,14 @@ export {
   type AgentLedgerEntryKind
 } from "./ledger.js";
 export {
+  validateAvailabilityObjectResponse,
+  validateReservationObjectResponse,
+  validateRoomObjectResponse,
+  type AvailabilityReadObject,
+  type ReservationReadObject,
+  type RoomReadObject
+} from "./read-objects.js";
+export {
   productError,
   productErrorCodes,
   validateMobileAgentResponse,

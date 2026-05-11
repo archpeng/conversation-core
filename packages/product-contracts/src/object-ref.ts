@@ -1,6 +1,6 @@
 import { asRecord, optionalStringArray, requireNonEmptyString, requireOneOf, requireOptionalString, type Validation } from "./field-checks.js";
 
-export const objectRefKinds = ["property", "room", "roomType", "reservation", "pendingAction", "task"] as const;
+export const objectRefKinds = ["property", "room", "roomType", "reservation", "pendingAction", "availability", "task"] as const;
 
 export type ObjectRefKind = (typeof objectRefKinds)[number];
 
