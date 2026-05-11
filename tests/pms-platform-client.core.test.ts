@@ -27,8 +27,10 @@ describe("PMS Platform client core evidence", () => {
     const quote = await client.quoteReservationDraft({ tenantId: "tenant_1", draftId: "draft_1" });
     const prepareConfirm = await client.prepareReservationConfirm({ tenantId: "tenant_1", draftId: "draft_1" });
     const pendingStatus = await client.pendingActionStatus({ tenantId: "tenant_1", pendingActionId: "pending_1" });
+    const confirm = await client.confirmPendingAction({ tenantId: "tenant_1", pendingActionId: "pending_1", cardPayloadRef: "card_1", actor: { type: "human", id: "staff_1" } });
+    const cancel = await client.cancelPendingAction({ tenantId: "tenant_1", pendingActionId: "pending_1", cardPayloadRef: "card_1", actor: { type: "human", id: "staff_1" }, reason: "wrong guest" });
 
-    for (const evidence of [manifest, profile, catalog, availability, room, reservation, createdDraft, updatedDraft, quote, prepareConfirm, pendingStatus]) {
+    for (const evidence of [manifest, profile, catalog, availability, room, reservation, createdDraft, updatedDraft, quote, prepareConfirm, pendingStatus, confirm, cancel]) {
       expect(evidence.evidenceRef).toMatch(/^pms_ev_tenant_1_/);
       expect(evidence.fetchedAt).toBe("2026-05-06T12:00:00.000Z");
       expect(evidence.source.system).toBe("pms-platform");
@@ -48,6 +50,8 @@ describe("PMS Platform client core evidence", () => {
     expect(calls[3].body).toMatchObject({ checkInDate: "2026-05-06", checkOutDate: "2026-05-07", startDate: "2026-05-06", endDate: "2026-05-07" });
     expect(prepareConfirm.data).toMatchObject({ pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" });
     expect(pendingStatus.data).toEqual({ pendingActionId: "pending_1", status: "pending" });
+    expect(confirm.data).toMatchObject({ pendingActionId: "pending_1", status: "confirmed", mutationStatus: "committed", auditRefs: ["audit_pending_confirm_1"], reservationCode: "RES-001" });
+    expect(cancel.data).toMatchObject({ pendingActionId: "pending_1", status: "cancelled", mutationStatus: "none", auditRefs: ["audit_pending_cancel_1"] });
     expect(calls.map((call) => call.url)).toEqual([
       "https://pms.local/v1/pms/capabilities/manifest",
       "https://pms.local/v1/pms/hotel/profile",
@@ -59,7 +63,9 @@ describe("PMS Platform client core evidence", () => {
       "https://pms.local/v1/pms/reservation-drafts/update",
       "https://pms.local/v1/pms/reservation-drafts/quote",
       "https://pms.local/v1/pms/reservation-drafts/prepare-confirm",
-      "https://pms.local/v1/pms/pending-actions/status"
+      "https://pms.local/v1/pms/pending-actions/status",
+      "https://pms.local/v1/pms/pending-actions/confirm",
+      "https://pms.local/v1/pms/pending-actions/cancel"
     ]);
   });
 
@@ -99,7 +105,9 @@ describe("PMS Platform client core evidence", () => {
     const client = createPmsPlatformClient({ baseUrl: "https://pms.local", fetch: fakeFetch([]) });
 
     expect(Object.keys(client).sort()).toEqual([
+      "cancelPendingAction",
       "capabilitiesManifest",
+      "confirmPendingAction",
       "createReservationDraft",
       "createReservationGroupDraft",
       "getReservation",
@@ -122,8 +130,6 @@ describe("PMS Platform client core evidence", () => {
       "updateReservationGroupDraft"
     ]);
     expect("request" in client).toBe(false);
-    expect("confirmPendingAction" in client).toBe(false);
-    expect("cancelPendingAction" in client).toBe(false);
   });
 
   it("returns health without treating it as PMS fact evidence", async () => {

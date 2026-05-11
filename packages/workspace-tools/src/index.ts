@@ -1,30 +1,21 @@
-import { readdir, realpath } from "node:fs/promises";
-import path from "node:path";
 import { runGatedTool, type GatedToolRequest, type GatedToolResult, type SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
 import {
   readWorkspaceFile,
   validateSkillProposalCompleteness,
-  WORKSPACE_IDENTIFIER_PATTERN,
-  WorkspaceError,
   writeProposalFile,
   type ProposalCompletenessResult,
   type TenantScope,
   type WorkspaceReadResult,
   type WorkspaceWriteResult
 } from "@pms-agent-v2/workspace-core";
-
-export type WorkspaceToolName =
-  | "workspace_read"
-  | "workspace_write_proposal"
-  | "workspace_edit_proposal"
-  | "workspace_list_active_skills"
-  | "workspace_create_skill_proposal";
+import { listActiveSkillNames } from "./active-skills-tool.js";
+import { assertSkillProposalInput, proposalRoot } from "./skill-proposal-tool.js";
+import { appendWorkspaceAudit, createWorkspaceAuditBuffer, type WorkspaceAuditBuffer, type WorkspaceAuditEvent, type WorkspaceAuditSink, type WorkspaceToolActor, type WorkspaceToolName } from "./workspace-audit.js";
+import { WorkspaceToolError } from "./workspace-errors.js";
 
 export type WorkspaceArtifactAuthority = "workspace_advisory";
 
-const ALLOWED_PROPOSAL_STATUS_STATES = new Set(["draft", "ready_for_review", "rejected"]);
-
-export type WorkspaceToolActor = GatedToolRequest["actor"];
+export type { WorkspaceAuditBuffer, WorkspaceAuditEvent, WorkspaceAuditSink, WorkspaceToolActor, WorkspaceToolName };
 
 export type WorkspaceToolBaseInput = {
   gateway: SafetyGatewayPort;
@@ -90,31 +81,6 @@ export type WorkspaceCreateSkillProposalToolValue = {
   proposal: ProposalCompletenessResult;
   files: readonly WorkspaceWriteResult[];
 };
-
-export type WorkspaceAuditEvent = {
-  id: string;
-  at: string;
-  toolName: WorkspaceToolName;
-  outcome: "write" | "edit" | "create_skill_proposal";
-  actorProfile: WorkspaceToolActor["profile"];
-  targetKind: "redacted";
-  reasonCode: "workspace_side_effect_committed";
-};
-
-export type WorkspaceAuditSink = {
-  append(event: WorkspaceAuditEvent): void | Promise<void>;
-};
-
-export type WorkspaceAuditBuffer = WorkspaceAuditSink & {
-  events(): readonly WorkspaceAuditEvent[];
-};
-
-export class WorkspaceToolError extends Error {
-  constructor(readonly code: "invalid_input" | "edit_match_not_found" | "edit_match_ambiguous" | "symlink_escape", message: string) {
-    super(message);
-    this.name = "WorkspaceToolError";
-  }
-}
 
 export function workspaceRead(input: WorkspaceReadToolInput): Promise<GatedToolResult<WorkspaceReadToolValue>> {
   return runGatedTool({
@@ -211,17 +177,7 @@ export function canWorkspaceArtifactAnswerCurrentPmsFact(): false {
   return false;
 }
 
-export function createWorkspaceAuditBuffer(): WorkspaceAuditBuffer {
-  const recorded: WorkspaceAuditEvent[] = [];
-  return {
-    append(event) {
-      recorded.push(event);
-    },
-    events() {
-      return recorded;
-    }
-  };
-}
+export { createWorkspaceAuditBuffer, WorkspaceToolError };
 
 function workspaceRequest(
   input: WorkspaceToolBaseInput,
@@ -245,72 +201,4 @@ function workspaceRequest(
 
 function scopeFrom(input: WorkspaceToolBaseInput): TenantScope {
   return { rootDir: input.rootDir, tenantId: input.tenantId, maxBytes: input.maxBytes };
-}
-
-async function listActiveSkillNames(input: WorkspaceListActiveSkillsToolInput): Promise<string[]> {
-  assertIdentifier("tenantId", input.tenantId);
-  const tenantRoot = path.resolve(input.rootDir, "workspaces", input.tenantId);
-  const skillsDir = path.join(tenantRoot, "active", "skills");
-  const [realTenantRoot, realSkillsDir] = await Promise.all([realpath(tenantRoot), realpath(skillsDir)]);
-  assertInside(realSkillsDir, realTenantRoot);
-  const entries = await readdir(skillsDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".json")))
-    .map((entry) => entry.name)
-    .sort();
-}
-
-function assertSkillProposalInput(input: WorkspaceCreateSkillProposalToolInput): void {
-  assertIdentifier("proposalId", input.proposalId);
-  if (!input.skillMarkdown.trim()) throw new WorkspaceToolError("invalid_input", "Skill proposal requires SKILL.md content.");
-  if (!input.riskReportMarkdown.trim()) throw new WorkspaceToolError("invalid_input", "Skill proposal requires risk-report.md content.");
-  assertJson("eval-fixtures.json", input.evalFixturesJson);
-  assertAllowedStatusState(input.statusJson);
-}
-
-function assertAllowedStatusState(value: string): void {
-  let parsed: { state?: unknown; status?: unknown };
-  try {
-    parsed = JSON.parse(value) as { state?: unknown; status?: unknown };
-  } catch {
-    throw new WorkspaceToolError("invalid_input", "status.json must be valid JSON.");
-  }
-  const state = typeof parsed.state === "string" ? parsed.state : parsed.status;
-  if (typeof state !== "string" || !ALLOWED_PROPOSAL_STATUS_STATES.has(state)) {
-    throw new WorkspaceToolError("invalid_input", "status.json must use a non-active proposal state.");
-  }
-}
-
-function assertJson(label: string, value: string): void {
-  try {
-    JSON.parse(value);
-  } catch {
-    throw new WorkspaceToolError("invalid_input", `${label} must be valid JSON.`);
-  }
-}
-
-function proposalRoot(tenantId: string, proposalId: string): string {
-  return `/workspaces/${tenantId}/proposals/${proposalId}`;
-}
-
-function assertIdentifier(label: string, value: string): void {
-  if (!WORKSPACE_IDENTIFIER_PATTERN.test(value)) throw new WorkspaceError("invalid_identifier", `${label} must match ${WORKSPACE_IDENTIFIER_PATTERN.source}.`);
-}
-
-function assertInside(realTarget: string, realRoot: string): void {
-  const relative = path.relative(realRoot, realTarget);
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return;
-  throw new WorkspaceToolError("symlink_escape", "Workspace tool path resolves outside the tenant root.");
-}
-
-async function appendWorkspaceAudit(input: WorkspaceToolBaseInput, toolName: WorkspaceToolName, outcome: WorkspaceAuditEvent["outcome"]): Promise<void> {
-  await input.workspaceAudit?.append({
-    id: `workspace_${outcome}_${toolName}`,
-    at: new Date().toISOString(),
-    toolName,
-    outcome,
-    actorProfile: input.actor.profile,
-    targetKind: "redacted",
-    reasonCode: "workspace_side_effect_committed"
-  });
 }

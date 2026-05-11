@@ -5,7 +5,10 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "..");
 const workspaces = [
   "apps/agent-service",
+  "apps/product-gateway",
+  "apps/mobile-web",
   "packages/adapter-contracts",
+  "packages/product-contracts",
   "packages/unified-agent",
   "packages/safety-gateway",
   "packages/gated-tools",
@@ -21,8 +24,21 @@ describe("P0 bootstrap scaffold", () => {
     }
   });
 
-  it("keeps root scripts focused on build, test, eval, and boundary guard", async () => {
+  it("keeps root scripts focused on build, test, eval, and guards", async () => {
     const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-    expect(Object.keys(manifest.scripts).sort()).toEqual(["build", "eval", "guard:boundaries", "start", "test"]);
+    expect(Object.keys(manifest.scripts).sort()).toEqual([
+      "build",
+      "build:gateway",
+      "build:mobile",
+      "dev:gateway",
+      "dev:mobile",
+      "eval",
+      "guard:ai-readiness",
+      "guard:boundaries",
+      "start",
+      "test",
+      "test:gateway",
+      "test:mobile"
+    ]);
   });
 });

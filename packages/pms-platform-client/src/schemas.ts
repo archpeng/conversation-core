@@ -70,3 +70,13 @@ export {
   type UpdateReservationDraftInput,
   type UpdateReservationGroupDraftInput
 } from "./reservation-workflow-schemas.js";
+export {
+  parsePendingActionCallbackFact,
+  validateCancelPendingActionInput,
+  validateConfirmPendingActionInput,
+  type CancelPendingActionInput,
+  type ConfirmPendingActionInput,
+  type PendingActionCallbackActor,
+  type PendingActionCallbackFact,
+  type PendingActionCallbackInput
+} from "./pending-action-callback-schemas.js";

@@ -4,11 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm build:mobile",
+    "build:gateway": "pnpm --filter @pms-agent-v2/product-gateway build",
+    "build:mobile": "pnpm --filter @pms-agent-v2/mobile-web build",
+    "dev:gateway": "pnpm build:gateway && pnpm --filter @pms-agent-v2/product-gateway start",
+    "dev:mobile": "pnpm --filter @pms-agent-v2/mobile-web dev",
     "start": "pnpm --filter @pms-agent-v2/agent-service start",
-    "test": "vitest run && pnpm guard:boundaries && pnpm eval",
+    "test": "vitest run && pnpm guard:boundaries && pnpm guard:ai-readiness && pnpm eval",
+    "test:gateway": "pnpm --filter @pms-agent-v2/product-gateway test",
+    "test:mobile": "pnpm --filter @pms-agent-v2/mobile-web test",
     "eval": "tsc -b packages/evals && node packages/evals/dist/index.js",
-    "guard:boundaries": "node scripts/boundary-guard.mjs"
+    "guard:boundaries": "node scripts/boundary-guard.mjs",
+    "guard:ai-readiness": "node scripts/ai-readiness-guard.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

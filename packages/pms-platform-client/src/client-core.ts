@@ -19,10 +19,12 @@ export type PmsRoute =
   | "/v1/pms/reservation-group-drafts/quote"
   | "/v1/pms/reservation-group-drafts/prepare-confirm"
   | "/v1/pms/pending-actions/status"
+  | "/v1/pms/pending-actions/confirm"
+  | "/v1/pms/pending-actions/cancel"
   | "/v1/pms/inventory/summary"
   | "/v1/pms/room/reservation-context"
-  | "/v1/pms/arrivals/today"
-  | "/v1/pms/departures/today";
+  | "/v1/pms/reservations/today-arrivals"
+  | "/v1/pms/reservations/today-departures";
 
 export type RequestPlan = {
   method: HttpMethod;

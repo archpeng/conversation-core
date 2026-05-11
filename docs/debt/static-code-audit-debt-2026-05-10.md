@@ -15,6 +15,15 @@ External residual closeout verification on 2026-05-11:
 - `pms-agent-v2`: `pnpm build` passed.
 - `pms-agent-v2`: `pnpm test` passed with 28 Vitest files passed / 1 skipped, 190 tests passed / 2 skipped, boundary guard passed, and eval ok=true 21/21 with 22 audit events.
 
+AI-readiness hardening closeout on 2026-05-11:
+
+- Runtime Safety audit persistence was added through JSONL audit sink wiring and unique default audit IDs.
+- Catalog-backed room-type misses now return `searchAvailability` evidence and preserve catalog evidence via `sourceRefs`.
+- `guard:ai-readiness` now enforces source line budgets and risky type-pattern bans in `pnpm test`.
+- `workspace-tools/src/index.ts` was reduced to a 204-line compatibility/export surface over owner modules.
+- `pms-agent-v2`: `pnpm build` passed.
+- `pms-agent-v2`: `pnpm test` passed with 29 Vitest files passed / 1 skipped, 197 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, and eval ok=true 21/21 with 22 audit events.
+
 Original verification at the time of audit:
 
 - `pms-agent-v2`: `pnpm build && pnpm test` passed, including 178 tests, boundary guard, and eval 21/21.

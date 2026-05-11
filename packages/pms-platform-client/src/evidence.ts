@@ -19,6 +19,8 @@ export type PmsEvidenceMethod =
   | "quoteReservationGroupDraft"
   | "prepareReservationGroupConfirm"
   | "pendingActionStatus"
+  | "confirmPendingAction"
+  | "cancelPendingAction"
   | "inventorySummary"
   | "roomReservationContext"
   | "todayArrivals"

@@ -5,6 +5,7 @@ import { createRuntimeResourceLoaderFactory } from "./runtime-profile-context.js
 import { createRuntimeSafetyGateway } from "./runtime-safety-gateway.js";
 import { startAgentHttpServer as startRuntimeHttpServer } from "./runtime-server.js";
 import type { AgentServiceRuntimeConfig } from "./runtime-config.js";
+import { createSafetyAuditJsonlFileWriter } from "@pms-agent-v2/safety-gateway";
 
 export { loadAgentServiceRuntimeConfig, isMainModule, type AgentServiceRuntimeConfig } from "./runtime-config.js";
 export { createRuntimePiSessionFactory } from "./runtime-pi-session.js";
@@ -15,7 +16,7 @@ export { createRuntimeExecutors, type RuntimeExecutorConfig };
 
 export function createRuntimeAgentService(config: AgentServiceRuntimeConfig): AgentService {
   return createAgentService({
-    gateway: createRuntimeSafetyGateway(),
+    gateway: createRuntimeSafetyGateway({ auditSink: createSafetyAuditJsonlFileWriter(config.safetyAuditLogPath) }),
     createAgentSession: createRuntimePiSessionFactory(config),
     createResourceLoader: createRuntimeResourceLoaderFactory(config),
     cwd: config.cwd,

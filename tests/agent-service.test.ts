@@ -52,6 +52,31 @@ describe("agent service API", () => {
     expect(calls[0].customTools.map((tool) => tool.name)).toEqual(customerRegisteredToolNames);
   });
 
+  it("accepts /v1/mobile-turn while keeping mobile adaptation inside agent service", async () => {
+    const calls: AgentSessionFactoryOptions[] = [];
+    const service = createAgentService({ gateway: safetyGateway(), createAgentSession: fakeCreateAgentSession(calls) });
+
+    const response = await service.handle({
+      method: "POST",
+      path: "/v1/mobile-turn",
+      body: {
+        channel: "mobile",
+        tenantId: "tenant_secret_1",
+        propertyId: "property_small_hotel",
+        sessionId: "mobile_session_secret_1",
+        messageId: "mobile_message_secret_1",
+        actor: { role: "manager", id: "manager_secret_1" },
+        message: { text: "查一下今天到店" },
+        receivedAt: "2026-05-06T12:00:00.000Z"
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expectAgentResultBody(response);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].customTools.map((tool) => tool.name)).toEqual(customerRegisteredToolNames);
+  });
+
   it("uses a deterministic redacted Pi session file for the same Feishu conversation", async () => {
     const sessionDir = "/tmp/pms-agent-v2-runtime-test/pi-sessions";
     const firstCalls: AgentSessionFactoryOptions[] = [];

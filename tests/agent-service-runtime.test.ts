@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createAgentService } from "../apps/agent-service/src/index.js";
-import { createRuntimeExecutors, createRuntimePiSessionFactory, createRuntimeResourceLoaderFactory, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
+import { createRuntimeExecutors, createRuntimePiSessionFactory, createRuntimeResourceLoaderFactory, createRuntimeSafetyGateway, loadAgentServiceRuntimeConfig, startAgentHttpServer } from "../apps/agent-service/src/runtime.js";
+import { createSafetyAuditJsonlFileWriter } from "../packages/safety-gateway/src/index.js";
 
 describe("agent service runtime wiring", () => {
   it("loads runtime defaults and explicit opt-ins", () => {
@@ -10,8 +14,38 @@ describe("agent service runtime wiring", () => {
     expect(config.maxInboundBodyBytes).toBe(256 * 1024);
     expect(config.piAgentDir).toBe("/tmp/pms-agent-v2-runtime-test/.local/pi-agent");
     expect(config.piSessionDir).toBe("/tmp/pms-agent-v2-runtime-test/.local/pi-agent/sessions");
+    expect(config.safetyAuditLogPath).toBe("/tmp/pms-agent-v2-runtime-test/.local/pms-agent-audit/safety-audit.jsonl");
     expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_LOG_TURN_EVENTS: "true" }).logTurnEvents).toBe(true);
+    expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_SAFETY_AUDIT_LOG: "audit/safety.jsonl" }).safetyAuditLogPath).toBe("/tmp/pms-agent-v2-runtime-test/audit/safety.jsonl");
     expect(loadAgentServiceRuntimeConfig({ PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test", PMS_AGENT_MAX_BODY_BYTES: "8" }).maxInboundBodyBytes).toBe(8);
+  });
+
+  it("persists runtime Safety audit events as JSONL with unique IDs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "pms-agent-runtime-audit-"));
+    const config = loadAgentServiceRuntimeConfig({
+      PMS_AGENT_CWD: root,
+      PMS_AGENT_SAFETY_AUDIT_LOG: "audit/safety.jsonl"
+    });
+    const gateway = createRuntimeSafetyGateway({
+      auditSink: createSafetyAuditJsonlFileWriter(config.safetyAuditLogPath)
+    });
+    const request = {
+      capabilityId: "pms_availability_search",
+      actor: { profile: "customer" as const, id: "guest_secret_runtime" },
+      tenantId: "tenant_1"
+    };
+
+    const first = gateway.audit(gateway.decide(request));
+    const second = gateway.audit(gateway.decide(request));
+
+    expect(first.id).not.toBe(second.id);
+    const lines = (await readFile(config.safetyAuditLogPath, "utf8")).trim().split("\n");
+    const events = lines.map((line) => JSON.parse(line) as { id: string; capabilityId: string; outcome: string });
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.id)).toEqual([first.id, second.id]);
+    expect(events.every((event) => event.capabilityId === "pms_availability_search" && event.outcome === "allow")).toBe(true);
+    expect(lines.join("\n")).not.toContain("tenant_1");
+    expect(lines.join("\n")).not.toContain("guest_secret_runtime");
   });
 
   it("rejects oversized HTTP request bodies before service handling", async () => {
@@ -249,6 +283,8 @@ describe("agent service runtime wiring", () => {
       ]);
       expect(unrestrictedText?.summary).toContain("no configured room type 不限制房型");
       expect(unmatchedRoomType?.summary).toContain("no configured room type 大床房");
+      expect(unmatchedRoomType?.source.method).toBe("searchAvailability");
+      expect(unmatchedRoomType?.data.sourceRefs?.[0]).toMatch(/^pms_ev_tenant_1_roomTypeCatalog_/);
       expect(unmatchedRoomType?.summary).toContain("花园别墅 6");
       expect(unmatchedRoomType?.summary).toContain("花园套房 2");
       expect(unmatchedRoomType?.summary).toContain("秘境洞穴 5");

@@ -43,6 +43,17 @@ const forbiddenImportRules = [
     id: "forbidden import: workspace-core -> safety-gateway",
     from: "packages/workspace-core/",
     targets: ["@pms-agent-v2/safety-gateway"]
+  },
+  {
+    id: "forbidden import: mobile-web -> backend runtime",
+    from: "apps/mobile-web/",
+    targets: [
+      "@pms-agent-v2/agent-service",
+      "@pms-agent-v2/gated-tools",
+      "@pms-agent-v2/pms-platform-client",
+      "@pms-agent-v2/safety-gateway",
+      "@pms-agent-v2/unified-agent"
+    ]
   }
 ];
 

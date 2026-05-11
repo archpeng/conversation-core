@@ -1,0 +1,19 @@
+{
+  "name": "@pms-agent-v2/product-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/main.js",
+    "test": "vitest run --root ../.. tests/product-gateway.test.ts"
+  },
+  "dependencies": {
+    "@pms-agent-v2/adapter-contracts": "workspace:*",
+    "@pms-agent-v2/pms-platform-client": "workspace:*",
+    "@pms-agent-v2/product-contracts": "workspace:*"
+  }
+}

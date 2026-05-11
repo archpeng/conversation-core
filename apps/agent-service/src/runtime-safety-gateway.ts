@@ -1,8 +1,13 @@
 import type { GatedDecision, GatedToolRequest, SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
-import { createSafetyAuditEvent, decideToolRequest, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
+import { createSafetyAuditEvent, decideToolRequest, type SafetyAuditSink, type SafetyDecision, type ToolRequest } from "@pms-agent-v2/safety-gateway";
 
-export function createRuntimeSafetyGateway(): SafetyGatewayPort {
+export type RuntimeSafetyGatewayInput = {
+  auditSink?: SafetyAuditSink;
+};
+
+export function createRuntimeSafetyGateway(input: RuntimeSafetyGatewayInput = {}): SafetyGatewayPort {
   const safetyDecisions = new WeakMap<GatedDecision, SafetyDecision>();
+  let fallbackSequence = 0;
 
   return {
     decide(request: GatedToolRequest): GatedDecision {
@@ -13,8 +18,9 @@ export function createRuntimeSafetyGateway(): SafetyGatewayPort {
     },
     audit(decision: GatedDecision) {
       const safetyDecision = safetyDecisions.get(decision);
-      if (!safetyDecision) return { id: fallbackAuditId(decision) };
+      if (!safetyDecision) return { id: fallbackAuditId(decision, ++fallbackSequence) };
       const event = createSafetyAuditEvent(safetyDecision);
+      input.auditSink?.append(event);
       return { id: event.id };
     }
   };
@@ -69,7 +75,7 @@ function toGatedDecision(decision: SafetyDecision): GatedDecision {
   };
 }
 
-function fallbackAuditId(decision: GatedDecision): string {
+function fallbackAuditId(decision: GatedDecision, sequence: number): string {
   const reason = decision.reasons[0]?.code ?? "none";
-  return `audit_${decision.outcome}_${decision.audit.capabilityId}_${reason}`;
+  return `audit_fallback_${sequence}_${decision.outcome}_${decision.audit.capabilityId}_${reason}`;
 }

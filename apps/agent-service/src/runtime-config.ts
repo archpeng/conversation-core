@@ -16,6 +16,7 @@ export type AgentServiceRuntimeConfig = {
   piModelProvider?: string;
   piModelId?: string;
   logTurnEvents: boolean;
+  safetyAuditLogPath: string;
   maxInboundBodyBytes: number;
   defaultHotelId: string;
   defaultPropertyId: string;
@@ -47,6 +48,7 @@ export function loadAgentServiceRuntimeConfig(env: Env = process.env): AgentServ
     piModelProvider: env.PMS_AGENT_PI_MODEL_PROVIDER?.trim() || undefined,
     piModelId: env.PMS_AGENT_PI_MODEL_ID?.trim() || undefined,
     logTurnEvents: env.PMS_AGENT_LOG_TURN_EVENTS === "true",
+    safetyAuditLogPath: resolve(cwd, env.PMS_AGENT_SAFETY_AUDIT_LOG?.trim() || ".local/pms-agent-audit/safety-audit.jsonl"),
     maxInboundBodyBytes: parsePositiveInteger(env.PMS_AGENT_MAX_BODY_BYTES, 256 * 1024),
     defaultHotelId: env.PMS_AGENT_DEFAULT_HOTEL_ID?.trim() || "property-small-hotel",
     defaultPropertyId: env.PMS_AGENT_DEFAULT_PROPERTY_ID?.trim() || "property-small-hotel",

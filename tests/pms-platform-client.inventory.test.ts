@@ -91,6 +91,39 @@ describe("PMS Platform client inventory reads", () => {
     });
   });
 
+  it("parses pms-platform projection shape for today arrivals", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          readModel: {
+            reservations: [
+              {
+                reservationCode: "R-001",
+                roomId: "room-D2",
+                guestDisplayName: "李晶晶",
+                status: "booked"
+              }
+            ]
+          }
+        })
+      }),
+      now: () => new Date("2026-05-09T08:00:00.000Z")
+    });
+
+    const evidence = await client.todayArrivals({
+      tenantId: "tenant_1",
+      businessDate: "2026-05-09"
+    });
+
+    expect(evidence.data.arrivals).toEqual([
+      { reservationCode: "R-001", roomId: "room-D2", guestName: "李晶晶", status: "booked" }
+    ]);
+  });
+
   it("wraps todayDepartures in evidence with parsed result", async () => {
     const client = createPmsPlatformClient({
       baseUrl: "https://pms.local",

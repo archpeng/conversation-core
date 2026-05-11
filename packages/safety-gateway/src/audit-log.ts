@@ -1,3 +1,5 @@
+import { mkdirSync, appendFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { RedactedDecisionSummary, SafetyDecision } from "./decision.js";
 
 export type SafetyAuditEvent = {
@@ -19,8 +21,11 @@ export type AuditEventOptions = {
   at?: string;
 };
 
-export type SafetyAuditJsonlWriter = {
+export type SafetyAuditSink = {
   append(event: SafetyAuditEvent): void;
+};
+
+export type SafetyAuditJsonlWriter = SafetyAuditSink & {
   flush(): string;
   events(): readonly SafetyAuditEvent[];
 };
@@ -63,12 +68,35 @@ export function createSafetyAuditJsonlWriter(): SafetyAuditJsonlWriter {
   };
 }
 
+export function createSafetyAuditJsonlFileWriter(filePath: string): SafetyAuditJsonlWriter {
+  const events: SafetyAuditEvent[] = [];
+  const lines: string[] = [];
+  mkdirSync(dirname(filePath), { recursive: true });
+  return {
+    append(event) {
+      const line = serializeSafetyAuditEvent(event);
+      events.push(event);
+      lines.push(line);
+      appendFileSync(filePath, line, "utf8");
+    },
+    flush() {
+      return lines.join("");
+    },
+    events() {
+      return events;
+    }
+  };
+}
+
 export function redactValue(value: string): string {
   if (value.length <= 4) return "[redacted]";
   return `[redacted:${value.slice(-4)}]`;
 }
 
+let auditSequence = 0;
+
 function buildAuditId(decision: SafetyDecision): string {
   const reason = decision.reasons[0]?.code ?? "none";
-  return `audit_${decision.outcome}_${decision.audit.capabilityId}_${reason}`;
+  auditSequence += 1;
+  return `audit_${auditSequence}_${decision.outcome}_${decision.audit.capabilityId}_${reason}`;
 }

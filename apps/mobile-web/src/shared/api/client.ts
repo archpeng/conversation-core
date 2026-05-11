@@ -1,0 +1,201 @@
+import {
+  productError,
+  validateActionCardExecutionResponse,
+  validateMobileAgentResponse,
+  validateProductApiError,
+  validateTaskListResponse,
+  type ActionCardExecutionInput,
+  type AgentTask,
+  type MobileAgentResponse,
+  type MobileAgentTurnInput,
+  type ProductApiError,
+  type TaskListResponse
+} from "@pms-agent-v2/product-contracts";
+
+export type GatewayScope = {
+  tenantId: string;
+  propertyId: string;
+  businessDate: string;
+};
+
+export type RoomObject = {
+  ref: { kind: "room"; id: string; label?: string; evidenceRefs?: string[] };
+  status: string;
+  roomType: string;
+  reservationRefs: string[];
+  blockRefs: string[];
+  evidenceRefs: string[];
+};
+
+export type ShiftSummary = {
+  totalTasks: number;
+  readOnly: number;
+  committed: number;
+  failed: number;
+  latestTaskAt?: string;
+  pmsAuditRefs?: {
+    total: number;
+    latest?: string;
+  };
+  safetyAudits?: {
+    total: number;
+    allow: number;
+    deny: number;
+    requireApproval: number;
+    latestAt?: string;
+  };
+};
+
+export class ProductGatewayClient {
+  private readonly baseUrl: string;
+  private readonly token?: string;
+
+  constructor(baseUrl = import.meta.env.VITE_PRODUCT_GATEWAY_BASE_URL ?? "http://127.0.0.1:8793", token = import.meta.env.VITE_PRODUCT_GATEWAY_TOKEN) {
+    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.token = token?.trim() || undefined;
+  }
+
+  async sendTurn(input: MobileAgentTurnInput): Promise<MobileAgentResponse> {
+    const payload = await this.request("/api/mobile/turn", { method: "POST", body: input });
+    const result = validateMobileAgentResponse(payload);
+    if (!result.ok) throw new Error(`Invalid gateway response: ${result.issues.join("; ")}`);
+    return result.value;
+  }
+
+  async listTasks(scope: GatewayScope): Promise<TaskListResponse> {
+    const query = new URLSearchParams(scope);
+    const payload = await this.request(`/api/tasks?${query.toString()}`, { method: "GET" });
+    const result = validateTaskListResponse(payload);
+    if (!result.ok) throw new Error(`Invalid task response: ${result.issues.join("; ")}`);
+    return result.value;
+  }
+
+  async getRoom(roomId: string, scope: Pick<GatewayScope, "tenantId" | "businessDate">): Promise<RoomObject> {
+    const query = new URLSearchParams(scope);
+    const payload = await this.request(`/api/objects/rooms/${encodeURIComponent(roomId)}?${query.toString()}`, { method: "GET" });
+    const object = parseRoomObject(payload);
+    if (!object) throw new Error("Invalid room object response.");
+    return object;
+  }
+
+  async getShiftSummary(): Promise<ShiftSummary> {
+    const payload = await this.request("/api/review/shift-summary", { method: "GET" });
+    const summary = parseShiftSummary(payload);
+    if (!summary) throw new Error("Invalid review summary response.");
+    return summary;
+  }
+
+  async executeAction(taskId: string, cardId: string, actionId: string, input: ActionCardExecutionInput): Promise<MobileAgentResponse> {
+    const payload = await this.request(`/api/tasks/${encodeURIComponent(taskId)}/action-cards/${encodeURIComponent(cardId)}/actions/${encodeURIComponent(actionId)}`, { method: "POST", body: input });
+    const result = validateActionCardExecutionResponse(payload);
+    if (!result.ok) throw new Error(`Invalid action response: ${result.issues.join("; ")}`);
+    return result.value;
+  }
+
+  private async request(path: string, init: { method: "GET" | "POST"; body?: unknown }): Promise<unknown> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method: init.method,
+      headers: {
+        accept: "application/json",
+        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        ...(this.token ? { authorization: `Bearer ${this.token}` } : {})
+      },
+      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw productGatewayError(payload);
+    return payload;
+  }
+}
+
+export function defaultScope(now = new Date()): GatewayScope {
+  return {
+    tenantId: import.meta.env.VITE_PMS_TENANT_ID ?? "tenant_1",
+    propertyId: import.meta.env.VITE_PMS_PROPERTY_ID ?? "property_small_hotel",
+    businessDate: now.toISOString().slice(0, 10)
+  };
+}
+
+export function mergeTask(existing: readonly AgentTask[], task: AgentTask): AgentTask[] {
+  const without = existing.filter((item) => item.id !== task.id);
+  return [task, ...without].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function productGatewayError(payload: unknown): Error {
+  const error = validateProductApiError(payload);
+  const fallback: ProductApiError = productError("backend_unavailable", "Product gateway request failed.");
+  const body = error.ok ? error.value : fallback;
+  return new Error(body.message);
+}
+
+function parseRoomObject(payload: unknown): RoomObject | undefined {
+  const record = asRecord(payload);
+  const object = asRecord(record?.object);
+  const ref = asRecord(object?.ref);
+  if (!record || record.ok !== true || !object || !ref) return undefined;
+  if (ref.kind !== "room" || typeof ref.id !== "string" || typeof object.status !== "string" || typeof object.roomType !== "string") return undefined;
+  return {
+    ref: {
+      kind: "room",
+      id: ref.id,
+      ...(typeof ref.label === "string" ? { label: ref.label } : {}),
+      evidenceRefs: stringArray(ref.evidenceRefs)
+    },
+    status: object.status,
+    roomType: object.roomType,
+    reservationRefs: stringArray(object.reservationRefs),
+    blockRefs: stringArray(object.blockRefs),
+    evidenceRefs: stringArray(object.evidenceRefs)
+  };
+}
+
+function parseShiftSummary(payload: unknown): ShiftSummary | undefined {
+  const record = asRecord(payload);
+  const summary = asRecord(record?.summary);
+  if (!record || record.ok !== true || !summary) return undefined;
+  if (typeof summary.totalTasks !== "number" || typeof summary.readOnly !== "number" || typeof summary.committed !== "number" || typeof summary.failed !== "number") return undefined;
+  return {
+    totalTasks: summary.totalTasks,
+    readOnly: summary.readOnly,
+    committed: summary.committed,
+    failed: summary.failed,
+    ...(typeof summary.latestTaskAt === "string" ? { latestTaskAt: summary.latestTaskAt } : {}),
+    ...parsePmsAuditRefs(summary.pmsAuditRefs),
+    ...parseSafetyAudits(summary.safetyAudits)
+  };
+}
+
+function parsePmsAuditRefs(value: unknown): Pick<ShiftSummary, "pmsAuditRefs"> {
+  const record = asRecord(value);
+  if (!record || typeof record.total !== "number") return {};
+  return {
+    pmsAuditRefs: {
+      total: record.total,
+      ...(typeof record.latest === "string" ? { latest: record.latest } : {})
+    }
+  };
+}
+
+function parseSafetyAudits(value: unknown): Pick<ShiftSummary, "safetyAudits"> {
+  const record = asRecord(value);
+  if (!record || typeof record.total !== "number" || typeof record.allow !== "number" || typeof record.deny !== "number" || typeof record.requireApproval !== "number") return {};
+  return {
+    safetyAudits: {
+      total: record.total,
+      allow: record.allow,
+      deny: record.deny,
+      requireApproval: record.requireApproval,
+      ...(typeof record.latestAt === "string" ? { latestAt: record.latestAt } : {})
+    }
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}

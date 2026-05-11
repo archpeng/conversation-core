@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import type {
   CreateReservationDraftInput,
   CreateReservationGroupDraftInput,
+  CancelPendingActionInput,
+  ConfirmPendingActionInput,
   PendingActionStatusInput,
   SearchAvailabilityInput,
   UpdateReservationDraftInput,
@@ -117,6 +119,38 @@ export function pendingActionStatusRequestBody(input: PendingActionStatusInput, 
     actor: { type: "ai", id: "pms-agent-v2", displayName: "PMS Agent V2" },
     scope: { propertyId: "property-small-hotel", channel: "typed_card" },
     clientToken: `pms-agent-v2-pending-status-${fingerprint.slice(0, 16)}`,
+    requestFingerprint: `sha256:${fingerprint}`,
+    correlationId: `corr-${fingerprint.slice(0, 24)}`,
+    requestedAt,
+    ...(input.cardPayloadRef ? { cardPayloadRef: input.cardPayloadRef } : {})
+  };
+}
+
+export function confirmPendingActionRequestBody(input: ConfirmPendingActionInput, now: () => Date): Record<string, unknown> {
+  return pendingActionCallbackRequestBody("pms.pending_action.confirm", input, now);
+}
+
+export function cancelPendingActionRequestBody(input: CancelPendingActionInput, now: () => Date): Record<string, unknown> {
+  return {
+    ...pendingActionCallbackRequestBody("pms.pending_action.cancel", input, now),
+    reason: input.reason
+  };
+}
+
+function pendingActionCallbackRequestBody(operation: string, input: ConfirmPendingActionInput, now: () => Date): Record<string, unknown> {
+  const requestedAt = now().toISOString();
+  const pendingActionRef = input.pendingActionRef ?? input.pendingActionId;
+  const fingerprint = workflowFingerprint(operation, input);
+  return {
+    operation,
+    pendingActionRef,
+    actor: {
+      type: input.actor.type,
+      id: input.actor.id,
+      ...(input.actor.displayName ? { displayName: input.actor.displayName } : {})
+    },
+    scope: { propertyId: input.propertyId ?? "property-small-hotel", channel: "typed_card" },
+    clientToken: `pms-agent-v2-${operationHash(operation)}-${fingerprint.slice(0, 16)}`,
     requestFingerprint: `sha256:${fingerprint}`,
     correlationId: `corr-${fingerprint.slice(0, 24)}`,
     requestedAt,

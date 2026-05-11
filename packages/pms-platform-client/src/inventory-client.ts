@@ -94,7 +94,7 @@ export function todayArrivalsMethod(
     input.tenantId,
     {
       method: "POST",
-      route: "/v1/pms/arrivals/today",
+      route: "/v1/pms/reservations/today-arrivals",
       body: {
         tenantId: input.tenantId,
         businessDate: input.businessDate
@@ -117,7 +117,7 @@ export function todayDeparturesMethod(
     input.tenantId,
     {
       method: "POST",
-      route: "/v1/pms/departures/today",
+      route: "/v1/pms/reservations/today-departures",
       body: {
         tenantId: input.tenantId,
         businessDate: input.businessDate

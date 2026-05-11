@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { GatedToolExecutor, GatedToolRequest } from "@pms-agent-v2/gated-tools";
-import { createPmsPlatformClient, type AvailabilitySearchResult, type PmsEvidence, type RoomTypeCatalogItem, type RoomTypeCatalogResult } from "@pms-agent-v2/pms-platform-client";
+import { createPmsEvidence, createPmsPlatformClient, type AvailabilitySearchResult, type PmsEvidence, type RoomTypeCatalogItem, type RoomTypeCatalogResult } from "@pms-agent-v2/pms-platform-client";
 import type {
   PmsReadExecutorMap,
   PmsWorkflowExecutorMap,
@@ -266,17 +266,20 @@ function catalogBackedRoomTypeMissEvidence(
   requestedRoomType: string
 ): PmsEvidence<AvailabilitySearchResult> {
   const configured = evidence.data.roomTypes.map((item) => `${item.displayName} ${item.roomCount}`).join(", ");
-  return {
-    ...evidence,
-    summary: `Room type catalog shows this hotel has no configured room type ${requestedRoomType}. Configured room types: ${configured || "none"}.`,
+  return createPmsEvidence({
+    method: "searchAvailability",
+    tenantId: evidence.scope.tenantId,
+    fetchedAt: evidence.fetchedAt,
+    summary: `Availability search did not run because room type catalog shows this hotel has no configured room type ${requestedRoomType}. Configured room types: ${configured || "none"}. sourceRefs=${evidence.evidenceRef}`,
     data: {
       rooms: [],
+      sourceRefs: [evidence.evidenceRef],
       availableRoomTypes: evidence.data.roomTypes.map((item) => ({
         roomType: item.displayName,
         count: item.roomCount
       }))
     }
-  };
+  });
 }
 
 function draftIdentifier(request: GatedToolRequest): { draftId: string } | { draftRef: string } {

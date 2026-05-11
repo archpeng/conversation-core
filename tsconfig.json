@@ -2,7 +2,9 @@
   "files": [],
   "references": [
     { "path": "apps/agent-service" },
+    { "path": "apps/product-gateway" },
     { "path": "packages/adapter-contracts" },
+    { "path": "packages/product-contracts" },
     { "path": "packages/unified-agent" },
     { "path": "packages/safety-gateway" },
     { "path": "packages/gated-tools" },

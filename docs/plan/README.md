@@ -16,8 +16,8 @@
 
 - Active state: `PACK_COMPLETE`
 - Active triplet: none
-- Latest gate: `pnpm build` passed; `pnpm test` passed with 28 Vitest files passed / 1 skipped, 190 tests passed / 2 skipped, boundary guard passed, eval 21/21 with 22 audit events.
-- Latest closed pack: `pms-agent-agents-readability-r0-r6-v1-2026-05-10`
+- Latest gate: `pnpm build` passed; `pnpm test` passed with 29 Vitest files passed / 1 skipped, 197 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
+- Latest closed pack: `pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`
 
@@ -25,18 +25,19 @@
 
 Closed pack archive:
 
-- `docs/plan-archive/pms-agent-agents-readability-r0-r6-v1-2026-05-10/`
+- `docs/plan-archive/pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11/`
 
 Closed pack result:
 
-- Removed production runtime cast debt with owner-bound runtime modules
-- Split oversized pms-platform-client, workspace-core, eval, and PMS client test surfaces
-- Bounded degraded fallback and response synthesis regex policy in named owner modules
-- Centralized `notConfiguredExecutor` and typed noisy test stubs
+- Runtime Safety audit persists JSONL events with unique IDs
+- Catalog-backed room-type misses now keep `searchAvailability` evidence semantics
+- Added `guard:ai-readiness` for line budgets and risky type patterns
+- Extracted `workspace-tools` audit, active-skills, error, and skill-proposal owner modules
+- Refreshed architecture/test/eval statistics
 
 Closeout artifact:
 
-- `docs/plan-archive/pms-agent-agents-readability-r0-r6-v1-2026-05-10/pms-agent-agents-readability-r0-r6-v1-2026-05-10_CLOSEOUT.md`
+- `docs/plan-archive/pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11/pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11_CLOSEOUT.md`
 
 Successor pack:
 

@@ -4,9 +4,11 @@ import {
   isAgentResult,
   validateFeishuTurnInput,
   type AgentResult,
+  type FeishuActorRole,
   type FeishuTurnInput
 } from "@pms-agent-v2/adapter-contracts";
 import type { SafetyGatewayPort } from "@pms-agent-v2/gated-tools";
+import { validateMobileAgentTurnInput, type MobileAgentTurnInput } from "@pms-agent-v2/product-contracts";
 import {
   createUnifiedAgentSession,
   loadAgentProfile,
@@ -79,7 +81,21 @@ export async function handleAgentServiceRequest(input: CreateAgentServiceInput, 
     return handleTurn(input, request.body, sessions);
   }
 
+  if (method === "POST" && request.path === "/v1/mobile-turn") {
+    return handleMobileTurn(input, request.body, sessions);
+  }
+
   return json(404, refusal("unsupported", "Unsupported route."));
+}
+
+async function handleMobileTurn(input: CreateAgentServiceInput, body: unknown, sessions: Map<string, CachedUnifiedAgentSession>): Promise<AgentServiceResponse> {
+  const decoded = decodeJsonBody(body);
+  if (!decoded.ok) return json(400, refusal("invalid_request", "Request body must be JSON object."));
+
+  const turn = validateMobileAgentTurnInput(decoded.value);
+  if (!turn.ok) return json(400, refusal("invalid_request", "Invalid mobile turn input."));
+
+  return runInternalTurn(input, mobileTurnToAgentTurn(turn.value), sessions);
 }
 
 async function handleTurn(input: CreateAgentServiceInput, body: unknown, sessions: Map<string, CachedUnifiedAgentSession>): Promise<AgentServiceResponse> {
@@ -89,9 +105,13 @@ async function handleTurn(input: CreateAgentServiceInput, body: unknown, session
   const turn = validateFeishuTurnInput(decoded.value);
   if (!turn.ok) return json(400, refusal("invalid_request", "Invalid Feishu turn input."));
 
+  return runInternalTurn(input, turn.value, sessions);
+}
+
+async function runInternalTurn(input: CreateAgentServiceInput, turn: FeishuTurnInput, sessions: Map<string, CachedUnifiedAgentSession>): Promise<AgentServiceResponse> {
   try {
-    const session = await getOrCreateUnifiedSession(input, sessions, turn.value);
-    const result = await runAgentTurn(session, turn.value, { eventSink: input.eventSink });
+    const session = await getOrCreateUnifiedSession(input, sessions, turn);
+    const result = await runAgentTurn(session, turn, { eventSink: input.eventSink });
 
     if (!isAgentResult(result)) {
       return json(502, refusal("unsupported", "Agent returned unsupported result."));
@@ -102,6 +122,27 @@ async function handleTurn(input: CreateAgentServiceInput, body: unknown, session
     emitRuntimeFailure(input, error);
     return json(502, refusal("unsupported", runtimeFailureMessage));
   }
+}
+
+function mobileTurnToAgentTurn(turn: MobileAgentTurnInput): FeishuTurnInput {
+  return {
+    channel: "feishu",
+    tenantId: turn.tenantId,
+    sessionId: `mobile:${turn.sessionId}`,
+    messageId: turn.messageId,
+    actor: {
+      role: mobileRoleToAgentRole(turn.actor.role),
+      id: turn.actor.id,
+      ...(turn.actor.displayName ? { displayName: turn.actor.displayName } : {})
+    },
+    message: { text: turn.message.text },
+    receivedAt: turn.receivedAt
+  };
+}
+
+function mobileRoleToAgentRole(role: MobileAgentTurnInput["actor"]["role"]): FeishuActorRole {
+  if (role === "manager") return "staff";
+  return role;
 }
 
 function emitRuntimeFailure(input: CreateAgentServiceInput, error: unknown): void {

@@ -231,14 +231,14 @@ export function parseRoomReservationContextResult(value: unknown): RoomReservati
 
 export function parseTodayArrivalsResult(value: unknown): TodayArrivalsResult {
   const object = assertRecord(value, "today arrivals response");
-  const rawArrivals = object.arrivals;
+  const rawArrivals = reservationListProjection(object, "arrivals");
   if (!Array.isArray(rawArrivals)) throw new Error("arrivals must be an array");
   const arrivals = rawArrivals.map((item, index) => {
     const entry = assertRecord(item, `arrivals[${index}]`);
     return {
       reservationCode: assertText(entry.reservationCode, `arrivals[${index}].reservationCode`),
       roomId: assertText(entry.roomId, `arrivals[${index}].roomId`),
-      guestName: assertText(entry.guestName, `arrivals[${index}].guestName`),
+      guestName: assertText(entry.guestName ?? entry.guestDisplayName, `arrivals[${index}].guestName`),
       status: assertText(entry.status, `arrivals[${index}].status`)
     };
   });
@@ -247,18 +247,26 @@ export function parseTodayArrivalsResult(value: unknown): TodayArrivalsResult {
 
 export function parseTodayDeparturesResult(value: unknown): TodayDeparturesResult {
   const object = assertRecord(value, "today departures response");
-  const rawDepartures = object.departures;
+  const rawDepartures = reservationListProjection(object, "departures");
   if (!Array.isArray(rawDepartures)) throw new Error("departures must be an array");
   const departures = rawDepartures.map((item, index) => {
     const entry = assertRecord(item, `departures[${index}]`);
     return {
       reservationCode: assertText(entry.reservationCode, `departures[${index}].reservationCode`),
       roomId: assertText(entry.roomId, `departures[${index}].roomId`),
-      guestName: assertText(entry.guestName, `departures[${index}].guestName`),
+      guestName: assertText(entry.guestName ?? entry.guestDisplayName, `departures[${index}].guestName`),
       status: assertText(entry.status, `departures[${index}].status`)
     };
   });
   return { departures };
+}
+
+function reservationListProjection(object: Record<string, unknown>, legacyKey: "arrivals" | "departures"): unknown {
+  if (Array.isArray(object[legacyKey])) return object[legacyKey];
+  const readModelValue = object.readModel;
+  if (!readModelValue || typeof readModelValue !== "object" || Array.isArray(readModelValue)) return undefined;
+  const readModel = readModelValue as Record<string, unknown>;
+  return readModel.reservations;
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,8 @@ export { createPmsEvidence, type PmsEvidence, type PmsEvidenceMethod, type PmsEv
 
 export type {
   AvailabilitySearchResult,
+  CancelPendingActionInput,
+  ConfirmPendingActionInput,
   CreateReservationDraftInput,
   CreateReservationGroupDraftInput,
   GetReservationInput,
@@ -23,6 +25,9 @@ export type {
   HealthResult,
   HotelProfileInput,
   HotelProfileResult,
+  PendingActionCallbackActor,
+  PendingActionCallbackFact,
+  PendingActionCallbackInput,
   PendingActionStatusFact,
   PendingActionStatusInput,
   PmsCapabilityManifest,

@@ -29,6 +29,7 @@ export type RoomTypeAvailabilitySummary = {
 export type AvailabilitySearchResult = {
   rooms: RoomAvailability[];
   availableRoomTypes?: RoomTypeAvailabilitySummary[];
+  sourceRefs?: string[];
 };
 
 export function validateSearchAvailabilityInput(input: SearchAvailabilityInput): void {

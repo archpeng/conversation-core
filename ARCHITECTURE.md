@@ -138,14 +138,14 @@ tests/
   unified-agent.pms-workflow.test.ts  — PMS booking workflows
   unified-agent.events-control.test.ts — event emission, control plane
   unified-agent.helpers.ts            — shared test fixtures
-  ... (20 files, 172 tests)
+  ... (30 files, 197+ passing tests / 2 skipped)
 
 packages/evals/src/
-  index.ts       — types, runner, CLI (148 lines)
-  eval-cases.ts  — 19 eval functions across 12 categories (557 lines)
+  index.ts       — types, runner, CLI (153 lines)
+  eval-cases.ts  — eval functions across 12 categories (343 lines)
 ```
 
-Eval categories: grounding, prepare-confirm, natural-confirm, sandbox, skill-proposal, prompt-injection, profile-boundary, session-continuity, intent-clarification, context-advisory, tool-planning, response-synthesis.
+Eval categories: grounding, prepare-confirm, natural-confirm, sandbox, skill-proposal, prompt-injection, profile-boundary, session-continuity, intent-clarification, context-advisory, tool-planning, response-synthesis. Current eval gate is 21/21.
 
 ## Invariants
 
@@ -156,4 +156,4 @@ Eval categories: grounding, prepare-confirm, natural-confirm, sandbox, skill-pro
 5. **Planes don't leak**. Each package's imports stay within its plane's allowed direction.
 6. **No `as Partial<T>`**. Type guards use `Record<string, unknown>`. The honest type for unvalidated objects.
 7. **<350 line ceiling**. Source files exceeding this extract an owner-bound module — move code, don't redesign.
-8. **Gate before done**. `pnpm build && pnpm test` (172+ tests, boundary guard, 19/19 evals) must pass.
+8. **Gate before done**. `pnpm build && pnpm test` (Vitest, boundary guard, AI-readiness guard, 21/21 evals) must pass.

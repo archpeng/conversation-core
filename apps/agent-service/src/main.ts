@@ -13,6 +13,7 @@ export async function main(): Promise<void> {
     },
     pmsPlatformBaseUrl: config.pmsPlatformBaseUrl,
     proposalWorkspacePath: config.proposalWorkspacePath,
+    safetyAuditLogPath: config.safetyAuditLogPath,
     piMode: config.piMode,
     piSessionMode: config.piSessionMode,
     logTurnEvents: config.logTurnEvents

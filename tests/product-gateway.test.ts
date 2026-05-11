@@ -1,0 +1,306 @@
+import { describe, expect, it } from "vitest";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createPmsEvidence } from "../packages/pms-platform-client/src/index.js";
+import { createHttpAgentClient, type AgentClient } from "../apps/product-gateway/src/clients/agent-client.js";
+import { createProductGatewayService } from "../apps/product-gateway/src/index.js";
+import type { ProductGatewayConfig, ProductGatewayPmsClient } from "../apps/product-gateway/src/types.js";
+
+const config: ProductGatewayConfig = {
+  host: "127.0.0.1",
+  port: 0,
+  maxInboundBodyBytes: 1024 * 1024,
+  productGatewayAuthToken: "product-token",
+  pmsAgentBaseUrl: "https://agent.local",
+  pmsAgentAuthToken: "agent-secret",
+  pmsPlatformBaseUrl: "https://pms.local",
+  pmsPlatformAuthToken: "pms-secret",
+  defaultTenantId: "tenant_1",
+  defaultPropertyId: "property_small_hotel"
+};
+
+describe("product gateway service", () => {
+  it("requires product gateway auth without leaking backend tokens", async () => {
+    const service = createProductGatewayService(config, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient()
+    });
+
+    const response = await service.handle(request("GET", "/api/tasks", undefined, {}));
+
+    expect(response.status).toBe(401);
+    expect(JSON.stringify(response.body)).not.toContain("agent-secret");
+    expect(JSON.stringify(response.body)).not.toContain("pms-secret");
+  });
+
+  it("wraps a mobile turn into an agent task", async () => {
+    const service = createProductGatewayService(config, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient()
+    });
+
+    const response = await service.handle(request("POST", "/api/mobile/turn", {
+      channel: "mobile",
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
+      sessionId: "mobile_session_1",
+      messageId: "message_1",
+      actor: { role: "staff", id: "staff_1" },
+      message: { text: "今天到店情况" },
+      receivedAt: "2026-05-11T08:00:00.000Z"
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      ok: true,
+      task: {
+        title: "Agent response",
+        status: "read_only",
+        evidenceRefs: ["pms_ev_1"]
+      }
+    });
+  });
+
+  it("builds a real-backend-only read feed from PMS evidence", async () => {
+    const service = createProductGatewayService(config, {
+      agentClient: fakeAgentClient(),
+      pmsClient: fakePmsClient()
+    });
+
+    const response = await service.handle(request("GET", "/api/tasks"));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      ok: true,
+      tasks: expect.arrayContaining([
+        expect.objectContaining({ title: "今日到店", status: "read_only", evidenceRefs: ["pms_ev_tenant_1_todayArrivals_1778457600000"] }),
+        expect.objectContaining({ title: "今日离店", status: "read_only" }),
+        expect.objectContaining({ title: "今日库存", status: "read_only" })
+      ])
+    });
+  });
+
+  it("returns backend_unavailable instead of mock data when PMS is down", async () => {
+    const pmsClient: ProductGatewayPmsClient = {
+      todayArrivals: async () => {
+        throw new Error("down");
+      },
+      todayDepartures: fakePmsClient().todayDepartures,
+      inventorySummary: fakePmsClient().inventorySummary,
+      getRoom: fakePmsClient().getRoom,
+      roomReservationContext: fakePmsClient().roomReservationContext,
+      confirmPendingAction: fakePmsClient().confirmPendingAction,
+      cancelPendingAction: fakePmsClient().cancelPendingAction
+    };
+    const service = createProductGatewayService(config, {
+      agentClient: fakeAgentClient(),
+      pmsClient
+    });
+
+    const response = await service.handle(request("GET", "/api/tasks"));
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({ ok: false, code: "backend_unavailable", message: "PMS Platform read model is unavailable." });
+  });
+
+  it("calls the mobile-native agent route without Feishu-shaped gateway adaptation", async () => {
+    const calls: { url: string; body: unknown }[] = [];
+    const client = createHttpAgentClient({
+      baseUrl: "https://agent.local/",
+      authToken: "agent-secret",
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+        return { ok: true, json: async () => ({ type: "text", text: "ok" }) } as Response;
+      }
+    });
+
+    await client.runMobileTurn({
+      channel: "mobile",
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
+      sessionId: "mobile_session_1",
+      messageId: "message_1",
+      actor: { role: "manager", id: "manager_1" },
+      message: { text: "今天到店情况" },
+      receivedAt: "2026-05-11T08:00:00.000Z"
+    });
+
+    expect(calls).toEqual([{
+      url: "https://agent.local/v1/mobile-turn",
+      body: expect.objectContaining({ channel: "mobile", sessionId: "mobile_session_1", actor: { role: "manager", id: "manager_1" } })
+    }]);
+  });
+
+  it("executes typed action cards through PMS pending action callbacks", async () => {
+    const service = createProductGatewayService(config, {
+      agentClient: fakeApprovalAgentClient(),
+      pmsClient: fakePmsClient()
+    });
+
+    const created = await service.handle(request("POST", "/api/mobile/turn", {
+      channel: "mobile",
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
+      sessionId: "mobile_session_1",
+      messageId: "message_1",
+      actor: { role: "staff", id: "staff_1" },
+      message: { text: "帮客人确认预订" },
+      receivedAt: "2026-05-11T08:00:00.000Z"
+    }));
+    const createdBody = created.body as { task: { id: string; actionCards: { id: string }[] } };
+    const cardId = createdBody.task.actionCards[0].id;
+    const executed = await service.handle(request("POST", `/api/tasks/${createdBody.task.id}/action-cards/${cardId}/actions/confirm`, {
+      actor: { role: "staff", id: "staff_1" }
+    }));
+
+    expect(executed.status).toBe(200);
+    expect(executed.body).toMatchObject({
+      ok: true,
+      task: {
+        status: "committed",
+        evidenceRefs: expect.arrayContaining(["pms_ev_tenant_1_confirmPendingAction_1778457600000"]),
+        auditRefs: ["audit_pending_confirm_1"],
+        actionCards: [expect.objectContaining({ mutationStatus: "committed", auditRefs: ["audit_pending_confirm_1"] })]
+      }
+    });
+  });
+
+  it("summarizes safety audit JSONL and PMS audit refs in review", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "pms-product-gateway-review-"));
+    const safetyAuditLogPath = path.join(root, "safety-audit.jsonl");
+    await writeFile(safetyAuditLogPath, [
+      JSON.stringify({ id: "audit_1", at: "2026-05-11T08:00:00.000Z", outcome: "allow", capabilityId: "pms_availability_search", riskLevel: "low" }),
+      JSON.stringify({ id: "audit_2", at: "2026-05-11T08:01:00.000Z", outcome: "deny", capabilityId: "sandbox_bash", riskLevel: "high" })
+    ].join("\n"), "utf8");
+    const service = createProductGatewayService({ ...config, safetyAuditLogPath }, {
+      agentClient: fakeApprovalAgentClient(),
+      pmsClient: fakePmsClient()
+    });
+    const created = await service.handle(request("POST", "/api/mobile/turn", {
+      channel: "mobile",
+      tenantId: "tenant_1",
+      sessionId: "mobile_session_1",
+      messageId: "message_1",
+      actor: { role: "staff", id: "staff_1" },
+      message: { text: "确认" },
+      receivedAt: "2026-05-11T08:00:00.000Z"
+    }));
+    const createdBody = created.body as { task: { id: string; actionCards: { id: string }[] } };
+    await service.handle(request("POST", `/api/tasks/${createdBody.task.id}/action-cards/${createdBody.task.actionCards[0].id}/actions/confirm`, {
+      actor: { role: "staff", id: "staff_1" }
+    }));
+
+    const review = await service.handle(request("GET", "/api/review/shift-summary"));
+
+    expect(review.status).toBe(200);
+    expect(review.body).toMatchObject({
+      ok: true,
+      summary: {
+        committed: 1,
+        pmsAuditRefs: { total: 1, latest: "audit_pending_confirm_1" },
+        safetyAudits: { total: 2, allow: 1, deny: 1, requireApproval: 0, latestAt: "2026-05-11T08:01:00.000Z" }
+      }
+    });
+  });
+});
+
+function request(method: string, path: string, body?: unknown, headers: Record<string, string | undefined> = { authorization: "Bearer product-token" }) {
+  return {
+    method,
+    path,
+    query: new URLSearchParams(),
+    headers,
+    body
+  };
+}
+
+function fakeAgentClient(): AgentClient {
+  return {
+    async runMobileTurn() {
+      return { type: "text", text: "今天有 1 间房到店。", evidenceRefs: ["pms_ev_1"] };
+    }
+  };
+}
+
+function fakeApprovalAgentClient(): AgentClient {
+  return {
+    async runMobileTurn() {
+      return {
+        type: "approval_card",
+        card: {
+          type: "pms_pending_action_card",
+          ref: {
+            type: "pms_pending_action",
+            tenantId: "tenant_1",
+            pendingActionId: "pending_1",
+            pendingActionRef: "pending_1",
+            cardPayloadRef: "card_1",
+            action: "reservation_confirm"
+          },
+          title: "确认预订",
+          summary: "请通过 typed card 确认 PMS mutation。",
+          confirmLabel: "确认",
+          cancelLabel: "取消"
+        }
+      };
+    }
+  };
+}
+
+function fakePmsClient(): ProductGatewayPmsClient {
+  return {
+    todayArrivals: async () => createPmsEvidence({
+      method: "todayArrivals",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { arrivals: [{ reservationCode: "RES-001", roomId: "room_1", guestName: "Alice", status: "pending" }] },
+      summary: "Arrival facts."
+    }),
+    todayDepartures: async () => createPmsEvidence({
+      method: "todayDepartures",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { departures: [] },
+      summary: "Departure facts."
+    }),
+    inventorySummary: async () => createPmsEvidence({
+      method: "inventorySummary",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: {
+        dates: [{ date: "2026-05-11", total: 10, available: 6, reserved: 3, blocked: 1, occupied: 0 }],
+        roomTypes: [{ roomType: "花园套房", total: 4 }]
+      },
+      summary: "Inventory facts."
+    }),
+    getRoom: async () => createPmsEvidence({
+      method: "getRoom",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { roomId: "room_1", roomType: "花园套房", status: "available" },
+      summary: "Room facts."
+    }),
+    roomReservationContext: async () => createPmsEvidence({
+      method: "roomReservationContext",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { roomId: "room_1", currentStatus: "available", reservationRefs: [], blockRefs: [] },
+      summary: "Room context."
+    }),
+    confirmPendingAction: async () => createPmsEvidence({
+      method: "confirmPendingAction",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { pendingActionId: "pending_1", status: "confirmed", mutationStatus: "committed", idempotencyStatus: "confirmed", auditRefs: ["audit_pending_confirm_1"] },
+      summary: "Pending action confirmed."
+    }),
+    cancelPendingAction: async () => createPmsEvidence({
+      method: "cancelPendingAction",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { pendingActionId: "pending_1", status: "cancelled", mutationStatus: "none", idempotencyStatus: "cancelled", auditRefs: ["audit_pending_cancel_1"] },
+      summary: "Pending action cancelled."
+    })
+  };
+}

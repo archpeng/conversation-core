@@ -37,10 +37,12 @@ export { decideToolRequest } from "./policy-engine.js";
 
 export {
   createSafetyAuditEvent,
+  createSafetyAuditJsonlFileWriter,
   createSafetyAuditJsonlWriter,
   redactValue,
   serializeSafetyAuditEvent,
   type AuditEventOptions,
   type SafetyAuditEvent,
+  type SafetyAuditSink,
   type SafetyAuditJsonlWriter
 } from "./audit-log.js";

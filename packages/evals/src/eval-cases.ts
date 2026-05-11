@@ -310,9 +310,10 @@ export async function availabilityDiscrepancy(writer: SafetyAuditJsonlWriter): P
 export async function nonexistentRoomType(writer: SafetyAuditJsonlWriter): Promise<void> {
   const availabilityAudits = auditCount(writer, "pms_availability_search", "allow");
   const evidenceItem = fakePmsEvidence<AvailabilitySearchResult>({
-    method: "roomTypeCatalog",
+    method: "searchAvailability",
     data: {
       rooms: [],
+      sourceRefs: ["pms_ev_tenant_1_roomTypeCatalog_1778068800000"],
       availableRoomTypes: [
         { roomType: "花园别墅", count: 6 },
         { roomType: "花园套房", count: 2 },

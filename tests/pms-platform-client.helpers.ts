@@ -49,6 +49,8 @@ function responseFor(url: string): unknown {
   if (url.endsWith("/v1/pms/reservation-drafts/quote")) return { quoteId: "quote_1", totalCents: 12800, currency: "CNY" };
   if (url.endsWith("/v1/pms/reservation-drafts/prepare-confirm")) return { pendingActionId: "pending_1", confirmationMode: "typedCardOnly", mutationStatus: "none" };
   if (url.endsWith("/v1/pms/pending-actions/status")) return { pendingActionId: "pending_1", status: "pending" };
+  if (url.endsWith("/v1/pms/pending-actions/confirm")) return { ok: true, operation: "pms.pending_action.confirm", status: "ok", mutationStatus: "committed", idempotencyStatus: "confirmed", pendingAction: { pendingActionRef: "pending_1", status: "confirmed", auditRefs: [{ auditId: "audit_pending_confirm_1" }] }, reservation: { reservationCode: "RES-001" } };
+  if (url.endsWith("/v1/pms/pending-actions/cancel")) return { ok: true, operation: "pms.pending_action.cancel", status: "ok", mutationStatus: "none", idempotencyStatus: "cancelled", pendingAction: { pendingActionRef: "pending_1", status: "cancelled", auditRefs: [{ auditId: "audit_pending_cancel_1" }] } };
   if (url.endsWith("/v1/pms/inventory/summary")) return {
     readModel: {
       summaries: [
@@ -65,13 +67,13 @@ function responseFor(url: string): unknown {
     reservationRefs: ["res_ref_1", "res_ref_2"],
     blockRefs: ["block_ref_1"]
   };
-  if (url.endsWith("/v1/pms/arrivals/today")) return {
+  if (url.endsWith("/v1/pms/reservations/today-arrivals")) return {
     arrivals: [
       { reservationCode: "RES-001", roomId: "room_1", guestName: "Alice", status: "checkedIn" },
       { reservationCode: "RES-002", roomId: "room_2", guestName: "Bob", status: "pending" }
     ]
   };
-  if (url.endsWith("/v1/pms/departures/today")) return {
+  if (url.endsWith("/v1/pms/reservations/today-departures")) return {
     departures: [
       { reservationCode: "RES-003", roomId: "room_3", guestName: "Charlie", status: "checkedOut" }
     ]

@@ -1,5 +1,7 @@
 import type { PmsEvidence } from "./evidence.js";
 import {
+  cancelPendingActionRequestBody,
+  confirmPendingActionRequestBody,
   createReservationDraftRequestBody,
   createReservationGroupDraftRequestBody,
   pendingActionStatusRequestBody,
@@ -11,12 +13,15 @@ import {
 import { type ClientOptions, requestEvidence, validateInput } from "./client-core.js";
 import {
   parsePendingActionStatusFact,
+  parsePendingActionCallbackFact,
   parseReservationConfirmPreparation,
   parseReservationDraftFact,
   parseReservationGroupConfirmPreparation,
   parseReservationGroupDraftFact,
   parseReservationGroupQuoteFact,
   parseReservationQuoteFact,
+  validateCancelPendingActionInput,
+  validateConfirmPendingActionInput,
   validateCreateReservationDraftInput,
   validateCreateReservationGroupDraftInput,
   validatePendingActionStatusInput,
@@ -26,8 +31,11 @@ import {
   validateQuoteReservationGroupDraftInput,
   validateUpdateReservationDraftInput,
   validateUpdateReservationGroupDraftInput,
+  type CancelPendingActionInput,
+  type ConfirmPendingActionInput,
   type CreateReservationDraftInput,
   type CreateReservationGroupDraftInput,
+  type PendingActionCallbackFact,
   type PendingActionStatusFact,
   type PendingActionStatusInput,
   type PrepareReservationConfirmInput,
@@ -53,6 +61,8 @@ export type PmsWorkflowClientMethods = {
   quoteReservationGroupDraft(input: QuoteReservationGroupDraftInput): Promise<PmsEvidence<ReservationGroupQuoteFact>>;
   prepareReservationGroupConfirm(input: PrepareReservationGroupConfirmInput): Promise<PmsEvidence<ReservationConfirmPreparation>>;
   pendingActionStatus(input: PendingActionStatusInput): Promise<PmsEvidence<PendingActionStatusFact>>;
+  confirmPendingAction(input: ConfirmPendingActionInput): Promise<PmsEvidence<PendingActionCallbackFact>>;
+  cancelPendingAction(input: CancelPendingActionInput): Promise<PmsEvidence<PendingActionCallbackFact>>;
 };
 
 export function createPmsWorkflowClientMethods(options: ClientOptions): PmsWorkflowClientMethods {
@@ -92,6 +102,14 @@ export function createPmsWorkflowClientMethods(options: ClientOptions): PmsWorkf
     pendingActionStatus: (input) => {
       validateInput("pendingActionStatus", () => validatePendingActionStatusInput(input));
       return requestEvidence(options, "pendingActionStatus", input.tenantId, { method: "POST", route: "/v1/pms/pending-actions/status", body: pendingActionStatusRequestBody(input, options.now) }, parsePendingActionStatusFact, () => "Pending action status facts returned from PMS Platform.");
+    },
+    confirmPendingAction: (input) => {
+      validateInput("confirmPendingAction", () => validateConfirmPendingActionInput(input));
+      return requestEvidence(options, "confirmPendingAction", input.tenantId, { method: "POST", route: "/v1/pms/pending-actions/confirm", body: confirmPendingActionRequestBody(input, options.now) }, parsePendingActionCallbackFact, (fact) => `Pending action ${fact.pendingActionId} confirmed with ${fact.mutationStatus} mutation status.`);
+    },
+    cancelPendingAction: (input) => {
+      validateInput("cancelPendingAction", () => validateCancelPendingActionInput(input));
+      return requestEvidence(options, "cancelPendingAction", input.tenantId, { method: "POST", route: "/v1/pms/pending-actions/cancel", body: cancelPendingActionRequestBody(input, options.now) }, parsePendingActionCallbackFact, (fact) => `Pending action ${fact.pendingActionId} cancelled with ${fact.mutationStatus} mutation status.`);
     }
   };
 }
