@@ -9,6 +9,12 @@ Latest repo-local verification after the AGENTS/readability cleanup:
 - `pms-agent-v2`: `pnpm build` passed.
 - `pms-agent-v2`: `pnpm test` passed with 28 Vitest files passed / 1 skipped, 190 tests passed / 2 skipped, boundary guard passed, and eval ok=true 21/21 with 22 audit events.
 
+External residual closeout verification on 2026-05-11:
+
+- `pms-platform`: `npm run verify` passed with boundary check, build, and 28 Vitest files / 108 tests.
+- `pms-agent-v2`: `pnpm build` passed.
+- `pms-agent-v2`: `pnpm test` passed with 28 Vitest files passed / 1 skipped, 190 tests passed / 2 skipped, boundary guard passed, and eval ok=true 21/21 with 22 audit events.
+
 Original verification at the time of audit:
 
 - `pms-agent-v2`: `pnpm build && pnpm test` passed, including 178 tests, boundary guard, and eval 21/21.
@@ -72,26 +78,28 @@ Prefer typed `currentPmsFact`, evidence refs, mutation status, and approval meta
 
 Severity: medium
 
-Status: open external residual
+Status: resolved externally / archived in `pms-platform`
 
 Owner boundary: `pms-platform` local HTTP boundary
 
 Evidence:
 
-- `/home/peng/dt-git/github/pms-platform/packages/api/src/localSandbox/httpHandler.ts:77`
-- `/home/peng/dt-git/github/pms-platform/packages/api/src/localSandbox/httpHandler.ts:218`
+- `/home/peng/dt-git/github/pms-platform/packages/api/src/localSandbox/httpHandler.ts:1`
+- `/home/peng/dt-git/github/pms-platform/packages/api/src/localSandbox/httpReadRoutes.ts:1`
+- `/home/peng/dt-git/github/pms-platform/packages/api/src/localSandbox/httpWorkflowRoutes.ts:1`
+- `/home/peng/dt-git/github/pms-platform/docs/plan-archive/pms-platform-local-http-fixture-debt-d0-d2-v1-2026-05-11/pms-platform-local-http-fixture-debt-d0-d2-v1-2026-05-11_CLOSEOUT.md`
 
 Finding:
 
-`httpHandler.ts` is a 463-line catch-all dispatcher. It mixes health, PMS reads, workflows, pending actions, reset/import, and other local sandbox concerns. The new hotel profile and room type catalog routes are implemented inside the same large handler.
+`httpHandler.ts` has been reduced from a 463-line catch-all dispatcher to a thin local HTTP auth/error route orchestrator. Route behavior now lives in owner modules for health/manifest, command, read, workflow, operation request, pending action, and sandbox administration.
 
 Bitter Lesson risk:
 
-Large catch-all dispatchers reduce AI readability and make future changes more likely to copy local route patterns instead of extending owner-bound modules.
+The original catch-all dispatcher risk is closed. Boundary docs and line-budget checks in `pms-platform` now protect the focused route-owner split.
 
 Cleanup direction:
 
-Extract route-owner handlers without changing behavior. Candidate slices: health/manifest, read routes, reservation workflow routes, pending-action routes, and sandbox administration routes.
+No further cleanup is needed for this debt item. Future local HTTP route growth should extend the matching owner module instead of growing `httpHandler.ts`.
 
 ### DEBT-AI-004 - Typed client surfaces and eval catalog are oversized
 
@@ -176,23 +184,25 @@ Keep future test stubs behind the typed helper factories instead of local casts.
 
 Severity: low
 
-Status: open external residual
+Status: resolved externally / archived in `pms-platform`
 
 Owner boundary: `pms-platform` sample hotel fixture/provisioning
 
 Evidence:
 
-- `/home/peng/dt-git/github/pms-platform/packages/api/src/localServerMain.ts:117`
-- `/home/peng/dt-git/github/pms-platform/packages/provisioning/src/profile.ts:3`
+- `/home/peng/dt-git/github/pms-platform/packages/contracts/src/fixtures.ts:1`
+- `/home/peng/dt-git/github/pms-platform/packages/api/src/localServerMain.ts:1`
+- `/home/peng/dt-git/github/pms-platform/packages/provisioning/src/profile.ts:1`
+- `/home/peng/dt-git/github/pms-platform/docs/plan-archive/pms-platform-local-http-fixture-debt-d0-d2-v1-2026-05-11/pms-platform-local-http-fixture-debt-d0-d2-v1-2026-05-11_CLOSEOUT.md`
 
 Finding:
 
-The A/B/C/D/E sample hotel room-number to room-type mapping is encoded in both the local server seed path and provisioning profile fixture. This is sample/provisioning fixture data, not live business inference, but it is still duplicated hand-coded truth.
+The A/B/C/D/E sample hotel room-number to room-type mapping is now owned in `packages/contracts/src/fixtures.ts`. Local sandbox seed code and provisioning profile fixture code import the same owner instead of duplicating hand-coded truth.
 
 Bitter Lesson risk:
 
-Duplicated fixture truth can drift and create confusing catalog/eval mismatches, especially when agents use sample hotel behavior as evidence while testing.
+The duplicated fixture-truth drift risk is closed for this mapping. Future sample hotel changes should update the shared fixture owner first.
 
 Cleanup direction:
 
-Consolidate the sample hotel mapping into one fixture owner and import it from both seed/provisioning paths, or generate both from a single declarative fixture.
+No further cleanup is needed for this debt item.
