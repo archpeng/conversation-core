@@ -7,7 +7,9 @@ import { handleActionCardExecutionRoute } from "./routes/action-card-routes.js";
 import { handleAvailabilitySearchRoute } from "./routes/availability-routes.js";
 import { handleMobileTurnRoute } from "./routes/mobile-turn-routes.js";
 import { handleReservationObjectRoute, handleRoomObjectRoute } from "./routes/object-routes.js";
-import { handleShiftSummaryRoute } from "./routes/review-routes.js";
+import { handlePendingActionStatusRoute, handleReservationWorkflowRoute } from "./routes/reservation-workflow-routes.js";
+import { handleReviewActionDetailRoute, handleReviewActionListRoute, handleShiftSummaryRoute } from "./routes/review-routes.js";
+import { handleCurrentSessionRoute } from "./routes/session-routes.js";
 import { handleTaskDetailRoute, handleTaskListRoute } from "./routes/task-routes.js";
 import { createTaskLedger } from "./task-ledger.js";
 import type { ProductGatewayConfig, ProductGatewayPmsClient, ProductGatewayRequest, ProductGatewayResponse, ProductRouteContext, TaskLedger } from "./types.js";
@@ -35,17 +37,23 @@ export function createProductGatewayService(config: ProductGatewayConfig, deps: 
       const method = request.method.toUpperCase();
       if (method === "GET" && request.path === "/health") return json(200, { ok: true, service: "pms-agent-v2-product-gateway" });
       if (!isAuthorized(config, request)) return unauthorizedResponse();
+      if (method === "GET" && request.path === "/api/session/current") return handleCurrentSessionRoute(context);
       if (method === "POST" && request.path === "/api/mobile/turn") return handleMobileTurnRoute(context, agentClient, request.body);
+      const reservationWorkflow = await handleReservationWorkflowRoute(context, pmsClient, request);
+      if (reservationWorkflow) return reservationWorkflow;
       const actionCardRoute = parseActionCardRoute(request.path);
       if (method === "POST" && actionCardRoute) {
         return handleActionCardExecutionRoute(context, pmsClient, request, actionCardRoute.taskId, actionCardRoute.cardId, actionCardRoute.actionId);
       }
       if (method === "GET" && request.path === "/api/tasks") return handleTaskListRoute(context, pmsClient, request);
       if (method === "GET" && request.path === "/api/availability/search") return handleAvailabilitySearchRoute(context, pmsClient, request);
+      if (method === "GET" && request.path.startsWith("/api/pending-actions/") && request.path.endsWith("/status")) return handlePendingActionStatusRoute(context, pmsClient, request, decodeSegment(request.path.slice("/api/pending-actions/".length, -"/status".length)));
       if (method === "GET" && request.path.startsWith("/api/tasks/")) return handleTaskDetailRoute(context, decodeSegment(request.path.slice("/api/tasks/".length)));
       if (method === "GET" && request.path.startsWith("/api/objects/rooms/")) return handleRoomObjectRoute(context, pmsClient, request, decodeSegment(request.path.slice("/api/objects/rooms/".length)));
       if (method === "GET" && request.path.startsWith("/api/objects/reservations/")) return handleReservationObjectRoute(context, pmsClient, request, decodeSegment(request.path.slice("/api/objects/reservations/".length)));
       if (method === "GET" && request.path === "/api/review/shift-summary") return handleShiftSummaryRoute(context);
+      if (method === "GET" && request.path === "/api/review/actions") return handleReviewActionListRoute(context, request.query.get("status") ?? undefined);
+      if (method === "GET" && request.path.startsWith("/api/review/actions/")) return handleReviewActionDetailRoute(context, decodeSegment(request.path.slice("/api/review/actions/".length)));
       return json(404, productError("unsupported", "Unsupported product gateway route."));
     }
   };

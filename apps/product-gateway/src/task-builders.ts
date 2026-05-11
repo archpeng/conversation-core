@@ -1,5 +1,5 @@
 import type { AgentResult } from "@pms-agent-v2/adapter-contracts";
-import type { AgentTask, ObjectRef } from "@pms-agent-v2/product-contracts";
+import type { ActionCard, AgentTask, ObjectRef, PmsTypedOperationKind } from "@pms-agent-v2/product-contracts";
 import type { HotelProfileResult, InventorySummaryResult, PmsEvidence, RoomTypeCatalogResult, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";
 
 export function taskFromAgentResult(result: AgentResult, now = new Date()): AgentTask {
@@ -109,7 +109,15 @@ export function todayReadTasks(input: {
       timestamp,
       evidenceRefs: [input.arrivals.evidenceRef],
       objectRefs: [propertyRef],
-      messages: input.arrivals.data.arrivals.map((item) => `${item.reservationCode} · ${item.guestName} · ${item.roomId} · ${item.status}`)
+      messages: input.arrivals.data.arrivals.map((item) => `${item.reservationCode} · ${item.guestName} · ${item.roomId} · ${item.status}`),
+      actionCards: input.arrivals.data.arrivals.slice(0, 1).map((item) => typedOperationCard({
+        tenantId: input.tenantId,
+        propertyId: input.propertyId,
+        operation: "check_in",
+        targetRef: item.reservationCode,
+        title: "办理入住",
+        summary: `${item.guestName} · ${item.roomId}`
+      }))
     }),
     baseTask({
       id: `task_departures_${input.businessDate}`,
@@ -120,7 +128,15 @@ export function todayReadTasks(input: {
       timestamp,
       evidenceRefs: [input.departures.evidenceRef],
       objectRefs: [propertyRef],
-      messages: input.departures.data.departures.map((item) => `${item.reservationCode} · ${item.guestName} · ${item.roomId} · ${item.status}`)
+      messages: input.departures.data.departures.map((item) => `${item.reservationCode} · ${item.guestName} · ${item.roomId} · ${item.status}`),
+      actionCards: input.departures.data.departures.slice(0, 1).map((item) => typedOperationCard({
+        tenantId: input.tenantId,
+        propertyId: input.propertyId,
+        operation: "check_out",
+        targetRef: item.reservationCode,
+        title: "办理退房",
+        summary: `${item.guestName} · ${item.roomId}`
+      }))
     }),
     baseTask({
       id: `task_inventory_${input.businessDate}`,
@@ -134,6 +150,26 @@ export function todayReadTasks(input: {
       messages: input.inventory.data.roomTypes?.map((item) => `${item.roomType}: ${item.total} 间`)
     })
   ];
+}
+
+function typedOperationCard(input: { tenantId: string; propertyId: string; operation: PmsTypedOperationKind; targetRef: string; title: string; summary: string }): ActionCard {
+  const cardPayloadRef = `card_${input.operation}_${input.targetRef}`;
+  return {
+    id: cardPayloadRef,
+    title: input.title,
+    summary: input.summary,
+    mutationStatus: "awaitingConfirmation",
+    confirmationMode: "typedCardOnly",
+    operationRef: {
+      type: "pmsOperation",
+      tenantId: input.tenantId,
+      propertyId: input.propertyId,
+      operation: input.operation,
+      targetRef: input.targetRef,
+      cardPayloadRef
+    },
+    actions: [{ id: "confirm", label: input.title, kind: "primary", confirmationRequired: true }]
+  };
 }
 
 function baseTask(input: Omit<AgentTask, "createdAt" | "updatedAt"> & { timestamp: string }): AgentTask {

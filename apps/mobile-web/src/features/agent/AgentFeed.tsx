@@ -1,19 +1,19 @@
 import { SendHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { AgentTask } from "@pms-agent-v2/product-contracts";
+import type { AgentTask, MobileSession } from "@pms-agent-v2/product-contracts";
 import { ProductGatewayClient, defaultScope, mergeTask } from "../../shared/api/client.js";
+import { ReservationWorkflowView } from "../reservations/ReservationWorkflowView.js";
 import { TaskCard } from "../../shared/components/TaskCard.js";
 import { Button } from "../../shared/components/ui/button.js";
 import { Card, CardText, CardTitle } from "../../shared/components/ui/card.js";
 import { Textarea } from "../../shared/components/ui/textarea.js";
-import { defaultMobileSession } from "../../shared/session/mobile-session.js";
 
 const quickPrompts = ["今天到店", "查可用房", "看房态", "今日库存"];
 
 export function AgentFeed() {
   const client = useMemo(() => new ProductGatewayClient(), []);
-  const scope = useMemo(() => defaultScope(), []);
-  const mobileSession = useMemo(() => defaultMobileSession(), []);
+  const initialScope = useMemo(() => defaultScope(), []);
+  const [mobileSession, setMobileSession] = useState<MobileSession>();
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [text, setText] = useState("今天到店情况");
   const [loading, setLoading] = useState(false);
@@ -23,8 +23,11 @@ export function AgentFeed() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    client.listTasks(scope)
-      .then((response) => {
+    client.getSession()
+      .then(async (session) => {
+        if (cancelled) return;
+        setMobileSession(session);
+        const response = await client.listTasks({ tenantId: session.tenantId, propertyId: session.propertyId, businessDate: initialScope.businessDate });
         if (!cancelled) setTasks(response.tasks);
       })
       .catch((cause) => {
@@ -36,17 +39,18 @@ export function AgentFeed() {
     return () => {
       cancelled = true;
     };
-  }, [client, scope]);
+  }, [client, initialScope.businessDate]);
 
   async function submitTurn() {
     if (!text.trim()) return;
     setLoading(true);
     setError(undefined);
     try {
+      if (!mobileSession) throw new Error("Mobile session is not ready.");
       const response = await client.sendTurn({
         channel: "mobile",
-        tenantId: scope.tenantId,
-        propertyId: scope.propertyId,
+        tenantId: mobileSession.tenantId,
+        propertyId: mobileSession.propertyId,
         sessionId: mobileSession.sessionId,
         messageId: `mobile-web-${Date.now()}`,
         actor: mobileSession.actor,
@@ -68,7 +72,11 @@ export function AgentFeed() {
     setBusyActionId(busyId);
     setError(undefined);
     try {
+      if (!mobileSession) throw new Error("Mobile session is not ready.");
       const response = await client.executeAction(task.id, cardId, actionId, {
+        sessionId: mobileSession.sessionId,
+        tenantId: mobileSession.tenantId,
+        propertyId: mobileSession.propertyId,
         actor: mobileSession.actor,
         ...(actionId === "cancel" ? { reason: "cancelled from mobile web" } : {})
       });
@@ -93,11 +101,12 @@ export function AgentFeed() {
             </Button>
           ))}
         </div>
-        <Button className="mt-3 w-full" variant="primary" onClick={submitTurn} disabled={loading || !text.trim()}>
+        <Button className="mt-3 w-full" variant="primary" onClick={submitTurn} disabled={loading || !mobileSession || !text.trim()}>
           <SendHorizontal className="h-4 w-4" />
           Send
         </Button>
       </Card>
+      <ReservationWorkflowView session={mobileSession} onTask={(task) => setTasks((current) => mergeTask(current, task))} />
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       {loading && tasks.length === 0 ? <div className="text-sm text-muted">Loading real backend feed...</div> : null}
       <div className="space-y-3">

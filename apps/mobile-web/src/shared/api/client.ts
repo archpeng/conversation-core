@@ -5,15 +5,27 @@ import {
   validateMobileAgentResponse,
   validateProductApiError,
   validateReservationObjectResponse,
+  validateReservationWorkflowResponse,
   validateRoomObjectResponse,
+  validateMobileSessionResponse,
+  validateReviewActionDetailResponse,
+  validateReviewActionListResponse,
   validateTaskListResponse,
   type ActionCardExecutionInput,
   type AgentTask,
   type AvailabilityReadObject,
   type MobileAgentResponse,
+  type MobileSession,
   type MobileAgentTurnInput,
   type ProductApiError,
+  type ReservationGroupDraftInput,
+  type ReservationGroupUpdateInput,
   type ReservationReadObject,
+  type ReservationSingleDraftInput,
+  type ReservationDraftUpdateInput,
+  type ReservationWorkflowRefInput,
+  type ReviewActionDetail,
+  type ReviewActionSummary,
   type RoomReadObject,
   type TaskListResponse
 } from "@pms-agent-v2/product-contracts";
@@ -106,6 +118,60 @@ export class ProductGatewayClient {
     return summary;
   }
 
+  async getSession(): Promise<MobileSession> {
+    const payload = await this.request("/api/session/current", { method: "GET" });
+    const result = validateMobileSessionResponse(payload);
+    if (!result.ok) throw new Error(`Invalid session response: ${result.issues.join("; ")}`);
+    return result.value.session;
+  }
+
+  async createSingleReservationDraft(input: ReservationSingleDraftInput): Promise<AgentTask> {
+    return this.workflowTask("/api/reservation-workflows/single/drafts", "POST", input);
+  }
+
+  async updateSingleReservationDraft(draftRef: string, input: Omit<ReservationDraftUpdateInput, "draftRef">): Promise<AgentTask> {
+    return this.workflowTask(`/api/reservation-workflows/single/drafts/${encodeURIComponent(draftRef)}`, "PATCH", input);
+  }
+
+  async quoteSingleReservationDraft(draftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId">): Promise<AgentTask> {
+    return this.workflowTask(`/api/reservation-workflows/single/drafts/${encodeURIComponent(draftRef)}/quote`, "POST", input);
+  }
+
+  async prepareSingleReservationConfirm(draftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId" | "quoteRef">): Promise<AgentTask> {
+    return this.workflowTask(`/api/reservation-workflows/single/drafts/${encodeURIComponent(draftRef)}/prepare-confirm`, "POST", input);
+  }
+
+  async createGroupReservationDraft(input: ReservationGroupDraftInput): Promise<AgentTask> {
+    return this.workflowTask("/api/reservation-workflows/group/drafts", "POST", input);
+  }
+
+  async updateGroupReservationDraft(groupDraftRef: string, input: Omit<ReservationGroupUpdateInput, "groupDraftRef">): Promise<AgentTask> {
+    return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}`, "PATCH", input);
+  }
+
+  async quoteGroupReservationDraft(groupDraftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId">): Promise<AgentTask> {
+    return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}/quote`, "POST", input);
+  }
+
+  async prepareGroupReservationConfirm(groupDraftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId" | "quoteRef">): Promise<AgentTask> {
+    return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}/prepare-confirm`, "POST", input);
+  }
+
+  async listReviewActions(status?: string): Promise<ReviewActionSummary[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const payload = await this.request(`/api/review/actions${query}`, { method: "GET" });
+    const result = validateReviewActionListResponse(payload);
+    if (!result.ok) throw new Error(`Invalid review actions response: ${result.issues.join("; ")}`);
+    return result.value.actions;
+  }
+
+  async getReviewAction(taskId: string): Promise<ReviewActionDetail> {
+    const payload = await this.request(`/api/review/actions/${encodeURIComponent(taskId)}`, { method: "GET" });
+    const result = validateReviewActionDetailResponse(payload);
+    if (!result.ok) throw new Error(`Invalid review action response: ${result.issues.join("; ")}`);
+    return result.value.action;
+  }
+
   async executeAction(taskId: string, cardId: string, actionId: string, input: ActionCardExecutionInput): Promise<MobileAgentResponse> {
     const payload = await this.request(`/api/tasks/${encodeURIComponent(taskId)}/action-cards/${encodeURIComponent(cardId)}/actions/${encodeURIComponent(actionId)}`, { method: "POST", body: input });
     const result = validateActionCardExecutionResponse(payload);
@@ -113,7 +179,14 @@ export class ProductGatewayClient {
     return result.value;
   }
 
-  private async request(path: string, init: { method: "GET" | "POST"; body?: unknown }): Promise<unknown> {
+  private async workflowTask(path: string, method: "POST" | "PATCH", body: unknown): Promise<AgentTask> {
+    const payload = await this.request(path, { method, body });
+    const result = validateReservationWorkflowResponse(payload);
+    if (!result.ok) throw new Error(`Invalid reservation workflow response: ${result.issues.join("; ")}`);
+    return result.value.task;
+  }
+
+  private async request(path: string, init: { method: "GET" | "POST" | "PATCH"; body?: unknown }): Promise<unknown> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: init.method,
       headers: {

@@ -120,4 +120,38 @@ describe("PMS Platform client reservation workflows", () => {
     expect(calls[2].body).toMatchObject({ operation: "pms.reservation.group_quote", groupDraftRef: "group_draft_ref_1" });
     expect(calls[3].body).toMatchObject({ operation: "pms.reservation.group_prepare_confirm", groupDraftRef: "group_draft_ref_1", quoteRef: "group_quote_ref_1" });
   });
+
+  it("maps typed operation cards to current pms-platform operation routes", async () => {
+    const calls: FetchCall[] = [];
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async (url, init) => {
+        calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : undefined });
+        return { ok: true, status: 200, json: async () => ({ ok: true, operation: "pms.check_in", status: "confirmed", mutationStatus: "committed", idempotencyStatus: "confirmed", auditRefs: ["audit_check_in_1"] }) };
+      },
+      now: () => new Date("2026-05-06T12:00:00.000Z")
+    });
+
+    const result = await client.executeTypedOperation({
+      tenantId: "tenant_1",
+      propertyId: "property-small-hotel",
+      operation: "check_in",
+      targetRef: "RES-001",
+      cardPayloadRef: "card_checkin_1",
+      actor: { type: "human", id: "staff_1" }
+    });
+
+    expect(result.data).toEqual({ operation: "check_in", targetRef: "RES-001", status: "confirmed", mutationStatus: "committed", idempotencyStatus: "confirmed", auditRefs: ["audit_check_in_1"] });
+    expect(calls).toEqual([{
+      url: "https://pms.local/v1/pms/check-in",
+      method: "POST",
+      body: expect.objectContaining({
+        operation: "pms.check_in",
+        targetRef: "RES-001",
+        cardPayloadRef: "card_checkin_1",
+        scope: { propertyId: "property-small-hotel", channel: "typed_card" },
+        actor: { type: "human", id: "staff_1" }
+      })
+    }]);
+  });
 });

@@ -84,20 +84,12 @@ describe("product gateway service", () => {
   });
 
   it("returns backend_unavailable instead of mock data when PMS is down", async () => {
+    const fullClient = fakePmsClient();
     const pmsClient: ProductGatewayPmsClient = {
-      hotelProfile: fakePmsClient().hotelProfile,
-      roomTypeCatalog: fakePmsClient().roomTypeCatalog,
-      searchAvailability: fakePmsClient().searchAvailability,
+      ...fullClient,
       todayArrivals: async () => {
         throw new Error("down");
-      },
-      todayDepartures: fakePmsClient().todayDepartures,
-      inventorySummary: fakePmsClient().inventorySummary,
-      getRoom: fakePmsClient().getRoom,
-      getReservation: fakePmsClient().getReservation,
-      roomReservationContext: fakePmsClient().roomReservationContext,
-      confirmPendingAction: fakePmsClient().confirmPendingAction,
-      cancelPendingAction: fakePmsClient().cancelPendingAction
+      }
     };
     const service = createProductGatewayService(config, {
       agentClient: fakeAgentClient(),
@@ -188,6 +180,9 @@ describe("product gateway service", () => {
     const createdBody = created.body as { task: { id: string; actionCards: { id: string }[] } };
     const cardId = createdBody.task.actionCards[0].id;
     const executed = await service.handle(request("POST", `/api/tasks/${createdBody.task.id}/action-cards/${cardId}/actions/confirm`, {
+      sessionId: "mobile_session_1",
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
       actor: { role: "staff", id: "staff_1" }
     }));
 
@@ -225,6 +220,9 @@ describe("product gateway service", () => {
     }));
     const createdBody = created.body as { task: { id: string; actionCards: { id: string }[] } };
     await service.handle(request("POST", `/api/tasks/${createdBody.task.id}/action-cards/${createdBody.task.actionCards[0].id}/actions/confirm`, {
+      sessionId: "mobile_session_1",
+      tenantId: "tenant_1",
+      propertyId: "property_small_hotel",
       actor: { role: "staff", id: "staff_1" }
     }));
 
@@ -367,6 +365,69 @@ function fakePmsClient(): ProductGatewayPmsClient {
       data: { roomId: "room_1", currentStatus: "available", reservationRefs: [], blockRefs: [] },
       summary: "Room context."
     }),
+    createReservationDraft: async () => createPmsEvidence({
+      method: "createReservationDraft",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { draftRef: "draft_single_1", status: "collectingSlots" },
+      summary: "Reservation draft."
+    }),
+    updateReservationDraft: async () => createPmsEvidence({
+      method: "updateReservationDraft",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { draftRef: "draft_single_1", status: "collectingSlots" },
+      summary: "Reservation draft update."
+    }),
+    quoteReservationDraft: async () => createPmsEvidence({
+      method: "quoteReservationDraft",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { quoteRef: "quote_single_1", status: "pricingUnsupported" },
+      summary: "Reservation quote."
+    }),
+    prepareReservationConfirm: async () => createPmsEvidence({
+      method: "prepareReservationConfirm",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { pendingActionId: "pending_single_1", pendingActionRef: "pending_single_1", cardPayloadRef: "card_single_1", confirmationMode: "typedCardOnly", mutationStatus: "none" },
+      summary: "Reservation prepare."
+    }),
+    createReservationGroupDraft: async () => createPmsEvidence({
+      method: "createReservationGroupDraft",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { groupDraftRef: "group_draft_1", status: "collectingSlots" },
+      summary: "Group draft."
+    }),
+    updateReservationGroupDraft: async () => createPmsEvidence({
+      method: "updateReservationGroupDraft",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { groupDraftRef: "group_draft_1", status: "quoteReady" },
+      summary: "Group draft update."
+    }),
+    quoteReservationGroupDraft: async () => createPmsEvidence({
+      method: "quoteReservationGroupDraft",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { quoteRef: "quote_group_1", status: "pricingUnsupported" },
+      summary: "Group quote."
+    }),
+    prepareReservationGroupConfirm: async () => createPmsEvidence({
+      method: "prepareReservationGroupConfirm",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { pendingActionId: "pending_group_1", pendingActionRef: "pending_group_1", cardPayloadRef: "card_group_1", confirmationMode: "typedCardOnly", mutationStatus: "none", selectionCount: 2 },
+      summary: "Group prepare."
+    }),
+    pendingActionStatus: async () => createPmsEvidence({
+      method: "pendingActionStatus",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { pendingActionId: "pending_1", status: "awaitingConfirmation" },
+      summary: "Pending status."
+    }),
     confirmPendingAction: async () => createPmsEvidence({
       method: "confirmPendingAction",
       tenantId: "tenant_1",
@@ -380,6 +441,13 @@ function fakePmsClient(): ProductGatewayPmsClient {
       fetchedAt: "2026-05-11T00:00:00.000Z",
       data: { pendingActionId: "pending_1", status: "cancelled", mutationStatus: "none", idempotencyStatus: "cancelled", auditRefs: ["audit_pending_cancel_1"] },
       summary: "Pending action cancelled."
+    }),
+    executeTypedOperation: async (input) => createPmsEvidence({
+      method: "executeTypedOperation",
+      tenantId: "tenant_1",
+      fetchedAt: "2026-05-11T00:00:00.000Z",
+      data: { operation: input.operation, targetRef: input.targetRef, status: "confirmed", mutationStatus: "committed", idempotencyStatus: "confirmed", auditRefs: [`audit_${input.operation}_1`] },
+      summary: "Typed operation."
     })
   };
 }

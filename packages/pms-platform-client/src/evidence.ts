@@ -21,6 +21,7 @@ export type PmsEvidenceMethod =
   | "pendingActionStatus"
   | "confirmPendingAction"
   | "cancelPendingAction"
+  | "executeTypedOperation"
   | "inventorySummary"
   | "roomReservationContext"
   | "todayArrivals"

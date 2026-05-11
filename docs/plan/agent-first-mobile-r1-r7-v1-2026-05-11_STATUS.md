@@ -6,9 +6,9 @@ State: `ACTIVE`
 
 ## Current Stage
 
-- Stage: `C0`
-- Status: `implemented`
-- Owner boundary: product read orchestration
+- Stage: `R5/R6/R7/A1`
+- Status: `implemented_reviewed`
+- Owner boundary: reservation workflow cards, explicit action execution, retrospective review, mobile session boundary
 
 ## Completed In This Slice
 
@@ -18,20 +18,26 @@ State: `ACTIVE`
 - Expanded task feed with hotel profile and room type catalog PMS evidence.
 - Expanded mobile Objects view with room/reservation/availability modes.
 - Added contract, gateway, and mobile UI tests.
+- Added reservation workflow contracts, Product Gateway workflow routes, pending-action status readback, and mobile reservation workflow cards.
+- Extended action cards with typed PMS operation refs and Product Gateway execution through `executeTypedOperation`.
+- Added review action list/detail readback with task, evidence, safety audit, PMS audit, actor, and timestamp traceability.
+- Added gateway-issued mobile session readback and action execution tenant/property/role checks.
+- Added product-contract, PMS client, gateway workflow, review, session, and RBAC tests.
 
 ## Gate Evidence
 
 - `pnpm build`: passed on 2026-05-11.
-- `pnpm test`: passed on 2026-05-11 with 32 passed / 1 skipped test files, 215 passed / 2 skipped tests, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
+- `pnpm test`: passed on 2026-05-11 with 33 passed / 1 skipped test files, 221 passed / 2 skipped tests, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
+- AI-coder readiness scan completed on 2026-05-11; no test files exceed 500 lines and all touched source files remain below 350 lines.
 
 ## Next Stage
 
-- Stage: `R5`
+- Stage: `implementation-review-closeout`
 - Status: `pending`
-- Focus: reservation draft/quote/prepare-confirm workflow UI and gateway routes.
+- Focus: optional human review, commit, and plan-pack archive/closeout.
 
 ## Residual Risks
 
-- R5/R6 must not let natural-language confirmation execute mutation.
-- R7 review detail still needs durable readback beyond the current summary.
-- A1 must replace preview actor/session before production exposure.
+- `apps/mobile-web/src/shared/api/client.ts` is now a 270-line API owner and should be split before it approaches the 350-line module budget.
+- `tests/product-gateway.test.ts` is 453 lines but remains below the 500-line test split threshold; new workflow coverage was added in `tests/product-gateway-workflows.test.ts`.
+- Gateway session route currently issues a deterministic staff session from gateway config; production hardening may later replace this with real identity-provider session validation.

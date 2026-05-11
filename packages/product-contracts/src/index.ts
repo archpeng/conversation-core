@@ -18,6 +18,7 @@ export {
   actionKinds,
   confirmationModes,
   mutationStatuses,
+  pmsTypedOperationKinds,
   validateActionCard,
   parseActionCards,
   type ActionCard,
@@ -25,7 +26,8 @@ export {
   type ActionCardActionKind,
   type ActionCardOperationRef,
   type ConfirmationMode,
-  type MutationStatus
+  type MutationStatus,
+  type PmsTypedOperationKind
 } from "./action-card.js";
 export {
   actionCardExecutionActions,
@@ -58,6 +60,35 @@ export {
   type ReservationReadObject,
   type RoomReadObject
 } from "./read-objects.js";
+export {
+  validateReservationDraftUpdateInput,
+  validateReservationGroupDraftInput,
+  validateReservationGroupUpdateInput,
+  validateReservationSingleDraftInput,
+  validateReservationWorkflowRefInput,
+  validateReservationWorkflowResponse,
+  type ReservationDraftUpdateInput,
+  type ReservationGroupDraftInput,
+  type ReservationGroupUpdateInput,
+  type ReservationSingleDraftInput,
+  type ReservationWorkflowRefInput,
+  type ReservationWorkflowResponse
+} from "./reservation-workflow.js";
+export {
+  reviewActionStatuses,
+  validateReviewActionDetailResponse,
+  validateReviewActionListResponse,
+  type ReviewActionDetail,
+  type ReviewActionDetailResponse,
+  type ReviewActionListResponse,
+  type ReviewActionStatus,
+  type ReviewActionSummary
+} from "./review.js";
+export {
+  validateMobileSessionResponse,
+  type MobileSession,
+  type MobileSessionResponse
+} from "./session.js";
 export {
   productError,
   productErrorCodes,

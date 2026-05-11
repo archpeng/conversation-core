@@ -80,3 +80,11 @@ export {
   type PendingActionCallbackFact,
   type PendingActionCallbackInput
 } from "./pending-action-callback-schemas.js";
+export {
+  pmsTypedOperationKinds,
+  parseTypedOperationFact,
+  validateExecuteTypedOperationInput,
+  type ExecuteTypedOperationInput,
+  type PmsTypedOperationKind,
+  type TypedOperationFact
+} from "./operation-schemas.js";

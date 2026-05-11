@@ -110,6 +110,7 @@ describe("PMS Platform client core evidence", () => {
       "confirmPendingAction",
       "createReservationDraft",
       "createReservationGroupDraft",
+      "executeTypedOperation",
       "getReservation",
       "getRoom",
       "health",

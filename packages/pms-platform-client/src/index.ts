@@ -20,6 +20,7 @@ export type {
   ConfirmPendingActionInput,
   CreateReservationDraftInput,
   CreateReservationGroupDraftInput,
+  ExecuteTypedOperationInput,
   GetReservationInput,
   GetRoomInput,
   HealthResult,
@@ -30,6 +31,7 @@ export type {
   PendingActionCallbackInput,
   PendingActionStatusFact,
   PendingActionStatusInput,
+  PmsTypedOperationKind,
   PmsCapabilityManifest,
   PrepareReservationConfirmInput,
   PrepareReservationGroupConfirmInput,
@@ -47,6 +49,7 @@ export type {
   RoomTypeCatalogItem,
   RoomTypeCatalogResult,
   SearchAvailabilityInput,
+  TypedOperationFact,
   UpdateReservationDraftInput,
   UpdateReservationGroupDraftInput
 } from "./schemas.js";

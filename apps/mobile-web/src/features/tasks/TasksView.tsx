@@ -1,25 +1,29 @@
 import { RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { AgentTask } from "@pms-agent-v2/product-contracts";
+import { useEffect, useMemo, useState } from "react";
+import type { AgentTask, MobileSession } from "@pms-agent-v2/product-contracts";
 import { ProductGatewayClient, defaultScope } from "../../shared/api/client.js";
 import { TaskCard } from "../../shared/components/TaskCard.js";
 import { Button } from "../../shared/components/ui/button.js";
-import { defaultMobileSession } from "../../shared/session/mobile-session.js";
 
 export function TasksView() {
   const client = useMemo(() => new ProductGatewayClient(), []);
-  const scope = useMemo(() => defaultScope(), []);
-  const mobileSession = useMemo(() => defaultMobileSession(), []);
+  const initialScope = useMemo(() => defaultScope(), []);
+  const [mobileSession, setMobileSession] = useState<MobileSession>();
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [busyActionId, setBusyActionId] = useState<string>();
 
+  useEffect(() => {
+    client.getSession().then(setMobileSession).catch((cause) => setError(cause instanceof Error ? cause.message : "Session load failed."));
+  }, [client]);
+
   async function refresh() {
     setLoading(true);
     setError(undefined);
     try {
-      const response = await client.listTasks(scope);
+      if (!mobileSession) throw new Error("Mobile session is not ready.");
+      const response = await client.listTasks({ tenantId: mobileSession.tenantId, propertyId: mobileSession.propertyId, businessDate: initialScope.businessDate });
       setTasks(response.tasks);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Task refresh failed.");
@@ -33,7 +37,11 @@ export function TasksView() {
     setBusyActionId(busyId);
     setError(undefined);
     try {
+      if (!mobileSession) throw new Error("Mobile session is not ready.");
       const response = await client.executeAction(task.id, cardId, actionId, {
+        sessionId: mobileSession.sessionId,
+        tenantId: mobileSession.tenantId,
+        propertyId: mobileSession.propertyId,
         actor: mobileSession.actor,
         ...(actionId === "cancel" ? { reason: "cancelled from mobile web" } : {})
       });
@@ -52,7 +60,7 @@ export function TasksView() {
           <h2 className="text-base font-semibold text-ink">Tasks</h2>
           <p className="text-sm text-muted">只读任务和 Agent 卡片。</p>
         </div>
-        <Button onClick={refresh} disabled={loading} aria-label="Refresh tasks">
+        <Button onClick={refresh} disabled={loading || !mobileSession} aria-label="Refresh tasks">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>

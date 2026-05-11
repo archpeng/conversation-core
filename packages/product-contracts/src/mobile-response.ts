@@ -1,7 +1,7 @@
 import { parseAgentTasks, validateAgentTask, type AgentTask } from "./agent-task.js";
 import { asRecord, requireNonEmptyString, requireOneOf, type Validation } from "./field-checks.js";
 
-export const productErrorCodes = ["invalid_request", "unauthorized", "backend_unavailable", "unsupported"] as const;
+export const productErrorCodes = ["invalid_request", "unauthorized", "forbidden", "backend_unavailable", "unsupported"] as const;
 
 export type ProductErrorCode = (typeof productErrorCodes)[number];
 

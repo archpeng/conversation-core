@@ -24,7 +24,27 @@ export type ActionCardOperationRef = {
   pendingActionRef?: string;
   cardPayloadRef: string;
   action: "reservation_confirm";
+} | {
+  type: "pmsOperation";
+  tenantId: string;
+  propertyId?: string;
+  operation: PmsTypedOperationKind;
+  targetRef: string;
+  cardPayloadRef: string;
 };
+
+export const pmsTypedOperationKinds = [
+  "check_in",
+  "check_out",
+  "housekeeping_done",
+  "housekeeping_inspection",
+  "housekeeping_rework",
+  "maintenance_report",
+  "maintenance_done",
+  "maintenance_restore_sellable"
+] as const;
+
+export type PmsTypedOperationKind = (typeof pmsTypedOperationKinds)[number];
 
 export type ActionCard = {
   id: string;
@@ -98,13 +118,18 @@ function parseOperationRef(input: unknown, field: string, issues: string[]): Act
     issues.push(`${field} must be an object when present`);
     return undefined;
   }
-  requireOneOf(value.type, ["pmsPendingAction"], `${field}.type`, issues);
+  requireOneOf(value.type, ["pmsPendingAction", "pmsOperation"], `${field}.type`, issues);
+  if (value.type === "pmsOperation") return parsePmsOperationRef(value, field, issues);
+  return parsePendingActionOperationRef(value, field, issues);
+}
+
+function parsePendingActionOperationRef(value: Record<string, unknown>, field: string, issues: string[]): ActionCardOperationRef | undefined {
   requireNonEmptyString(value.tenantId, `${field}.tenantId`, issues);
   requireNonEmptyString(value.pendingActionId, `${field}.pendingActionId`, issues);
   requireOptionalString(value.pendingActionRef, `${field}.pendingActionRef`, issues);
   requireNonEmptyString(value.cardPayloadRef, `${field}.cardPayloadRef`, issues);
   requireOneOf(value.action, ["reservation_confirm"], `${field}.action`, issues);
-  if (!canBuildOperationRef(value)) return undefined;
+  if (!canBuildPendingActionRef(value)) return undefined;
   return {
     type: "pmsPendingAction",
     tenantId: value.tenantId,
@@ -112,6 +137,23 @@ function parseOperationRef(input: unknown, field: string, issues: string[]): Act
     ...(typeof value.pendingActionRef === "string" ? { pendingActionRef: value.pendingActionRef } : {}),
     cardPayloadRef: value.cardPayloadRef,
     action: "reservation_confirm"
+  };
+}
+
+function parsePmsOperationRef(value: Record<string, unknown>, field: string, issues: string[]): ActionCardOperationRef | undefined {
+  requireNonEmptyString(value.tenantId, `${field}.tenantId`, issues);
+  requireOptionalString(value.propertyId, `${field}.propertyId`, issues);
+  requireOneOf(value.operation, pmsTypedOperationKinds, `${field}.operation`, issues);
+  requireNonEmptyString(value.targetRef, `${field}.targetRef`, issues);
+  requireNonEmptyString(value.cardPayloadRef, `${field}.cardPayloadRef`, issues);
+  if (!canBuildPmsOperationRef(value)) return undefined;
+  return {
+    type: "pmsOperation",
+    tenantId: value.tenantId,
+    ...(typeof value.propertyId === "string" ? { propertyId: value.propertyId } : {}),
+    operation: value.operation as PmsTypedOperationKind,
+    targetRef: value.targetRef,
+    cardPayloadRef: value.cardPayloadRef
   };
 }
 
@@ -142,7 +184,7 @@ function parseActions(input: unknown, field: string, issues: string[]): ActionCa
   });
 }
 
-function canBuildOperationRef(value: Record<string, unknown>): value is Record<string, string> {
+function canBuildPendingActionRef(value: Record<string, unknown>): value is Record<string, string> {
   return value.type === "pmsPendingAction"
     && typeof value.tenantId === "string"
     && value.tenantId.trim().length > 0
@@ -151,6 +193,18 @@ function canBuildOperationRef(value: Record<string, unknown>): value is Record<s
     && typeof value.cardPayloadRef === "string"
     && value.cardPayloadRef.trim().length > 0
     && value.action === "reservation_confirm";
+}
+
+function canBuildPmsOperationRef(value: Record<string, unknown>): value is Record<string, string> {
+  return value.type === "pmsOperation"
+    && typeof value.tenantId === "string"
+    && value.tenantId.trim().length > 0
+    && typeof value.operation === "string"
+    && pmsTypedOperationKinds.includes(value.operation as PmsTypedOperationKind)
+    && typeof value.targetRef === "string"
+    && value.targetRef.trim().length > 0
+    && typeof value.cardPayloadRef === "string"
+    && value.cardPayloadRef.trim().length > 0;
 }
 
 function canBuildActionCard(value: Record<string, unknown>, actions: readonly ActionCardAction[]): value is Record<string, string> {

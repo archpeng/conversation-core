@@ -1,4 +1,5 @@
 import { createPmsReadClientMethods, type PmsReadClientMethods } from "./client-read-methods.js";
+import { createPmsOperationClientMethods, type PmsOperationClientMethods } from "./client-operation-methods.js";
 import { createPmsWorkflowClientMethods, type PmsWorkflowClientMethods } from "./client-workflow-methods.js";
 import {
   inventorySummaryMethod,
@@ -43,6 +44,7 @@ export type PmsInventoryClientMethods = {
 
 export type PmsPlatformClient =
   & PmsReadClientMethods
+  & PmsOperationClientMethods
   & PmsWorkflowClientMethods
   & PmsInventoryClientMethods;
 
@@ -56,6 +58,7 @@ export function createPmsPlatformClient(options: PmsPlatformClientOptions): PmsP
 
   return {
     ...createPmsReadClientMethods(clientOptions),
+    ...createPmsOperationClientMethods(clientOptions),
     ...createPmsWorkflowClientMethods(clientOptions),
     inventorySummary: (input) => inventorySummaryMethod(clientOptions, input),
     roomReservationContext: (input) => roomReservationContextMethod(clientOptions, input),

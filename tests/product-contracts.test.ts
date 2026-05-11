@@ -9,7 +9,11 @@ import {
   validateMobileAgentTurnInput,
   validateObjectRef,
   validateProductApiError,
+  validateMobileSessionResponse,
   validateReservationObjectResponse,
+  validateReservationSingleDraftInput,
+  validateReservationWorkflowResponse,
+  validateReviewActionDetailResponse,
   validateRoomObjectResponse,
   validateTaskListResponse
 } from "../packages/product-contracts/src/index.js";
@@ -88,10 +92,35 @@ describe("product contracts", () => {
   });
 
   it("validates typed action card execution input and response", () => {
-    const input = { actor: { role: "staff", id: "staff_1", displayName: "前台" }, reason: "typed card button" };
+    const input = { sessionId: "session_1", tenantId: "tenant_1", propertyId: "property_small_hotel", actor: { role: "staff", id: "staff_1", displayName: "前台" }, reason: "typed card button" };
     expect(validateActionCardExecutionInput(input)).toEqual({ ok: true, value: input });
     expect(validateActionCardExecutionInput({ actor: { role: "owner", id: "staff_1" } })).toMatchObject({ ok: false });
     expect(validateActionCardExecutionResponse({ ok: true, task })).toEqual({ ok: true, value: { ok: true, task } });
+  });
+
+  it("validates reservation workflow, typed operations, review detail, and session contracts", () => {
+    const typedOperationCard = {
+      ...actionCard,
+      operationRef: { type: "pmsOperation", tenantId: "tenant_1", propertyId: "property_small_hotel", operation: "check_in", targetRef: "RES-001", cardPayloadRef: "card_checkin_1" },
+      actions: [{ id: "confirm", label: "办理入住", kind: "primary", confirmationRequired: true }]
+    };
+    expect(validateActionCard(typedOperationCard)).toEqual({ ok: true, value: typedOperationCard });
+    expect(validateReservationSingleDraftInput({ tenantId: "tenant_1", propertyId: "property_small_hotel", roomId: "room_1", guestName: "李女士", checkInDate: "2026-05-11", checkOutDate: "2026-05-12" })).toMatchObject({ ok: true });
+    expect(validateReservationWorkflowResponse({ ok: true, task })).toMatchObject({ ok: true });
+    expect(validateMobileSessionResponse({ ok: true, session: { sessionId: "session_1", tenantId: "tenant_1", propertyId: "property_small_hotel", actor: { role: "staff", id: "staff_1" } } })).toMatchObject({ ok: true });
+    expect(validateReviewActionDetailResponse({
+      ok: true,
+      action: {
+        taskId: "task_1",
+        title: "今日到店",
+        status: "committed",
+        updatedAt: "2026-05-11T08:00:00.000Z",
+        evidenceRefs: ["pms_ev_1"],
+        safetyAuditRefs: ["audit_safety_1"],
+        pmsAuditRefs: ["audit_pms_1"],
+        task
+      }
+    })).toMatchObject({ ok: true });
   });
 
   it("validates read object responses for room, reservation, and availability", () => {

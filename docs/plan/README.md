@@ -6,17 +6,17 @@
 
 ## Current Active Slice
 
-- `C0` implemented; `R5` pending
+- `R5` / `R6` / `R7` / `A1` implemented; implementation review complete
 
 ## Intended Handoff
 
-- Continue with `R5` reservation workflow UI using `docs/plan/agent-first-mobile-r1-r7-v1-2026-05-11_PLAN.md`.
+- Ready for final human review or pack closeout/archive.
 
 ## Status
 
 - Active state: `ACTIVE`
 - Active triplet: `agent-first-mobile-r1-r7-v1-2026-05-11`
-- Latest gate: `pnpm build` passed; `pnpm test` passed with 32 Vitest files passed / 1 skipped, 215 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
+- Latest gate: `pnpm build` passed; `pnpm test` passed with 33 Vitest files passed / 1 skipped, 221 tests passed / 2 skipped, boundary guard passed, AI-readiness guard passed, eval 21/21 with 22 audit events.
 - Latest closed pack: `pms-agent-ai-readiness-hardening-a0-a4-v1-2026-05-11`
 - Latest closed state: `PACK_COMPLETE`
 - Cold archive root: `docs/plan-archive/`

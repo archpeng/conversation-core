@@ -7,6 +7,9 @@ export const actionCardExecutionActions = ["confirm", "cancel"] as const;
 export type ActionCardExecutionAction = (typeof actionCardExecutionActions)[number];
 
 export type ActionCardExecutionInput = {
+  sessionId: string;
+  tenantId: string;
+  propertyId: string;
   actor: {
     role: MobileActorRole;
     id: string;
@@ -24,6 +27,9 @@ export function validateActionCardExecutionInput(input: unknown): Validation<Act
   const issues: string[] = [];
   const value = asRecord(input);
   if (!value) return { ok: false, issues: ["input must be an object"] };
+  requireNonEmptyString(value.sessionId, "sessionId", issues);
+  requireNonEmptyString(value.tenantId, "tenantId", issues);
+  requireNonEmptyString(value.propertyId, "propertyId", issues);
   const actor = asRecord(value.actor);
   if (!actor) {
     issues.push("actor must be an object");
@@ -33,10 +39,13 @@ export function validateActionCardExecutionInput(input: unknown): Validation<Act
     requireOptionalString(actor.displayName, "actor.displayName", issues);
   }
   requireOptionalString(value.reason, "reason", issues);
-  if (issues.length > 0 || !actor || typeof actor.role !== "string" || typeof actor.id !== "string") return { ok: false, issues };
+  if (issues.length > 0 || !actor || typeof value.sessionId !== "string" || typeof value.tenantId !== "string" || typeof value.propertyId !== "string" || typeof actor.role !== "string" || typeof actor.id !== "string") return { ok: false, issues };
   return {
     ok: true,
     value: {
+      sessionId: value.sessionId,
+      tenantId: value.tenantId,
+      propertyId: value.propertyId,
       actor: {
         role: actor.role as MobileActorRole,
         id: actor.id,

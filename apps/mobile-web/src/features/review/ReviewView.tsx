@@ -1,12 +1,18 @@
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { ReviewActionDetail, ReviewActionStatus, ReviewActionSummary } from "@pms-agent-v2/product-contracts";
 import { ProductGatewayClient, type ShiftSummary } from "../../shared/api/client.js";
 import { Button } from "../../shared/components/ui/button.js";
 import { Card, CardText, CardTitle } from "../../shared/components/ui/card.js";
 
+const filters: Array<ReviewActionStatus | "all"> = ["all", "committed", "rejected", "failed", "expired"];
+
 export function ReviewView() {
   const client = useMemo(() => new ProductGatewayClient(), []);
   const [summary, setSummary] = useState<ShiftSummary>();
+  const [actions, setActions] = useState<ReviewActionSummary[]>([]);
+  const [detail, setDetail] = useState<ReviewActionDetail>();
+  const [filter, setFilter] = useState<ReviewActionStatus | "all">("all");
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
@@ -14,11 +20,25 @@ export function ReviewView() {
     setLoading(true);
     setError(undefined);
     try {
-      setSummary(await client.getShiftSummary());
+      const [nextSummary, nextActions] = await Promise.all([
+        client.getShiftSummary(),
+        client.listReviewActions(filter === "all" ? undefined : filter)
+      ]);
+      setSummary(nextSummary);
+      setActions(nextActions);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Review summary failed.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function openDetail(action: ReviewActionSummary) {
+    setError(undefined);
+    try {
+      setDetail(await client.getReviewAction(action.taskId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Review detail failed.");
     }
   }
 
@@ -49,6 +69,38 @@ export function ReviewView() {
           <CardText className="mt-1">Tap refresh to read current gateway ledger.</CardText>
         )}
       </Card>
+      <Card>
+        <CardTitle>Action Ledger</CardTitle>
+        <div className="my-3 flex flex-wrap gap-2">
+          {filters.map((item) => (
+            <Button key={item} variant={filter === item ? "primary" : "secondary"} onClick={() => setFilter(item)}>
+              {item}
+            </Button>
+          ))}
+        </div>
+        {actions.length === 0 ? <CardText>Refresh to load terminal actions.</CardText> : null}
+        <div className="space-y-2">
+          {actions.map((action) => (
+            <button key={action.taskId} className="w-full rounded-md border border-border bg-neutral-50 px-3 py-2 text-left text-sm text-ink" onClick={() => openDetail(action)}>
+              <div className="font-medium">{action.title}</div>
+              <div className="text-xs text-muted">{action.status} · Evidence {action.evidenceRefs.length} · PMS audit {action.pmsAuditRefs.length}</div>
+            </button>
+          ))}
+        </div>
+      </Card>
+      {detail ? (
+        <Card>
+          <CardTitle>{detail.title}</CardTitle>
+          <CardText className="mt-1">{detail.status} · {detail.updatedAt}</CardText>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <Metric label="Evidence" value={detail.evidenceRefs.length} />
+            <Metric label="Safety audit" value={detail.safetyAuditRefs.length} />
+            <Metric label="PMS audit" value={detail.pmsAuditRefs.length} />
+            <Metric label="Cards" value={detail.task.actionCards?.length ?? 0} />
+          </div>
+          {detail.actor ? <CardText className="mt-3">Actor {detail.actor.role}:{detail.actor.id}</CardText> : null}
+        </Card>
+      ) : null}
     </div>
   );
 }
