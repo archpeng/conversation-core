@@ -81,7 +81,7 @@ describe("PMS Platform client inventory reads", () => {
 
     expect(evidence.source.method).toBe("todayArrivals");
     expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
-    expect(evidence.summary).toContain("RES-001, RES-002");
+    expect(evidence.summary).toContain("RES-001 Alice room_1 checkedIn");
     expect(evidence.data.arrivals).toHaveLength(2);
     expect(evidence.data.arrivals[0]).toEqual({
       reservationCode: "RES-001",
@@ -138,7 +138,7 @@ describe("PMS Platform client inventory reads", () => {
 
     expect(evidence.source.method).toBe("todayDepartures");
     expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
-    expect(evidence.summary).toContain("RES-003");
+    expect(evidence.summary).toContain("RES-003 Charlie room_3 checkedOut");
     expect(evidence.data.departures).toHaveLength(1);
     expect(evidence.data.departures[0]).toEqual({
       reservationCode: "RES-003",
@@ -165,6 +165,83 @@ describe("PMS Platform client inventory reads", () => {
     expect(evidence.scope).toEqual({ tenantId: "tenant_1" });
     expect(evidence.data).toMatchObject({ reservationId: "res_1" });
     expect(calls[calls.length - 1].body).toMatchObject({ tenantId: "tenant_1", reservationCode: "RES-001" });
+  });
+
+  it("preserves reserved and occupied inventory source refs from pms-platform projections", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          readModel: {
+            summaries: [
+              { businessDate: "2026-05-13", roomType: "秘境洞穴", totalRooms: 3, availableRooms: 1, reservedRooms: 1, blockedRooms: 0, occupiedRooms: 1 }
+            ],
+            dayRooms: [
+              { businessDate: "2026-05-13", roomId: "room-D3", roomNumber: "D3", roomType: "秘境洞穴", availabilityStatus: "reserved", sourceRefs: [{ sourceType: "reservation", sourceId: "reservation-rg-1", label: "RG-1" }] },
+              { businessDate: "2026-05-13", roomId: "room-D4", roomNumber: "D4", roomType: "秘境洞穴", availabilityStatus: "occupied", sourceRefs: [{ sourceType: "stay", sourceId: "stay-1", label: "R-1" }] },
+              { businessDate: "2026-05-13", roomId: "room-D5", roomNumber: "D5", roomType: "秘境洞穴", availabilityStatus: "available", sourceRefs: [] }
+            ]
+          }
+        })
+      }),
+      now: () => new Date("2026-05-13T08:00:00.000Z")
+    });
+
+    const evidence = await client.inventorySummary({
+      tenantId: "tenant_1",
+      propertyId: "property-small-hotel",
+      startDate: "2026-05-13",
+      endDate: "2026-05-13"
+    });
+
+    expect(evidence.data.statusRefs).toEqual([
+      { date: "2026-05-13", roomId: "room-D3", roomNumber: "D3", roomType: "秘境洞穴", status: "reserved", sourceRefs: [{ sourceType: "reservation", sourceId: "reservation-rg-1", label: "RG-1" }] },
+      { date: "2026-05-13", roomId: "room-D4", roomNumber: "D4", roomType: "秘境洞穴", status: "occupied", sourceRefs: [{ sourceType: "stay", sourceId: "stay-1", label: "R-1" }] }
+    ]);
+    expect(evidence.summary).toContain("Reserved refs: RG-1@D3.");
+    expect(evidence.summary).toContain("Occupied refs: R-1@D4.");
+  });
+
+  it("parses reservationLookup readModel details for guest identity", async () => {
+    const client = createPmsPlatformClient({
+      baseUrl: "https://pms.local",
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          readModel: {
+            reservationId: "reservation-rg-1",
+            reservationCode: "RG-1",
+            roomId: "room-D3",
+            roomNumber: "D3",
+            roomType: "秘境洞穴",
+            guestDisplayName: "李小军",
+            arrivalDate: "2026-05-10",
+            departureDate: "2026-05-15",
+            status: "booked"
+          }
+        })
+      }),
+      now: () => new Date("2026-05-13T08:00:00.000Z")
+    });
+
+    const evidence = await client.reservationLookup({ tenantId: "tenant_1", reservationCode: "RG-1" });
+
+    expect(evidence.data).toMatchObject({
+      reservationId: "reservation-rg-1",
+      reservationCode: "RG-1",
+      guestName: "李小军",
+      roomNumber: "D3",
+      roomType: "秘境洞穴",
+      arrivalDate: "2026-05-10",
+      departureDate: "2026-05-15",
+      status: "booked"
+    });
+    expect(evidence.summary).toContain("Reservation RG-1: guest 李小军 room D3 秘境洞穴 dates 2026-05-10 to 2026-05-15 status booked.");
   });
 
   it("rejects invalid inventorySummary input", async () => {

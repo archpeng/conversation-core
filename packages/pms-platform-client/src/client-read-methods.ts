@@ -9,6 +9,7 @@ import {
   parseHotelProfileResult,
   parseReservationFact,
   parseRoomFact,
+  reservationFactSummary,
   parseRoomTypeCatalogResult,
   validateGetReservationInput,
   validateGetRoomInput,
@@ -65,7 +66,7 @@ export function createPmsReadClientMethods(options: ClientOptions): PmsReadClien
     },
     getReservation: (input) => {
       validateInput("getReservation", () => validateGetReservationInput(input));
-      return requestEvidence(options, "getReservation", input.tenantId, { method: "POST", route: "/v1/pms/reservations/get", body: input }, parseReservationFact, () => "Reservation facts returned from PMS Platform.");
+      return requestEvidence(options, "getReservation", input.tenantId, { method: "POST", route: "/v1/pms/reservations/get", body: input }, parseReservationFact, reservationFactSummary);
     }
   };
 }

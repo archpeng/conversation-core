@@ -87,7 +87,7 @@ function writeJson(config: ProductGatewayConfig, response: ServerResponse, statu
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
     "access-control-allow-origin": config.corsOrigin ?? "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization,x-product-gateway-token",
     ...headers
   });

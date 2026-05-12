@@ -9,6 +9,7 @@ import type { TSchema } from "typebox";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { UnifiedAgentToolExecutors } from "./tool-registration.js";
 import { notConfiguredExecutor } from "./not-configured-executor.js";
+import { publicToolResult } from "./pms-public-tool-result.js";
 
 export const PMS_SAFE_READ_TOOLS = [
   "pms_hotel_profile",
@@ -59,7 +60,7 @@ const PmsToolDescriptions: Record<PmsSafeReadToolName, string> = {
     "Read why a specific room is unavailable or associated with reservation/block context. Use after inventory summary or availability search points to a specific room.",
 
   pms_reservation_lookup:
-    "Look up one reservation by reservation code. Use for status/detail questions about a known booking. Returns reservation status, dates, room summary, and guest info.",
+    "Look up one reservation by reservation code, reservation id, or recent reservation target. Use for status/detail questions about a known booking. Returns reservation status, dates, room summary, and guest info.",
 
   pms_get_room:
     "Read one room's current facts. Use when the user asks about a specific room. Returns room ID, type, status, and availability window.",
@@ -122,6 +123,8 @@ const PmsToolSchemas: Record<PmsSafeReadToolName, object> = {
     additionalProperties: false,
     properties: {
       reservationCode: { type: "string", minLength: 1 },
+      reservationId: { type: "string", minLength: 1 },
+      target: { type: "string", minLength: 1 },
     },
   },
 
@@ -268,6 +271,7 @@ function safeReadRequestParams(params: Record<string, unknown>): Omit<GatedToolR
     endDate: optionalText(params.endDate),
     businessDate: optionalText(params.businessDate),
     reservationCode: optionalText(params.reservationCode),
+    reservationId: optionalText(params.reservationId),
     dateContext: optionalText(params.dateContext),
     roomType: optionalText(params.roomType),
     quantity: optionalPositiveInteger(params.quantity),
@@ -275,39 +279,6 @@ function safeReadRequestParams(params: Record<string, unknown>): Omit<GatedToolR
   };
 }
 
-function publicToolResult(result: {
-  outcome: string;
-  auditId: string;
-  value?: unknown;
-}): unknown {
-  if (result.outcome !== "allow")
-    return { outcome: result.outcome, auditId: result.auditId };
-  const value = result.value as Record<string, unknown> | undefined;
-  if (isPmsEvidence(value)) {
-    return {
-      outcome: result.outcome,
-      auditId: result.auditId,
-      evidenceRef: value.evidenceRef,
-      source: value.source,
-      summary: value.summary,
-    };
-  }
-  return { outcome: result.outcome, auditId: result.auditId, value };
-}
-
-function isPmsEvidence(
-  value: unknown,
-): value is { evidenceRef: string; source: unknown; summary: string } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  const source = record.source as Record<string, unknown> | undefined;
-  return (
-    typeof record.evidenceRef === "string" &&
-    typeof record.summary === "string" &&
-    source?.system === "pms-platform" &&
-    typeof source?.method === "string"
-  );
-}
 
 function optionalText(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;

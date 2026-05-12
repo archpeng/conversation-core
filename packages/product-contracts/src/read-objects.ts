@@ -14,6 +14,11 @@ export type ReservationReadObject = {
   ref: ObjectRef & { kind: "reservation" };
   status: string;
   roomId?: string;
+  roomNumber?: string;
+  roomType?: string;
+  guestName?: string;
+  arrivalDate?: string;
+  departureDate?: string;
   evidenceRefs: string[];
 };
 
@@ -80,12 +85,22 @@ function parseReservationObject(input: unknown, issues: string[]): ReservationRe
   if (!ref.ok) issues.push(...ref.issues);
   requireNonEmptyString(value.status, "object.status", issues);
   requireOptionalString(value.roomId, "object.roomId", issues);
+  requireOptionalString(value.roomNumber, "object.roomNumber", issues);
+  requireOptionalString(value.roomType, "object.roomType", issues);
+  requireOptionalString(value.guestName, "object.guestName", issues);
+  requireOptionalString(value.arrivalDate, "object.arrivalDate", issues);
+  requireOptionalString(value.departureDate, "object.departureDate", issues);
   const evidenceRefs = optionalStringArray(value.evidenceRefs, "object.evidenceRefs", issues) ?? [];
   if (!ref.ok || ref.value.kind !== "reservation" || typeof value.status !== "string") return undefined;
   return {
     ref: ref.value as ObjectRef & { kind: "reservation" },
     status: value.status,
     ...(typeof value.roomId === "string" ? { roomId: value.roomId } : {}),
+    ...(typeof value.roomNumber === "string" ? { roomNumber: value.roomNumber } : {}),
+    ...(typeof value.roomType === "string" ? { roomType: value.roomType } : {}),
+    ...(typeof value.guestName === "string" ? { guestName: value.guestName } : {}),
+    ...(typeof value.arrivalDate === "string" ? { arrivalDate: value.arrivalDate } : {}),
+    ...(typeof value.departureDate === "string" ? { departureDate: value.departureDate } : {}),
     evidenceRefs
   };
 }

@@ -1,14 +1,17 @@
-import type { AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
+import type { AgentObjectRef, AgentResult, FeishuTurnInput, PmsApprovalCard } from "@pms-agent-v2/adapter-contracts";
 import type { GatedToolResult } from "@pms-agent-v2/gated-tools";
 import type { PmsEvidence, ReservationConfirmPreparation } from "@pms-agent-v2/pms-platform-client";
 import type { ContextBundle } from "./context-bundle.js";
 import type { AgentToolResult } from "./pi-session.js";
 import { synthesizeTextReply } from "./response-synthesis.js";
 import type { RunAgentTurnOptions, UnifiedAgentSession } from "./session-types.js";
+import { structuredPmsReplyText } from "./pms-evidence-reply.js";
+import { objectRefsFromPmsEvidence } from "./pms-object-refs.js";
 
 export type PlannedAgentResult = {
   result: AgentResult;
   evidenceRefs?: string[];
+  objectRefs?: AgentObjectRef[];
   pendingActionRefs?: string[];
 };
 
@@ -19,17 +22,21 @@ export function synthesizeEvidenceTextReply(text: string, evidence: PmsEvidence<
 export function synthesizeEvidenceSequenceTextReply(text: string, evidence: readonly PmsEvidence<unknown>[], context: ContextBundle, options: RunAgentTurnOptions): PlannedAgentResult | undefined {
   if (!text.trim() || evidence.length === 0) return undefined;
   const evidenceRefs = evidence.map((item) => item.evidenceRef);
-  const missingRefs = evidenceRefs.filter((ref) => !text.includes(ref));
-  const replyText = missingRefs.length === 0 ? text : `${text.trim()} evidenceRefs=${missingRefs.join(",")}`;
+  const objectRefs = objectRefsFromPmsEvidence(evidence);
+  const visibleText = structuredPmsReplyText(evidence) ?? text;
   const synthesized = synthesizeTextReply({
-    text: replyText,
+    text: visibleText,
     evidenceRefs,
     pmsEvidence: [...(options.pmsEvidence ?? []), ...evidence],
     currentPmsFact: true,
     context
   });
   if (!synthesized.ok) return undefined;
-  return { result: synthesized.result, evidenceRefs };
+  return {
+    result: attachObjectRefs(synthesized.result, objectRefs),
+    evidenceRefs,
+    ...(objectRefs.length > 0 ? { objectRefs } : {})
+  };
 }
 
 export function fallbackEvidenceTextReply(evidence: PmsEvidence<unknown>, context: ContextBundle, options: RunAgentTurnOptions): PlannedAgentResult {
@@ -38,15 +45,21 @@ export function fallbackEvidenceTextReply(evidence: PmsEvidence<unknown>, contex
 
 export function fallbackEvidenceSequenceTextReply(evidence: readonly PmsEvidence<unknown>[], context: ContextBundle, options: RunAgentTurnOptions): PlannedAgentResult {
   const evidenceRefs = evidence.map((item) => item.evidenceRef);
+  const objectRefs = objectRefsFromPmsEvidence(evidence);
   const summaries = evidence.map((item) => item.summary).join("；");
+  const visibleText = structuredPmsReplyText(evidence) ?? `PMS evidence is available: ${summaries}.`;
   const result = synthesizeTextReply({
-    text: `PMS evidence is available: ${summaries}. evidenceRefs=${evidenceRefs.join(",")}`,
+    text: visibleText,
     evidenceRefs,
     pmsEvidence: [...(options.pmsEvidence ?? []), ...evidence],
     currentPmsFact: true,
     context
   }).result;
-  return { result, evidenceRefs };
+  return {
+    result: attachObjectRefs(result, objectRefs),
+    evidenceRefs,
+    ...(objectRefs.length > 0 ? { objectRefs } : {})
+  };
 }
 
 export function synthesizePrepareConfirmApproval(evidence: PmsEvidence<unknown>): PlannedAgentResult | undefined {
@@ -55,6 +68,14 @@ export function synthesizePrepareConfirmApproval(evidence: PmsEvidence<unknown>)
     result: { type: "approval_card", card: approvalCard(evidence.scope.tenantId, evidence.data) },
     evidenceRefs: [evidence.evidenceRef],
     pendingActionRefs: [evidence.data.pendingActionId]
+  };
+}
+
+function attachObjectRefs(result: AgentResult, objectRefs: readonly AgentObjectRef[]): AgentResult {
+  if (result.type !== "text" || objectRefs.length === 0) return result;
+  return {
+    ...result,
+    objectRefs: [...objectRefs]
   };
 }
 

@@ -41,6 +41,7 @@ const approvalCard: PmsApprovalCard = {
 
 const validResults: AgentResult[] = [
   { type: "text", text: "今晚还有可订房。", evidenceRefs: ["pms_ev_tenant_1_searchAvailability_1"] },
+  { type: "text", text: "张三 · D1", evidenceRefs: ["pms_ev_tenant_1_todayArrivals_1"], objectRefs: [{ kind: "reservation", id: "R-1", label: "张三 · D1", evidenceRefs: ["pms_ev_tenant_1_todayArrivals_1"] }] },
   { type: "refusal", reason: "policy", message: "该操作需要审批。" },
   { type: "proposal", proposalId: "proposal_1", title: "改价方案", summary: "建议先审批。", approvalRequired: true },
   { type: "approval_card", card: approvalCard }
@@ -105,6 +106,12 @@ describe("AgentResult", () => {
     const result = validateAgentResult({ type: "text", text: "fact", evidenceRefs: [""] });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues).toContain("evidenceRefs[0] must be a non-empty string");
+  });
+
+  it("rejects invalid text object refs", () => {
+    const result = validateAgentResult({ type: "text", text: "fact", objectRefs: [{ kind: "guest", id: "g1" }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain("objectRefs[0].kind is invalid");
   });
 });
 

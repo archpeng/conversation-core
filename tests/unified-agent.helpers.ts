@@ -200,6 +200,7 @@ function toSafetyToolRequest(request: GatedToolRequest): ToolRequest {
     endDate: request.endDate,
     businessDate: request.businessDate,
     reservationCode: request.reservationCode,
+    reservationId: request.reservationId,
     dateContext: request.dateContext,
     roomType: request.roomType,
     roomTypeText: request.roomTypeText,

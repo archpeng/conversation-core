@@ -295,6 +295,45 @@ describe("agent service runtime wiring", () => {
     }
   });
 
+  it("normalizes reservation lookup business codes and internal ids", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          readModel: {
+            reservationId: "reservation-1",
+            reservationCode: "R-8BECAC0845AFE7E8",
+            roomId: "room-D1",
+            roomNumber: "D1",
+            roomType: "秘境洞穴",
+            guestDisplayName: "张三",
+            status: "booked"
+          }
+        })
+      } as Response;
+    }) as typeof fetch;
+    try {
+      const executors = createRuntimeExecutors(loadAgentServiceRuntimeConfig({
+        PMS_AGENT_CWD: "/tmp/pms-agent-v2-runtime-test",
+        PMS_PLATFORM_BASE_URL: "http://127.0.0.1:8791"
+      })).pmsReadExecutors;
+
+      await executors?.pms_reservation_lookup(baseInput("pms_reservation_lookup", { target: "R-8BECAC0845AFE7E8" }));
+      await executors?.pms_reservation_lookup(baseInput("pms_reservation_lookup", { reservationId: "reservation-1" }));
+
+      expect(calls).toEqual([
+        { url: "http://127.0.0.1:8791/v1/pms/reservations/get", body: { tenantId: "tenant_1", reservationCode: "R-8BECAC0845AFE7E8" } },
+        { url: "http://127.0.0.1:8791/v1/pms/reservations/get", body: { tenantId: "tenant_1", reservationId: "reservation-1" } }
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("routes each safe workflow executor to its exact PMS Platform route", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const originalFetch = globalThis.fetch;

@@ -29,6 +29,7 @@ export type GatedToolRequest = {
   endDate?: string;
   businessDate?: string;
   reservationCode?: string;
+  reservationId?: string;
   dateContext?: string;
   roomType?: string;
   roomTypeText?: string;

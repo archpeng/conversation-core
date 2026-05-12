@@ -12,6 +12,7 @@ import { synthesizeTextReply } from "./response-synthesis.js";
 import { registerGatedTools } from "./tool-registration.js";
 import { evidenceRepairPrompt, fallbackNaturalReply, turnPrompt } from "./session-turn-prompt.js";
 import { fallbackEvidenceSequenceTextReply, isPmsEvidence, synthesizeEvidenceSequenceTextReply, synthesizePrepareConfirmApproval, type PlannedAgentResult } from "./session-evidence.js";
+import { verifyAggregateLineageReply } from "./aggregate-lineage-verifier.js";
 import type {
   CreateUnifiedAgentSessionInput,
   RunAgentTurnOptions,
@@ -29,7 +30,8 @@ export type {
 
 type PlannerPathOutcome =
   | (PlannedAgentResult & { kind: "handled" })
-  | { kind: "no_tool_results" };
+  | { kind: "no_tool_results" }
+  | { kind: "repair_required"; rejectedText: string };
 
 type PostLlmSafetyScaffoldInput = {
   session: UnifiedAgentSession;
@@ -82,6 +84,17 @@ export async function runAgentTurn(session: UnifiedAgentSession, turn: FeishuTur
   }
   const assistantText = assistantTurn.text;
   const plannerOutcome = runPiNativeToolResults(session, assistantTurn, turn, options);
+  if (plannerOutcome.kind === "repair_required") {
+    const repaired = await runEvidenceRepairTurn(session, turn, plannerOutcome.rejectedText, options);
+    if (repaired?.kind === "handled") {
+      rememberRefs(session.state, repaired);
+      emitFinalResultEvent(session, options, repaired);
+      return repaired.result;
+    }
+    const result: AgentResult = { type: "refusal", reason: "invalid_request", message: "Current PMS aggregate facts require pms-platform evidence lineage." };
+    emitFinalResultEvent(session, options, { result });
+    return result;
+  }
   if (plannerOutcome.kind === "handled") {
     rememberRefs(session.state, plannerOutcome);
     emitFinalResultEvent(session, options, plannerOutcome);
@@ -179,6 +192,13 @@ function runPiNativeToolResults(session: UnifiedAgentSession, assistantTurn: Ass
     const approval = latestApproval(evidence);
     if (approval) {
       return { kind: "handled", ...approval, evidenceRefs: evidence.map((item) => item.evidenceRef) };
+    }
+    const lineage = verifyAggregateLineageReply({ userMessage: turn.message.text, assistantText: assistantTurn.text, evidence });
+    if (!lineage.ok) {
+      return {
+        kind: "repair_required",
+        rejectedText: `${assistantTurn.text.trim()}\n\nAggregate lineage verifier rejected the draft: ${lineage.message}`
+      };
     }
     const synthesized = synthesizeEvidenceSequenceTextReply(assistantTurn.text, evidence, context, options);
     return { kind: "handled", ...(synthesized ?? fallbackEvidenceSequenceTextReply(evidence, context, options)) };

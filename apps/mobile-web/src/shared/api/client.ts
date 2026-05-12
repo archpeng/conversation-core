@@ -5,7 +5,6 @@ import {
   validateMobileAgentResponse,
   validateProductApiError,
   validateReservationObjectResponse,
-  validateReservationWorkflowResponse,
   validateRoomObjectResponse,
   validateMobileSessionResponse,
   validateReviewActionDetailResponse,
@@ -18,12 +17,7 @@ import {
   type MobileSession,
   type MobileAgentTurnInput,
   type ProductApiError,
-  type ReservationGroupDraftInput,
-  type ReservationGroupUpdateInput,
   type ReservationReadObject,
-  type ReservationSingleDraftInput,
-  type ReservationDraftUpdateInput,
-  type ReservationWorkflowRefInput,
   type ReviewActionDetail,
   type ReviewActionSummary,
   type RoomReadObject,
@@ -53,12 +47,6 @@ export type ShiftSummary = {
     requireApproval: number;
     latestAt?: string;
   };
-};
-
-export type PendingActionStatusReadback = {
-  pendingActionId: string;
-  status: string;
-  evidenceRefs: string[];
 };
 
 export class ProductGatewayClient {
@@ -131,49 +119,6 @@ export class ProductGatewayClient {
     return result.value.session;
   }
 
-  async createSingleReservationDraft(input: ReservationSingleDraftInput): Promise<AgentTask> {
-    return this.workflowTask("/api/reservation-workflows/single/drafts", "POST", input);
-  }
-
-  async updateSingleReservationDraft(draftRef: string, input: Omit<ReservationDraftUpdateInput, "draftRef">): Promise<AgentTask> {
-    return this.workflowTask(`/api/reservation-workflows/single/drafts/${encodeURIComponent(draftRef)}`, "PATCH", input);
-  }
-
-  async quoteSingleReservationDraft(draftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId">): Promise<AgentTask> {
-    return this.workflowTask(`/api/reservation-workflows/single/drafts/${encodeURIComponent(draftRef)}/quote`, "POST", input);
-  }
-
-  async prepareSingleReservationConfirm(draftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId" | "quoteRef">): Promise<AgentTask> {
-    return this.workflowTask(`/api/reservation-workflows/single/drafts/${encodeURIComponent(draftRef)}/prepare-confirm`, "POST", input);
-  }
-
-  async createGroupReservationDraft(input: ReservationGroupDraftInput): Promise<AgentTask> {
-    return this.workflowTask("/api/reservation-workflows/group/drafts", "POST", input);
-  }
-
-  async updateGroupReservationDraft(groupDraftRef: string, input: Omit<ReservationGroupUpdateInput, "groupDraftRef">): Promise<AgentTask> {
-    return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}`, "PATCH", input);
-  }
-
-  async quoteGroupReservationDraft(groupDraftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId">): Promise<AgentTask> {
-    return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}/quote`, "POST", input);
-  }
-
-  async prepareGroupReservationConfirm(groupDraftRef: string, input: Pick<ReservationWorkflowRefInput, "tenantId" | "quoteRef">): Promise<AgentTask> {
-    return this.workflowTask(`/api/reservation-workflows/group/drafts/${encodeURIComponent(groupDraftRef)}/prepare-confirm`, "POST", input);
-  }
-
-  async getPendingActionStatus(input: { tenantId: string; pendingActionId: string; cardPayloadRef?: string }): Promise<PendingActionStatusReadback> {
-    const query = new URLSearchParams({
-      tenantId: input.tenantId,
-      ...(input.cardPayloadRef ? { cardPayloadRef: input.cardPayloadRef } : {})
-    });
-    const payload = await this.request(`/api/pending-actions/${encodeURIComponent(input.pendingActionId)}/status?${query.toString()}`, { method: "GET" });
-    const status = parsePendingActionStatusReadback(payload);
-    if (!status) throw new Error("Invalid pending action status response.");
-    return status;
-  }
-
   async listReviewActions(status?: string): Promise<ReviewActionSummary[]> {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
     const payload = await this.request(`/api/review/actions${query}`, { method: "GET" });
@@ -196,14 +141,7 @@ export class ProductGatewayClient {
     return result.value;
   }
 
-  private async workflowTask(path: string, method: "POST" | "PATCH", body: unknown): Promise<AgentTask> {
-    const payload = await this.request(path, { method, body });
-    const result = validateReservationWorkflowResponse(payload);
-    if (!result.ok) throw new Error(`Invalid reservation workflow response: ${result.issues.join("; ")}`);
-    return result.value.task;
-  }
-
-  private async request(path: string, init: { method: "GET" | "POST" | "PATCH"; body?: unknown }): Promise<unknown> {
+  private async request(path: string, init: { method: "GET" | "POST"; body?: unknown }): Promise<unknown> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: init.method,
       headers: {
@@ -252,17 +190,6 @@ function parseShiftSummary(payload: unknown): ShiftSummary | undefined {
     ...(typeof summary.latestTaskAt === "string" ? { latestTaskAt: summary.latestTaskAt } : {}),
     ...parsePmsAuditRefs(summary.pmsAuditRefs),
     ...parseSafetyAudits(summary.safetyAudits)
-  };
-}
-
-function parsePendingActionStatusReadback(payload: unknown): PendingActionStatusReadback | undefined {
-  const record = asRecord(payload);
-  if (!record || record.ok !== true || typeof record.pendingActionId !== "string" || typeof record.status !== "string" || !Array.isArray(record.evidenceRefs)) return undefined;
-  const evidenceRefs = record.evidenceRefs.filter((item): item is string => typeof item === "string");
-  return {
-    pendingActionId: record.pendingActionId,
-    status: record.status,
-    evidenceRefs
   };
 }
 

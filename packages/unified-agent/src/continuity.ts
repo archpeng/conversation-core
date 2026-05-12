@@ -1,4 +1,4 @@
-import type { FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
+import type { AgentObjectRef, FeishuTurnInput } from "@pms-agent-v2/adapter-contracts";
 import type { IntentFrame, IntentFrameIntent, IntentSlotName } from "./intent-frame.js";
 
 export type RedactedTurnRef = {
@@ -27,6 +27,7 @@ export type RedactedSessionState = {
   slots: SessionSlotMemory[];
   missingSlots: IntentSlotName[];
   evidenceRefs: string[];
+  objectRefs: AgentObjectRef[];
   pendingActionRefs: string[];
   draftRefs: string[];
   cardRefs: string[];
@@ -42,6 +43,7 @@ export function createRedactedSessionState(input: { sessionId: string; actorId: 
     slots: [],
     missingSlots: [],
     evidenceRefs: [],
+    objectRefs: [],
     pendingActionRefs: [],
     draftRefs: [],
     cardRefs: [],
@@ -49,14 +51,15 @@ export function createRedactedSessionState(input: { sessionId: string; actorId: 
   };
 }
 
-export function rememberTurn(state: RedactedSessionState, turn: FeishuTurnInput, refs: { evidenceRefs?: readonly string[]; pendingActionRefs?: readonly string[]; draftRefs?: readonly string[]; cardRefs?: readonly string[] } = {}): void {
+export function rememberTurn(state: RedactedSessionState, turn: FeishuTurnInput, refs: { evidenceRefs?: readonly string[]; objectRefs?: readonly AgentObjectRef[]; pendingActionRefs?: readonly string[]; draftRefs?: readonly string[]; cardRefs?: readonly string[] } = {}): void {
   state.turnRefs.push({ messageRef: redactedRef("message", turn.messageId), receivedAt: turn.receivedAt });
   state.turnRefs = state.turnRefs.slice(-2);
   rememberRefs(state, refs);
 }
 
-export function rememberRefs(state: RedactedSessionState, refs: { evidenceRefs?: readonly string[]; pendingActionRefs?: readonly string[]; draftRefs?: readonly string[]; cardRefs?: readonly string[] } = {}): void {
+export function rememberRefs(state: RedactedSessionState, refs: { evidenceRefs?: readonly string[]; objectRefs?: readonly AgentObjectRef[]; pendingActionRefs?: readonly string[]; draftRefs?: readonly string[]; cardRefs?: readonly string[] } = {}): void {
   state.evidenceRefs = mergeRefs(state.evidenceRefs, refs.evidenceRefs);
+  state.objectRefs = mergeObjectRefs(state.objectRefs, refs.objectRefs);
   state.pendingActionRefs = mergeRefs(state.pendingActionRefs, refs.pendingActionRefs);
   state.draftRefs = mergeRefs(state.draftRefs, refs.draftRefs);
   state.cardRefs = mergeRefs(state.cardRefs, refs.cardRefs);
@@ -94,6 +97,7 @@ export function continuityPrompt(state: RedactedSessionState): string {
     `slotMemory=${state.slots.map((slot) => `${slot.name}:${slot.value}`).join(",") || "none"}`,
     `missingSlots=${state.missingSlots.join(",") || "none"}`,
     `evidenceRefs=${state.evidenceRefs.join(",") || "none"}`,
+    `recentObjectRefs=${state.objectRefs.map(objectRefPrompt).join(",") || "none"}`,
     `pendingActionRefs=${state.pendingActionRefs.join(",") || "none"}`,
     `draftRefs=${state.draftRefs.join(",") || "none"}`,
     `cardRefs=${state.cardRefs.join(",") || "none"}`,
@@ -105,6 +109,31 @@ export function continuityPrompt(state: RedactedSessionState): string {
 function mergeRefs(existing: string[], incoming: readonly string[] | undefined): string[] {
   if (!incoming) return existing;
   return Array.from(new Set([...existing, ...incoming])).slice(-8);
+}
+
+function mergeObjectRefs(existing: AgentObjectRef[], incoming: readonly AgentObjectRef[] | undefined): AgentObjectRef[] {
+  if (!incoming) return existing;
+  const byKey = new Map(existing.map((ref) => [`${ref.kind}:${ref.id}`, ref]));
+  for (const ref of incoming) {
+    const key = `${ref.kind}:${ref.id}`;
+    const current = byKey.get(key);
+    byKey.set(key, {
+      ...ref,
+      ...(current?.label && !ref.label ? { label: current.label } : {}),
+      evidenceRefs: mergeRefs(current?.evidenceRefs ?? [], ref.evidenceRefs)
+    });
+  }
+  return Array.from(byKey.values()).slice(-8);
+}
+
+function objectRefPrompt(ref: AgentObjectRef): string {
+  const label = ref.label ? `:${safeObjectLabel(ref.label)}` : "";
+  const evidence = ref.evidenceRefs?.length ? `:evidence=${ref.evidenceRefs.length}` : "";
+  return `${ref.kind}:${ref.id}${label}${evidence}`;
+}
+
+function safeObjectLabel(value: string): string {
+  return value.replace(/[\r\n\t]+/g, " ").replace(/pms_ev_[A-Za-z0-9_:-]+/g, "pms_ev_redacted").slice(0, 64);
 }
 
 function safeSessionSlotValue(value: string | undefined): string | undefined {

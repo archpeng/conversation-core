@@ -1,4 +1,9 @@
 import { assertRecord, assertText, validateTenantScopedInput } from "./schemas.js";
+import {
+  inventoryStatusLineageSummary,
+  parseInventoryStatusRefs,
+  type InventoryStatusRef
+} from "./inventory-lineage.js";
 
 export type InventorySummaryInput = {
   tenantId: string;
@@ -20,6 +25,7 @@ export type InventorySummaryResult = {
     roomType: string;
     total: number;
   }>;
+  statusRefs?: InventoryStatusRef[];
 };
 
 export type RoomReservationContextInput = {
@@ -41,12 +47,7 @@ export type TodayArrivalsInput = {
 };
 
 export type TodayArrivalsResult = {
-  arrivals: Array<{
-    reservationCode: string;
-    roomId: string;
-    guestName: string;
-    status: string;
-  }>;
+  arrivals: ReservationStayEvent[];
 };
 
 export type TodayDeparturesInput = {
@@ -55,12 +56,19 @@ export type TodayDeparturesInput = {
 };
 
 export type TodayDeparturesResult = {
-  departures: Array<{
-    reservationCode: string;
-    roomId: string;
-    guestName: string;
-    status: string;
-  }>;
+  departures: ReservationStayEvent[];
+};
+
+export type ReservationStayEvent = {
+  reservationCode: string;
+  reservationId?: string;
+  roomId: string;
+  roomNumber?: string;
+  roomType?: string;
+  guestName: string;
+  arrivalDate?: string;
+  departureDate?: string;
+  status: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -148,8 +156,13 @@ export function parseInventorySummaryResult(value: unknown): InventorySummaryRes
   });
   return {
     dates,
-    ...(platformSummary?.roomTypes ? { roomTypes: platformSummary.roomTypes } : {})
+    ...(platformSummary?.roomTypes ? { roomTypes: platformSummary.roomTypes } : {}),
+    ...withStatusRefs(parseInventoryStatusRefs(object))
   };
+}
+
+function withStatusRefs(statusRefs: InventoryStatusRef[]): { statusRefs?: InventoryStatusRef[] } {
+  return statusRefs.length > 0 ? { statusRefs } : {};
 }
 
 function platformSummaryProjection(object: Record<string, unknown>): { dates: unknown[]; roomTypes: Array<{ roomType: string; total: number }> } | undefined {
@@ -233,15 +246,7 @@ export function parseTodayArrivalsResult(value: unknown): TodayArrivalsResult {
   const object = assertRecord(value, "today arrivals response");
   const rawArrivals = reservationListProjection(object, "arrivals");
   if (!Array.isArray(rawArrivals)) throw new Error("arrivals must be an array");
-  const arrivals = rawArrivals.map((item, index) => {
-    const entry = assertRecord(item, `arrivals[${index}]`);
-    return {
-      reservationCode: assertText(entry.reservationCode, `arrivals[${index}].reservationCode`),
-      roomId: assertText(entry.roomId, `arrivals[${index}].roomId`),
-      guestName: assertText(entry.guestName ?? entry.guestDisplayName, `arrivals[${index}].guestName`),
-      status: assertText(entry.status, `arrivals[${index}].status`)
-    };
-  });
+  const arrivals = rawArrivals.map((item, index) => parseReservationStayEvent(item, `arrivals[${index}]`));
   return { arrivals };
 }
 
@@ -249,16 +254,29 @@ export function parseTodayDeparturesResult(value: unknown): TodayDeparturesResul
   const object = assertRecord(value, "today departures response");
   const rawDepartures = reservationListProjection(object, "departures");
   if (!Array.isArray(rawDepartures)) throw new Error("departures must be an array");
-  const departures = rawDepartures.map((item, index) => {
-    const entry = assertRecord(item, `departures[${index}]`);
-    return {
-      reservationCode: assertText(entry.reservationCode, `departures[${index}].reservationCode`),
-      roomId: assertText(entry.roomId, `departures[${index}].roomId`),
-      guestName: assertText(entry.guestName ?? entry.guestDisplayName, `departures[${index}].guestName`),
-      status: assertText(entry.status, `departures[${index}].status`)
-    };
-  });
+  const departures = rawDepartures.map((item, index) => parseReservationStayEvent(item, `departures[${index}]`));
   return { departures };
+}
+
+function parseReservationStayEvent(item: unknown, field: string): ReservationStayEvent {
+  const entry = assertRecord(item, field);
+  const result: ReservationStayEvent = {
+    reservationCode: assertText(entry.reservationCode, `${field}.reservationCode`),
+    roomId: assertText(entry.roomId, `${field}.roomId`),
+    guestName: assertText(entry.guestName ?? entry.guestDisplayName, `${field}.guestName`),
+    status: assertText(entry.status, `${field}.status`)
+  };
+  const reservationId = optionalText(entry.reservationId);
+  if (reservationId) result.reservationId = reservationId;
+  const roomNumber = optionalText(entry.roomNumber);
+  if (roomNumber) result.roomNumber = roomNumber;
+  const roomType = optionalText(entry.roomType);
+  if (roomType) result.roomType = roomType;
+  const arrivalDate = optionalText(entry.arrivalDate);
+  if (arrivalDate) result.arrivalDate = arrivalDate;
+  const departureDate = optionalText(entry.departureDate);
+  if (departureDate) result.departureDate = departureDate;
+  return result;
 }
 
 function reservationListProjection(object: Record<string, unknown>, legacyKey: "arrivals" | "departures"): unknown {
@@ -292,7 +310,7 @@ export function inventorySummary(result: InventorySummaryResult): string {
   const roomTypes = result.roomTypes?.length
     ? ` Room types: ${result.roomTypes.map((item) => `${item.roomType} ${item.total}`).join(", ")}.`
     : "";
-  return `Inventory for ${first}–${last}: ${perDateTotal} total rooms across ${count} dates. Available: ${present.available}, Reserved: ${present.reserved}, Blocked: ${present.blocked}, Occupied: ${present.occupied}.${roomTypes}`;
+  return `Inventory for ${first}–${last}: ${perDateTotal} total rooms across ${count} dates. Available: ${present.available}, Reserved: ${present.reserved}, Blocked: ${present.blocked}, Occupied: ${present.occupied}.${roomTypes}${inventoryStatusLineageSummary(result.statusRefs)}`;
 }
 
 export function roomReservationContextSummary(result: RoomReservationContextResult): string {
@@ -301,11 +319,16 @@ export function roomReservationContextSummary(result: RoomReservationContextResu
 }
 
 export function todayArrivalsSummary(result: TodayArrivalsResult): string {
-  const codes = result.arrivals.map((a) => a.reservationCode).join(", ");
-  return `${result.arrivals.length} arrivals: ${codes}.`;
+  const reservations = result.arrivals.map((a) => reservationListPart(a)).join(", ");
+  return `${result.arrivals.length} arrivals: ${reservations}.`;
 }
 
 export function todayDeparturesSummary(result: TodayDeparturesResult): string {
-  const codes = result.departures.map((d) => d.reservationCode).join(", ");
-  return `${result.departures.length} departures: ${codes}.`;
+  const reservations = result.departures.map((d) => reservationListPart(d)).join(", ");
+  return `${result.departures.length} departures: ${reservations}.`;
+}
+
+function reservationListPart(item: ReservationStayEvent): string {
+  const room = [item.roomNumber ?? item.roomId, item.roomType].filter(Boolean).join(" ");
+  return `${item.reservationCode} ${item.guestName} ${room} ${item.status}`;
 }

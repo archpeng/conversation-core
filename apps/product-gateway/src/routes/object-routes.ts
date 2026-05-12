@@ -26,18 +26,25 @@ export async function handleRoomObjectRoute(context: ProductRouteContext, pmsCli
   }
 }
 
-export async function handleReservationObjectRoute(context: ProductRouteContext, pmsClient: ProductGatewayPmsClient, request: ProductGatewayRequest, reservationId: string): Promise<ProductGatewayResponse> {
+export async function handleReservationObjectRoute(context: ProductRouteContext, pmsClient: ProductGatewayPmsClient, request: ProductGatewayRequest, reservationTarget: string): Promise<ProductGatewayResponse> {
   const tenantId = request.query.get("tenantId") ?? context.config.defaultTenantId;
   if (!tenantId) return json(400, productError("invalid_request", "tenantId is required for reservation lookup."));
 
   try {
-    const evidence = await pmsClient.getReservation({ tenantId, reservationId });
+    const evidence = await pmsClient.getReservation({ tenantId, ...reservationLookupIdentifier(reservationTarget) });
+    const fallbackLabel = evidence.data.reservationCode ?? evidence.data.reservationId;
+    const label = [evidence.data.guestName, evidence.data.roomNumber ?? evidence.data.roomId].filter(Boolean).join(" · ") || fallbackLabel;
     return json(200, {
       ok: true,
       object: {
-        ref: { kind: "reservation", id: evidence.data.reservationId, label: evidence.data.reservationId, evidenceRefs: [evidence.evidenceRef] },
+        ref: { kind: "reservation", id: evidence.data.reservationCode ?? evidence.data.reservationId, label, evidenceRefs: [evidence.evidenceRef] },
         status: evidence.data.status,
         ...(evidence.data.roomId ? { roomId: evidence.data.roomId } : {}),
+        ...(evidence.data.roomNumber ? { roomNumber: evidence.data.roomNumber } : {}),
+        ...(evidence.data.roomType ? { roomType: evidence.data.roomType } : {}),
+        ...(evidence.data.guestName ? { guestName: evidence.data.guestName } : {}),
+        ...(evidence.data.arrivalDate ? { arrivalDate: evidence.data.arrivalDate } : {}),
+        ...(evidence.data.departureDate ? { departureDate: evidence.data.departureDate } : {}),
         evidenceRefs: [evidence.evidenceRef]
       }
     });
@@ -48,4 +55,11 @@ export async function handleReservationObjectRoute(context: ProductRouteContext,
 
 function json(status: number, body: unknown): ProductGatewayResponse {
   return { status, headers: { "content-type": "application/json" }, body };
+}
+
+function reservationLookupIdentifier(target: string): { reservationCode: string } | { reservationId: string } {
+  const value = target.trim();
+  if (/^R(?:G|ES)?-[A-Z0-9-]+$/i.test(value)) return { reservationCode: value };
+  if (/^reservation[-_]/i.test(value) || /^res[-_]/i.test(value)) return { reservationId: value };
+  return { reservationCode: value };
 }

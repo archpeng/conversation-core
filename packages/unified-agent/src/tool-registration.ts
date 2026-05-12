@@ -29,6 +29,7 @@ import type {
 import { generatePmsSafeReadTools } from "./pms-capability-tools.js";
 import { generatePmsWorkflowTools } from "./pms-workflow-tools.js";
 import { notConfiguredExecutor } from "./not-configured-executor.js";
+import { publicToolResult } from "./pms-public-tool-result.js";
 import type { UnifiedAgentProfile } from "./profile.js";
 import type { AgentToolResult, GatedToolDefinition } from "./pi-session.js";
 import type { TSchema } from "typebox";
@@ -165,30 +166,6 @@ function toolResult(result: GatedToolResult<unknown>): AgentToolResult<GatedTool
     content: [{ type: "text", text: JSON.stringify(publicToolResult(result)) }],
     details: result
   };
-}
-
-function publicToolResult(result: GatedToolResult<unknown>): unknown {
-  if (result.outcome !== "allow") return { outcome: result.outcome, auditId: result.auditId };
-  if (isPmsEvidence(result.value)) {
-    return {
-      outcome: result.outcome,
-      auditId: result.auditId,
-      evidenceRef: result.value.evidenceRef,
-      source: result.value.source,
-      summary: result.value.summary
-    };
-  }
-  return { outcome: result.outcome, auditId: result.auditId, value: result.value };
-}
-
-function isPmsEvidence(value: unknown): value is PmsEvidence<unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  const source = record.source as Record<string, unknown> | undefined;
-  return typeof record.evidenceRef === "string"
-    && typeof record.summary === "string"
-    && source?.system === "pms-platform"
-    && typeof source?.method === "string";
 }
 
 function optionalText(value: unknown): string | undefined {

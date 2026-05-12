@@ -1,10 +1,12 @@
 import { validatePmsApprovalCard, type PmsApprovalCard } from "./approval-card.js";
 import { asRecord, requireNonEmptyString, requireOneOf } from "./field-checks.js";
+import { parseAgentObjectRefs, type AgentObjectRef } from "./object-ref.js";
 
 export type AgentTextResult = {
   type: "text";
   text: string;
   evidenceRefs?: string[];
+  objectRefs?: AgentObjectRef[];
 };
 
 export type AgentResult =
@@ -28,6 +30,7 @@ export function validateAgentResult(input: unknown): AgentResultValidation {
     case "text":
       requireNonEmptyString(value.text, "text", issues);
       validateOptionalEvidenceRefs(value.evidenceRefs, issues);
+      parseAgentObjectRefs(value.objectRefs, "objectRefs", issues);
       break;
     case "refusal":
       requireOneOf(value.reason, ["policy", "unsupported", "invalid_request"], "reason", issues);
@@ -66,4 +69,3 @@ function validateOptionalEvidenceRefs(value: unknown, issues: string[]) {
     requireNonEmptyString(item, `evidenceRefs[${index}]`, issues);
   }
 }
-

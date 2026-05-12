@@ -161,8 +161,9 @@ describe("unified Agent runtime", () => {
       auditId: "audit_pms_availability_search_allow",
       evidenceRef: evidence.evidenceRef,
       source: { system: "pms-platform", method: "searchAvailability" },
-      summary: "availability search summary"
+      publicSummary: "Availability search returned 1 room candidate(s)."
     });
+    expect(publicContent).not.toContain("availability search summary");
     expect(publicContent).not.toContain("value");
     expect(publicContent).not.toContain("data");
     expect(publicContent).not.toContain("room_secret_tool_content");

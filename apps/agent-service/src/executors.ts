@@ -94,7 +94,7 @@ export function createRuntimeExecutors(config: RuntimeExecutorConfig): UnifiedAg
     pms_reservation_lookup: async ({ request }) =>
       client.reservationLookup({
         tenantId: tenantId(request),
-        reservationCode: requiredWorkflowText(request.reservationCode ?? request.target, "reservationCode required for reservation lookup")
+        ...reservationLookupIdentifier(request)
       }),
 
     pms_get_room: async ({ request }) =>
@@ -308,4 +308,33 @@ function requiredPositiveInteger(value: number | undefined, message: string): nu
 function requiredWorkflowText(value: string | undefined, message: string): string {
   if (typeof value === "string" && value.trim().length > 0) return value;
   throw new Error(message);
+}
+
+function reservationLookupIdentifier(request: GatedToolRequest): { reservationCode: string } | { reservationId: string } {
+  const reservationCode = normalizedText(request.reservationCode);
+  if (reservationCode) return { reservationCode };
+
+  const reservationId = normalizedText(request.reservationId);
+  if (reservationId) {
+    return looksBusinessReservationCode(reservationId) ? { reservationCode: reservationId } : { reservationId };
+  }
+
+  const target = normalizedText(request.target);
+  if (!target) throw new Error("reservationCode, reservationId, or target required for reservation lookup");
+  return looksInternalReservationId(target) && !looksBusinessReservationCode(target)
+    ? { reservationId: target }
+    : { reservationCode: target };
+}
+
+function looksBusinessReservationCode(value: string): boolean {
+  return /^R(?:G|ES)?-[A-Z0-9-]+$/i.test(value);
+}
+
+function looksInternalReservationId(value: string): boolean {
+  return /^reservation[-_]/i.test(value) || /^res[-_]/i.test(value);
+}
+
+function normalizedText(value: string | undefined): string | undefined {
+  const text = value?.trim();
+  return text ? text : undefined;
 }

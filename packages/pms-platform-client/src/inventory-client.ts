@@ -20,7 +20,7 @@ import {
   type TodayDeparturesInput,
   type TodayDeparturesResult
 } from "./inventory-schemas.js";
-import { parseReservationFact, validateGetReservationInput, type GetReservationInput, type ReservationFact } from "./schemas.js";
+import { parseReservationFact, reservationFactSummary, validateGetReservationInput, type GetReservationInput, type ReservationFact } from "./schemas.js";
 import type { PmsEvidence } from "./evidence.js";
 import { requestEvidence, validateInput, type ClientOptions } from "./client-core.js";
 
@@ -144,7 +144,7 @@ export function reservationLookupMethod(
       body: input
     },
     parseReservationFact,
-    () => "Reservation facts returned from PMS Platform.",
+    reservationFactSummary,
     { parseWorkflowRejection: false }
   );
 }

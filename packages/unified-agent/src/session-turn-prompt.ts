@@ -32,6 +32,7 @@ export function evidenceRepairPrompt(session: UnifiedAgentSession, turn: FeishuT
     "Your previous draft attempted to answer current PMS facts without current PMS evidence accepted by the runtime.",
     "Do not answer current availability, inventory, room type, reservation, price, or pending-action facts from continuity alone.",
     "Call the visible PMS custom tool(s) needed for the user's latest question, then answer using only returned PMS evidence.",
+    "When the user asks who/which/why for an aggregate count, follow the aggregate evidence lineage/source refs before answering identity or cause.",
     "If the user asks what room types the hotel has without dates, call pms_room_type_catalog. If the user asks what is bookable for a date range, call pms_availability_search.",
     "Visible Pi custom tools:",
     JSON.stringify(visibleToolPromptItems(session), null, 2),

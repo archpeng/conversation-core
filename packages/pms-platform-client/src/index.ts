@@ -57,6 +57,7 @@ export type {
 export type {
   InventorySummaryInput,
   InventorySummaryResult,
+  ReservationStayEvent,
   RoomReservationContextInput,
   RoomReservationContextResult,
   TodayArrivalsInput,
@@ -64,6 +65,12 @@ export type {
   TodayDeparturesInput,
   TodayDeparturesResult
 } from "./inventory-schemas.js";
+
+export type {
+  InventorySourceRef,
+  InventoryStatusRef,
+  InventoryTrackedStatus
+} from "./inventory-lineage.js";
 
 export {
   inventorySummary,

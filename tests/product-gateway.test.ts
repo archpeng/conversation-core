@@ -56,8 +56,11 @@ describe("product gateway service", () => {
       ok: true,
       task: {
         title: "Agent response",
+        summary: "今天暂无到店。",
         status: "read_only",
-        evidenceRefs: ["pms_ev_1"]
+        evidenceRefs: ["pms_ev_1"],
+        objectRefs: [expect.objectContaining({ kind: "reservation", id: "R-1" })],
+        messages: ["今天暂无到店。"]
       }
     });
   });
@@ -261,7 +264,7 @@ async function issuedSession(service: ReturnType<typeof createProductGatewayServ
 function fakeAgentClient(): AgentClient {
   return {
     async runMobileTurn() {
-      return { type: "text", text: "今天有 1 间房到店。", evidenceRefs: ["pms_ev_1"] };
+      return { type: "text", text: "今天暂无到店。\n依据：PMS 到店列表 evidenceRef `pms_ev_1`", evidenceRefs: ["pms_ev_1"], objectRefs: [{ kind: "reservation", id: "R-1", label: "张三 · D1", evidenceRefs: ["pms_ev_1"] }] };
     }
   };
 }

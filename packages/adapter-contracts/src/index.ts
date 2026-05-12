@@ -22,3 +22,10 @@ export {
   type AgentResultValidation,
   type AgentTextResult
 } from "./agent-result.js";
+
+export {
+  agentObjectRefKinds,
+  parseAgentObjectRefs,
+  type AgentObjectRef,
+  type AgentObjectRefKind
+} from "./object-ref.js";

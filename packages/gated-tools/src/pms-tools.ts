@@ -23,6 +23,7 @@ export type GatedPmsCapabilityInput<T> = {
   endDate?: string;
   businessDate?: string;
   reservationCode?: string;
+  reservationId?: string;
   dateContext?: string;
   roomType?: string;
   roomTypeText?: string;
@@ -76,6 +77,7 @@ function pmsCapabilityRequest<T>(input: GatedPmsCapabilityInput<T>): GatedToolRe
     endDate: input.endDate,
     businessDate: input.businessDate,
     reservationCode: input.reservationCode,
+    reservationId: input.reservationId,
     dateContext: input.dateContext,
     roomType: input.roomType,
     roomTypeText: input.roomTypeText,

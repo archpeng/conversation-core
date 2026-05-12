@@ -134,6 +134,7 @@ function summarizeSession(state: RedactedSessionState): string | undefined {
     state.missingSlots.length > 0 ? `missing=${state.missingSlots.join(",")}` : undefined,
     state.pendingActionRefs.length > 0 ? `pendingRefs=${state.pendingActionRefs.length}` : undefined,
     state.evidenceRefs.length > 0 ? `evidenceRefs=${state.evidenceRefs.length}` : undefined,
+    state.objectRefs.length > 0 ? `objectRefs=${state.objectRefs.map((ref) => `${ref.kind}:${ref.id}`).join(",")}` : undefined,
     state.safetyFlags.length > 0 ? `safety=${state.safetyFlags.join(",")}` : undefined
   ].filter((part): part is string => Boolean(part));
   return parts.length > 0 ? cleanSummary(parts.join("; ")) : undefined;

@@ -1,13 +1,14 @@
 import type { AgentResult } from "@pms-agent-v2/adapter-contracts";
 import { pmsTypedOperationKinds } from "@pms-agent-v2/product-contracts";
 import type { ActionCard, AgentTask, ObjectRef, PmsTypedOperationKind } from "@pms-agent-v2/product-contracts";
-import type { HotelProfileResult, InventorySummaryResult, PmsEvidence, RoomTypeCatalogResult, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";
+import type { HotelProfileResult, InventorySummaryResult, PmsEvidence, ReservationStayEvent, RoomTypeCatalogResult, TodayArrivalsResult, TodayDeparturesResult } from "@pms-agent-v2/pms-platform-client";
 
 export function taskFromAgentResult(result: AgentResult, now = new Date()): AgentTask {
   const timestamp = now.toISOString();
   const id = `task_agent_${now.getTime()}`;
   if (result.type === "text") {
-    return baseTask({ id, title: "Agent response", summary: result.text, source: "agent", status: result.evidenceRefs?.length ? "read_only" : "suggested", timestamp, evidenceRefs: result.evidenceRefs, messages: [result.text] });
+    const text = visibleAgentText(result.text, result.evidenceRefs ?? []);
+    return baseTask({ id, title: "Agent response", summary: text, source: "agent", status: result.evidenceRefs?.length ? "read_only" : "suggested", timestamp, evidenceRefs: result.evidenceRefs, objectRefs: result.objectRefs, messages: [text] });
   }
   if (result.type === "approval_card") {
     const card = result.card;
@@ -109,8 +110,8 @@ export function todayReadTasks(input: {
       status: "read_only",
       timestamp,
       evidenceRefs: [input.arrivals.evidenceRef],
-      objectRefs: [propertyRef],
-      messages: input.arrivals.data.arrivals.map((item) => `${item.reservationCode} · ${item.guestName} · ${item.roomId} · ${item.status}`),
+      objectRefs: [propertyRef, ...reservationObjectRefs(input.arrivals.data.arrivals, input.arrivals.evidenceRef)],
+      messages: input.arrivals.data.arrivals.map(stayEventMessage),
       actionCards: input.arrivals.data.arrivals.slice(0, 1).map((item) => typedOperationCard({
         tenantId: input.tenantId,
         propertyId: input.propertyId,
@@ -128,8 +129,8 @@ export function todayReadTasks(input: {
       status: "read_only",
       timestamp,
       evidenceRefs: [input.departures.evidenceRef],
-      objectRefs: [propertyRef],
-      messages: input.departures.data.departures.map((item) => `${item.reservationCode} · ${item.guestName} · ${item.roomId} · ${item.status}`),
+      objectRefs: [propertyRef, ...reservationObjectRefs(input.departures.data.departures, input.departures.evidenceRef)],
+      messages: input.departures.data.departures.map(stayEventMessage),
       actionCards: input.departures.data.departures.slice(0, 1).map((item) => typedOperationCard({
         tenantId: input.tenantId,
         propertyId: input.propertyId,
@@ -225,4 +226,46 @@ function inventorySummary(data: InventorySummaryResult): string {
   const today = data.dates[0];
   if (!today) return "暂无库存数据。";
   return `${today.available}/${today.total} 间可售，预订 ${today.reserved}，占用 ${today.occupied}，锁房 ${today.blocked}。`;
+}
+
+function reservationObjectRefs(events: readonly ReservationStayEvent[], evidenceRef: string): ObjectRef[] {
+  return events.map((item): ObjectRef => ({
+    kind: "reservation",
+    id: item.reservationCode,
+    label: [item.guestName, item.roomNumber ?? item.roomId].filter(Boolean).join(" · "),
+    evidenceRefs: [evidenceRef]
+  }));
+}
+
+function stayEventMessage(item: ReservationStayEvent): string {
+  const room = [item.roomNumber ?? item.roomId, item.roomType].filter(Boolean).join(" · ");
+  return `${item.reservationCode} · ${item.guestName} · ${room} · ${item.status}`;
+}
+
+function visibleAgentText(text: string, evidenceRefs: readonly string[]): string {
+  if (evidenceRefs.length === 0) return text;
+  const cleaned = text
+    .split(/\r?\n/)
+    .flatMap((line) => visibleLineParts(line, evidenceRefs))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return cleaned || "PMS 查询已完成。";
+}
+
+function visibleLineParts(line: string, evidenceRefs: readonly string[]): string[] {
+  if (!evidenceRefs.some((ref) => line.includes(ref))) return [line];
+  const markerIndex = evidenceMarkerIndex(line);
+  if (markerIndex < 0) return [line];
+  if (line.slice(0, markerIndex).trim().length === 0) return [];
+  return [line.slice(0, markerIndex).trimEnd()];
+}
+
+function evidenceMarkerIndex(line: string): number {
+  const markers = ["依据 PMS", "依据PMS", "依据：", "依据:", "证据来源", "证据：", "证据:", "Evidence", "evidenceRef", "evidenceRefs"];
+  return markers.reduce((best, marker) => {
+    const index = line.indexOf(marker);
+    if (index < 0) return best;
+    return best < 0 ? index : Math.min(best, index);
+  }, -1);
 }

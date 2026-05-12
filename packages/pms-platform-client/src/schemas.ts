@@ -29,6 +29,7 @@ export {
 export {
   parseReservationFact,
   parseRoomFact,
+  reservationFactSummary,
   validateGetReservationInput,
   validateGetRoomInput,
   type GetReservationInput,
